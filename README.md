@@ -1,6 +1,6 @@
-# ZenReg: A high-throughput, memory-efficient N-dimensional image registration pipeline
+# ZenReg: A Python-based high-throughput, memory-efficient N-dimensional image registration pipeline
 
-ZenReg is a high-throughput, memory-efficient pipeline for N-dimensional image registration, designed for large microscopy and imaging datasets.
+ZenReg is a Python-based high-throughput, memory-efficient pipeline for N-dimensional image registration, designed for large microscopy and imaging datasets.
 
 The project targets volumetric and time-resolved data with arbitrary dimensionality (3D, 4D, and full 5D stacks such as TZCYX), with a strong focus on scalable, out-of-core processing using chunked array storage and parallel execution.
 
@@ -21,4 +21,4 @@ No stable public API is provided yet.
 
 
 ## License
-ZenReg is released under an open-source license (GPL3). See the LICENSE file for details.
+ZenReg is released under an open-source license (GPL-3.0). See the LICENSE file for details.
