@@ -1,0 +1,28 @@
+[build-system]
+requires = ["flit_core>=3.8"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "zenreg"
+version = "0.0.1"
+description = "High-throughput, memory-efficient N-dimensional image registration."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+
+authors = [
+    { name = "Fabrizio Musacchio" }
+]
+
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent"
+]
+
+[project.urls]
+Homepage = "https://github.com/fabriziomusacchio/zenreg"
+Repository = "https://github.com/fabriziomusacchio/zenreg"
+Issues = "https://github.com/fabriziomusacchio/zenreg/issues"
