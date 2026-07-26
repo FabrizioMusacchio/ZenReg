@@ -1,28 +1,51 @@
 [build-system]
-requires = ["flit_core>=3.8"]
-build-backend = "flit_core.buildapi"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "zenreg"
 version = "0.0.1"
-description = "High-throughput, memory-efficient N-dimensional image registration."
+description = "Translation-based registration helpers for TZCYX microscopy stacks."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { file = "LICENSE" }
-
+license = { text = "GPL-3.0-or-later" }
 authors = [
-    { name = "Fabrizio Musacchio" }
+  { name = "Fabrizio Musacchio" }
 ]
-
+keywords = [
+  "microscopy",
+  "registration",
+  "image-registration",
+  "bioimage-analysis",
+  "TZCYX"
+]
 classifiers = [
-    "Development Status :: 1 - Planning",
-    "Intended Audience :: Science/Research",
-    "Topic :: Scientific/Engineering :: Image Processing",
-    "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent"
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Topic :: Scientific/Engineering :: Image Processing"
+]
+dependencies = [
+  "scipy",
+  "scikit-image",
+  "pystackreg",
+  "omio-microscopy",
+  "matplotlib",
+  "ipykernel"
 ]
 
-[project.urls]
-Homepage = "https://github.com/fabriziomusacchio/zenreg"
-Repository = "https://github.com/fabriziomusacchio/zenreg"
-Issues = "https://github.com/fabriziomusacchio/zenreg/issues"
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "ruff>=0.5"
+]
+
+[tool.setuptools.packages.find]
+include = ["zenreg*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

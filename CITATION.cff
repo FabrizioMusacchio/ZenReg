@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use ZenReg, please cite it using the metadata below."
+title: "ZenReg"
+date-released: "2026-06-01"
+authors:
+  - family-names: "Musacchio"
+    given-names: "Fabrizio"
+license: "GPL-3.0-or-later"
+repository-code: "https://github.com/FabrizioMusacchio/ZenReg"
+abstract: "Translation-based registration helpers for TZCYX microscopy stacks."
