@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "zenreg"
 version = "0.0.1"
-description = "Translation-based registration helpers for TZCYX microscopy stacks."
+description = "High-throughput, memory-efficient N-dimensional image registration."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-or-later" }
@@ -42,6 +42,11 @@ dev = [
   "pytest>=7",
   "ruff>=0.5"
 ]
+
+[project.urls]
+Homepage = "https://github.com/fabriziomusacchio/zenreg"
+Repository = "https://github.com/fabriziomusacchio/zenreg"
+Issues = "https://github.com/fabriziomusacchio/zenreg/issues"
 
 [tool.setuptools.packages.find]
 include = ["zenreg*"]
