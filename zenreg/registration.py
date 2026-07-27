@@ -7,16 +7,19 @@ Date: June 2026
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 
 import numpy as np
-from scipy.ndimage import median_filter, shift as ndi_shift
+from scipy.ndimage import median_filter
+from scipy.ndimage import shift as ndi_shift
 from skimage.registration import phase_cross_correlation
 
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack, normalize_zrange
 
 SUPPORTED_REGISTRATION_METHODS = {"phase_cross_correlation", "pystackreg"}
 SUPPORTED_INTRA_STACK_REFERENCE_MODES = {"neighbor", "full_projection"}
+SUPPORTED_PROJECTION_METHODS = {"max", "mean", "median", "var", "std"}
 
 
 def _normalize_registration_method(method: str) -> str:
@@ -54,6 +57,92 @@ def _normalize_neighbor_window_size(neighbor_window_size: int) -> int:
     return neighbor_window_size
 
 
+def _normalize_registration_stack(registration_stack: int, time_count: int) -> int:
+    """Validate the time point used as the registration reference."""
+
+    registration_stack = int(registration_stack)
+    if not 0 <= registration_stack < time_count:
+        raise ValueError(
+            f"registration_stack must be between 0 and {time_count - 1}. "
+            f"Got {registration_stack!r}."
+        )
+    return registration_stack
+
+
+def _normalize_projection_method(projection_method: str) -> str:
+    """Normalize and validate a Z-projection method."""
+
+    normalized = str(projection_method).strip().lower()
+    if normalized not in SUPPORTED_PROJECTION_METHODS:
+        raise ValueError(
+            f"Unsupported projection_method {projection_method!r}. "
+            f"Supported methods: {sorted(SUPPORTED_PROJECTION_METHODS)}."
+        )
+    return normalized
+
+
+def _project_zyx_to_yx(volume_zyx: np.ndarray, *, projection_method: str) -> np.ndarray:
+    """Project one ``ZYX`` volume to ``YX`` using a validated method."""
+
+    if projection_method == "max":
+        return np.max(volume_zyx, axis=0)
+    if projection_method == "mean":
+        return np.mean(volume_zyx, axis=0)
+    if projection_method == "median":
+        return np.median(volume_zyx, axis=0)
+    if projection_method == "var":
+        return np.var(volume_zyx, axis=0)
+    return np.std(volume_zyx, axis=0)
+
+
+def _resolve_filter_aliases(
+    *,
+    filter_slices: bool,
+    filter_projections: bool,
+    pre_median_filter: bool | None,
+    post_median_filter: bool | None,
+) -> tuple[bool, bool]:
+    """Resolve new filter option names while accepting legacy aliases."""
+
+    if pre_median_filter is not None:
+        warnings.warn(
+            "pre_median_filter is deprecated; use filter_slices instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        if filter_slices and not bool(pre_median_filter):
+            raise ValueError("Conflicting filter_slices=True and pre_median_filter=False.")
+        filter_slices = bool(pre_median_filter)
+
+    if post_median_filter is not None:
+        warnings.warn(
+            "post_median_filter is deprecated; use filter_projections instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        if filter_projections and not bool(post_median_filter):
+            raise ValueError("Conflicting filter_projections=True and post_median_filter=False.")
+        filter_projections = bool(post_median_filter)
+
+    return bool(filter_slices), bool(filter_projections)
+
+
+def _normalize_phase_cross_correlation_normalization(normalization: str | None) -> str | None:
+    """Normalize scikit-image's phase-cross-correlation normalization option."""
+
+    if normalization is None:
+        return None
+    normalized = str(normalization).strip().lower()
+    if normalized in {"none", "null"}:
+        return None
+    if normalized != "phase":
+        raise ValueError(
+            "phase_cross_correlation_normalization must be None, 'none', or 'phase'. "
+            f"Got {normalization!r}."
+        )
+    return normalized
+
+
 def _apply_median_to_zyx(volume_zyx: np.ndarray, kernel_size: int) -> np.ndarray:
     """Apply a 2D median filter independently to each Z plane of a ``ZYX`` volume."""
 
@@ -69,16 +158,17 @@ def _build_intra_stack_reference_image(
     z_index: int,
     reference_mode: str,
     neighbor_window_size: int,
+    projection_method: str,
 ) -> np.ndarray:
     """Build the per-slice registration reference used for Z-drift correction."""
 
     if reference_mode == "full_projection":
-        return np.max(volume_zyx, axis=0)
+        return _project_zyx_to_yx(volume_zyx, projection_method=projection_method)
 
     half_window = neighbor_window_size // 2
     start = max(0, z_index - half_window)
     stop = min(volume_zyx.shape[0], z_index + half_window + 1)
-    return np.max(volume_zyx[start:stop, :, :], axis=0)
+    return _project_zyx_to_yx(volume_zyx[start:stop, :, :], projection_method=projection_method)
 
 
 def _build_registration_projections(
@@ -86,8 +176,9 @@ def _build_registration_projections(
     *,
     registration_channel: int,
     zrange: tuple[int, int] | Sequence[int] | None,
-    pre_median_filter: bool,
-    post_median_filter: bool,
+    projection_method: str,
+    filter_slices: bool,
+    filter_projections: bool,
     median_kernel_size: int,
 ) -> np.ndarray:
     """Create per-time-point 2D registration projections from a ``TZCYX`` stack."""
@@ -96,13 +187,18 @@ def _build_registration_projections(
     channel_stack = np.asarray(stack[:, z_start:z_stop, registration_channel, :, :], dtype=np.float32)
     working = channel_stack.copy()
 
-    if pre_median_filter:
+    if filter_slices:
         for t in range(working.shape[0]):
             working[t, :, :, :] = _apply_median_to_zyx(working[t, :, :, :], median_kernel_size)
 
-    projections = np.max(working, axis=1)
+    projections = np.empty((working.shape[0], working.shape[2], working.shape[3]), dtype=np.float32)
+    for t in range(working.shape[0]):
+        projections[t, :, :] = _project_zyx_to_yx(
+            working[t, :, :, :],
+            projection_method=projection_method,
+        )
 
-    if post_median_filter:
+    if filter_projections:
         for t in range(projections.shape[0]):
             projections[t, :, :] = median_filter(
                 projections[t, :, :], size=(median_kernel_size, median_kernel_size)
@@ -110,10 +206,21 @@ def _build_registration_projections(
     return projections
 
 
-def _phase_cross_correlation_shift(reference_projection: np.ndarray, moving_projection: np.ndarray) -> np.ndarray:
+def _phase_cross_correlation_shift(
+    reference_projection: np.ndarray,
+    moving_projection: np.ndarray,
+    *,
+    upsample_factor: int,
+    normalization: str | None,
+) -> np.ndarray:
     """Estimate a 2D translation with phase cross-correlation."""
 
-    shift_2d, _, _ = phase_cross_correlation(reference_projection, moving_projection)
+    shift_2d, _, _ = phase_cross_correlation(
+        reference_projection,
+        moving_projection,
+        upsample_factor=int(upsample_factor),
+        normalization=normalization,
+    )
     return np.asarray(shift_2d, dtype=np.float32)
 
 
@@ -127,11 +234,23 @@ def _pystackreg_shift(reference_projection: np.ndarray, moving_projection: np.nd
     return np.asarray([-tmat[1, 2], -tmat[0, 2]], dtype=np.float32)
 
 
-def _estimate_shift(reference_projection: np.ndarray, moving_projection: np.ndarray, *, method: str) -> np.ndarray:
+def _estimate_shift(
+    reference_projection: np.ndarray,
+    moving_projection: np.ndarray,
+    *,
+    method: str,
+    phase_cross_correlation_upsample_factor: int,
+    phase_cross_correlation_normalization: str | None,
+) -> np.ndarray:
     """Estimate a 2D registration shift using the selected backend."""
 
     if method == "phase_cross_correlation":
-        return _phase_cross_correlation_shift(reference_projection, moving_projection)
+        return _phase_cross_correlation_shift(
+            reference_projection,
+            moving_projection,
+            upsample_factor=phase_cross_correlation_upsample_factor,
+            normalization=phase_cross_correlation_normalization,
+        )
     return _pystackreg_shift(reference_projection, moving_projection)
 
 
@@ -182,11 +301,16 @@ def correct_intra_stack_z_drift(
     method: str = "phase_cross_correlation",
     reference_mode: str = "neighbor",
     neighbor_window_size: int = 3,
-    pre_median_filter: bool = False,
-    post_median_filter: bool = False,
+    projection_method: str = "max",
+    filter_slices: bool = False,
+    filter_projections: bool = False,
     median_kernel_size: int = 3,
+    phase_cross_correlation_upsample_factor: int = 20,
+    phase_cross_correlation_normalization: str | None = None,
     verbose: bool = True,
     return_shifts: bool = False,
+    pre_median_filter: bool | None = None,
+    post_median_filter: bool | None = None,
 ):
     """
     Correct XY drift between Z slices within each time point of a ``TZCYX`` stack.
@@ -204,14 +328,21 @@ def correct_intra_stack_z_drift(
         Strategy for constructing each per-slice reference image.
     neighbor_window_size : int, optional
         Odd number of slices used for ``reference_mode="neighbor"``.
-    pre_median_filter : bool, optional
+    projection_method : {"max", "mean", "median", "var", "std"}, optional
+        Z-projection method used for reference construction.
+    filter_slices : bool, optional
         If True, apply a slice-wise median filter before reference construction.
         This affects only shift estimation.
-    post_median_filter : bool, optional
+    filter_projections : bool, optional
         If True, apply a 2D median filter to moving and reference images just
         before shift estimation.
     median_kernel_size : int, optional
         Median filter kernel size used by the optional filters.
+    phase_cross_correlation_upsample_factor : int, optional
+        Subpixel upsampling factor for ``method="phase_cross_correlation"``.
+    phase_cross_correlation_normalization : {None, "phase"}, optional
+        Normalization mode forwarded to scikit-image's phase cross-correlation.
+        ``None`` is more robust for the smooth synthetic examples.
     verbose : bool, optional
         If True, print progress messages.
     return_shifts : bool, optional
@@ -228,6 +359,16 @@ def correct_intra_stack_z_drift(
     method = _normalize_registration_method(method)
     reference_mode = _normalize_intra_stack_reference_mode(reference_mode)
     neighbor_window_size = _normalize_neighbor_window_size(neighbor_window_size)
+    projection_method = _normalize_projection_method(projection_method)
+    filter_slices, filter_projections = _resolve_filter_aliases(
+        filter_slices=filter_slices,
+        filter_projections=filter_projections,
+        pre_median_filter=pre_median_filter,
+        post_median_filter=post_median_filter,
+    )
+    phase_cross_correlation_normalization = _normalize_phase_cross_correlation_normalization(
+        phase_cross_correlation_normalization
+    )
 
     if not 0 <= int(registration_channel) < stack.shape[2]:
         raise ValueError(
@@ -236,6 +377,11 @@ def correct_intra_stack_z_drift(
         )
     if int(median_kernel_size) < 1:
         raise ValueError(f"median_kernel_size must be >= 1. Got {median_kernel_size!r}.")
+    if int(phase_cross_correlation_upsample_factor) < 1:
+        raise ValueError(
+            "phase_cross_correlation_upsample_factor must be >= 1. "
+            f"Got {phase_cross_correlation_upsample_factor!r}."
+        )
 
     shifts = np.zeros((stack.shape[0], stack.shape[1], 2), dtype=np.float32)
     if stack.shape[1] <= 1:
@@ -247,7 +393,7 @@ def correct_intra_stack_z_drift(
         volume_zyx = np.asarray(stack[t, :, int(registration_channel), :, :], dtype=np.float32)
         working_volume = volume_zyx.copy()
 
-        if pre_median_filter:
+        if filter_slices:
             working_volume = _apply_median_to_zyx(working_volume, int(median_kernel_size))
 
         for z in range(stack.shape[1]):
@@ -257,14 +403,23 @@ def correct_intra_stack_z_drift(
                 z_index=z,
                 reference_mode=reference_mode,
                 neighbor_window_size=neighbor_window_size,
+                projection_method=projection_method,
             ).astype(np.float32, copy=False)
 
-            if post_median_filter:
+            if filter_projections:
                 kernel = (int(median_kernel_size), int(median_kernel_size))
                 moving_image = median_filter(moving_image, size=kernel)
                 reference_image = median_filter(reference_image, size=kernel)
 
-            shift_yx = _estimate_shift(reference_image, moving_image, method=method)
+            shift_yx = _estimate_shift(
+                reference_image,
+                moving_image,
+                method=method,
+                phase_cross_correlation_upsample_factor=int(
+                    phase_cross_correlation_upsample_factor
+                ),
+                phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+            )
             shifts[t, z, :] = shift_yx
             _print_verbose(
                 verbose,
@@ -279,13 +434,19 @@ def register_stack(
     stack,
     *,
     registration_channel: int,
+    registration_stack: int = 0,
     method: str = "phase_cross_correlation",
     zrange: tuple[int, int] | Sequence[int] | None = None,
-    pre_median_filter: bool = False,
-    post_median_filter: bool = False,
+    projection_method: str = "max",
+    filter_slices: bool = False,
+    filter_projections: bool = False,
     median_kernel_size: int = 3,
+    phase_cross_correlation_upsample_factor: int = 20,
+    phase_cross_correlation_normalization: str | None = None,
     verbose: bool = True,
     return_shifts: bool = False,
+    pre_median_filter: bool | None = None,
+    post_median_filter: bool | None = None,
 ):
     """
     Register a ``TZCYX`` stack across time using shifts estimated from Z projections.
@@ -296,19 +457,28 @@ def register_stack(
         Input stack in canonical ``TZCYX`` order.
     registration_channel : int
         Channel used to compute the time-wise registration shifts.
+    registration_stack : int, optional
+        Time point used as reference/template for registration. Defaults to 0.
     method : {"phase_cross_correlation", "pystackreg"}, optional
         Backend used for shift estimation.
     zrange : tuple[int, int] or None, optional
-        Optional half-open Z range ``(start, stop)`` used for the max-Z
+        Optional half-open Z range ``(start, stop)`` used for the Z
         registration projection.
-    pre_median_filter : bool, optional
+    projection_method : {"max", "mean", "median", "var", "std"}, optional
+        Z-projection method used for shift estimation.
+    filter_slices : bool, optional
         If True, apply slice-wise median filtering to the registration channel
-        before max-Z projection. This affects only shift estimation.
-    post_median_filter : bool, optional
+        before projection. This affects only shift estimation.
+    filter_projections : bool, optional
         If True, apply 2D median filtering to each projection after projection.
         This affects only shift estimation.
     median_kernel_size : int, optional
         Median filter kernel size used by the optional filters.
+    phase_cross_correlation_upsample_factor : int, optional
+        Subpixel upsampling factor for ``method="phase_cross_correlation"``.
+    phase_cross_correlation_normalization : {None, "phase"}, optional
+        Normalization mode forwarded to scikit-image's phase cross-correlation.
+        ``None`` is more robust for the smooth synthetic examples.
     verbose : bool, optional
         If True, print the estimated shifts.
     return_shifts : bool, optional
@@ -323,6 +493,17 @@ def register_stack(
 
     stack = ensure_tzcyx_stack(stack).astype(np.float32, copy=True)
     method = _normalize_registration_method(method)
+    projection_method = _normalize_projection_method(projection_method)
+    registration_stack = _normalize_registration_stack(registration_stack, stack.shape[0])
+    filter_slices, filter_projections = _resolve_filter_aliases(
+        filter_slices=filter_slices,
+        filter_projections=filter_projections,
+        pre_median_filter=pre_median_filter,
+        post_median_filter=post_median_filter,
+    )
+    phase_cross_correlation_normalization = _normalize_phase_cross_correlation_normalization(
+        phase_cross_correlation_normalization
+    )
 
     if stack.shape[0] <= 1:
         raise ValueError("Registration requires T > 1.")
@@ -333,16 +514,22 @@ def register_stack(
         )
     if int(median_kernel_size) < 1:
         raise ValueError(f"median_kernel_size must be >= 1. Got {median_kernel_size!r}.")
+    if int(phase_cross_correlation_upsample_factor) < 1:
+        raise ValueError(
+            "phase_cross_correlation_upsample_factor must be >= 1. "
+            f"Got {phase_cross_correlation_upsample_factor!r}."
+        )
 
     projections = _build_registration_projections(
         stack,
         registration_channel=int(registration_channel),
         zrange=zrange,
-        pre_median_filter=pre_median_filter,
-        post_median_filter=post_median_filter,
+        projection_method=projection_method,
+        filter_slices=filter_slices,
+        filter_projections=filter_projections,
         median_kernel_size=int(median_kernel_size),
     )
-    reference_projection = projections[0, :, :]
+    reference_projection = projections[registration_stack, :, :]
     registered = stack.copy()
     shifts = np.zeros((stack.shape[0], 2), dtype=np.float32)
 
@@ -350,13 +537,22 @@ def register_stack(
         verbose,
         (
             f"Registering {CANONICAL_AXIS_ORDER} stack with method='{method}', "
-            f"registration_channel={int(registration_channel)}, reference_t=0"
+            f"registration_channel={int(registration_channel)}, "
+            f"registration_stack={registration_stack}, projection_method='{projection_method}'"
         ),
     )
-    _print_verbose(verbose, "t=0 shift_y=0.000 shift_x=0.000")
+    _print_verbose(verbose, f"t={registration_stack} shift_y=0.000 shift_x=0.000")
 
-    for t in range(1, stack.shape[0]):
-        shift_yx = _estimate_shift(reference_projection, projections[t, :, :], method=method)
+    for t in range(stack.shape[0]):
+        if t == registration_stack:
+            continue
+        shift_yx = _estimate_shift(
+            reference_projection,
+            projections[t, :, :],
+            method=method,
+            phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
+            phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+        )
         shifts[t, :] = shift_yx
         _print_verbose(
             verbose,

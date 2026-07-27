@@ -7,6 +7,7 @@ Date: June 2026
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -146,6 +147,86 @@ def create_3d_motion_distorted_stack(
     return stack, time_shifts, z_shifts
 
 
+def _write_time_shift_table(
+    path: Path,
+    shifts_yx: np.ndarray,
+    *,
+    registration_stack: int = 0,
+) -> Path:
+    """Write applied and expected time-registration shifts to a CSV table."""
+
+    expected_registration_shifts = shifts_yx[int(registration_stack), :] - shifts_yx
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "t",
+                "applied_shift_y",
+                "applied_shift_x",
+                f"expected_registration_shift_y_ref_t{registration_stack}",
+                f"expected_registration_shift_x_ref_t{registration_stack}",
+            ]
+        )
+        for t, (applied_shift, expected_shift) in enumerate(
+            zip(shifts_yx, expected_registration_shifts, strict=True)
+        ):
+            writer.writerow(
+                [
+                    t,
+                    float(applied_shift[0]),
+                    float(applied_shift[1]),
+                    float(expected_shift[0]),
+                    float(expected_shift[1]),
+                ]
+            )
+    return path
+
+
+def _write_3d_slice_shift_table(
+    path: Path,
+    *,
+    time_shifts_yx: np.ndarray,
+    z_shifts_yx: np.ndarray,
+) -> Path:
+    """Write per-slice local and total applied shifts to a CSV table."""
+
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "t",
+                "z",
+                "applied_time_shift_y",
+                "applied_time_shift_x",
+                "applied_local_z_shift_y",
+                "applied_local_z_shift_x",
+                "applied_total_shift_y",
+                "applied_total_shift_x",
+                "expected_local_z_correction_shift_y",
+                "expected_local_z_correction_shift_x",
+            ]
+        )
+        for t in range(z_shifts_yx.shape[0]):
+            for z in range(z_shifts_yx.shape[1]):
+                local_shift = z_shifts_yx[t, z, :]
+                total_shift = time_shifts_yx[t, :] + local_shift
+                writer.writerow(
+                    [
+                        t,
+                        z,
+                        float(time_shifts_yx[t, 0]),
+                        float(time_shifts_yx[t, 1]),
+                        float(local_shift[0]),
+                        float(local_shift[1]),
+                        float(total_shift[0]),
+                        float(total_shift[1]),
+                        float(-local_shift[0]),
+                        float(-local_shift[1]),
+                    ]
+                )
+    return path
+
+
 def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
     """
     Write the default ZenReg synthetic example datasets.
@@ -168,10 +249,24 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
     stack_3d, time_shifts_3d, z_shifts_3d = create_3d_motion_distorted_stack()
 
     paths = {
-        "motion_2d_npy": str(save_stack(output_dir / "motion_distorted_2d_tzcyx.npy", stack_2d)),
         "motion_2d_tif": str(save_stack(output_dir / "motion_distorted_2d_tzcyx.tif", stack_2d)),
-        "motion_3d_npy": str(save_stack(output_dir / "motion_distorted_3d_tzcyx.npy", stack_3d)),
         "motion_3d_tif": str(save_stack(output_dir / "motion_distorted_3d_tzcyx.tif", stack_3d)),
+        "motion_2d_time_gt_csv": str(
+            _write_time_shift_table(output_dir / "motion_distorted_2d_time_shifts_gt.csv", shifts_2d)
+        ),
+        "motion_3d_time_gt_csv": str(
+            _write_time_shift_table(
+                output_dir / "motion_distorted_3d_time_shifts_gt.csv",
+                time_shifts_3d,
+            )
+        ),
+        "motion_3d_slice_gt_csv": str(
+            _write_3d_slice_shift_table(
+                output_dir / "motion_distorted_3d_slice_shifts_gt.csv",
+                time_shifts_yx=time_shifts_3d,
+                z_shifts_yx=z_shifts_3d,
+            )
+        ),
     }
 
     metadata = {

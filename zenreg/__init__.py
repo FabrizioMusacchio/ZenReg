@@ -8,7 +8,7 @@ Author: Fabrizio Musacchio
 Date: June 2026
 """
 
-from .filters import apply_filters, max_z_project
+from .filters import apply_filters, max_z_project, z_project
 from .io import load_stack, save_stack
 from .registration import correct_intra_stack_z_drift, register_stack
 
@@ -19,6 +19,7 @@ __all__ = [
     "max_z_project",
     "register_stack",
     "save_stack",
+    "z_project",
 ]
 
 __version__ = "0.0.1"

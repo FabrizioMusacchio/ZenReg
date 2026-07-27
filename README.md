@@ -26,13 +26,14 @@ stacks represented in canonical `TZCYX` order:
 
 The current core includes:
 
-- time-wise stack registration with shifts estimated from max-Z projections;
+- time-wise stack registration with shifts estimated from configurable Z projections;
 - optional intra-stack Z-drift correction, where individual z-slices are aligned
   to local or full-stack projections;
-- optional median pre-filtering and post-filtering for shift estimation;
+- optional median filtering on slices before projection and on projections before
+  shift estimation;
 - two shift-estimation backends: `phase_cross_correlation` from scikit-image and
   `pystackreg`;
-- small filtering and max-Z projection helpers;
+- small filtering and Z-projection helpers;
 - simple `.npy`, `.npz`, and `.tif/.tiff` stack I/O for examples.
 
 ## Installation for local development
@@ -89,13 +90,15 @@ VS Code's interactive window.
 ```python
 from zenreg import load_stack, register_stack, save_stack
 
-stack = load_stack("example_data/motion_distorted_2d_tzcyx.npy")
+stack = load_stack("example_data/synthetic_data/motion_distorted_2d_tzcyx.tif")
 registered, shifts = register_stack(
     stack,
     registration_channel=0,
+    registration_stack=0,
+    projection_method="max",
     method="phase_cross_correlation",
     return_shifts=True)
-save_stack("example_data/motion_distorted_2d_registered.npy", registered)
+save_stack("example_data/synthetic_data/registered/motion_distorted_2d_registered.tif", registered)
 print(shifts)
 ```
 
@@ -112,6 +115,8 @@ z_corrected = correct_intra_stack_z_drift(
 registered = register_stack(
     z_corrected,
     registration_channel=0,
+    registration_stack=0,
+    projection_method="max",
     zrange=None)
 ```
 
@@ -127,4 +132,3 @@ If you use ZenReg in your research, please cite it as:
 ```
 Fabrizio Musacchio (2026). ZenReg: A Python-based high-throughput, memory-efficient N-dimensional image registration pipeline. Zenodo. https://doi.org/10.5281/zenodo.XXXXXXX
 ``` 
-

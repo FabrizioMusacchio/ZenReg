@@ -15,6 +15,7 @@ from scipy.ndimage import gaussian_filter, median_filter
 from ._axes import normalize_zrange, promote_to_tzcyx, restore_promoted_shape
 
 SUPPORTED_FILTERS = {"median", "gaussian"}
+SUPPORTED_PROJECTION_METHODS = {"max", "mean", "median", "var", "std"}
 
 
 def _normalize_filter_sequence(filters: str | Sequence[str]) -> list[str]:
@@ -84,6 +85,32 @@ def _apply_filter_sequence_to_volume(
                     filtered[z, :, :] = gaussian_filter(plane, sigma=(gaussian_sigma, gaussian_sigma))
             working_volume = filtered
     return working_volume
+
+
+def _normalize_projection_method(projection_method: str) -> str:
+    """Normalize and validate a Z-projection method."""
+
+    normalized = str(projection_method).strip().lower()
+    if normalized not in SUPPORTED_PROJECTION_METHODS:
+        raise ValueError(
+            f"Unsupported projection_method {projection_method!r}. "
+            f"Supported methods: {sorted(SUPPORTED_PROJECTION_METHODS)}."
+        )
+    return normalized
+
+
+def _project_z(stack: np.ndarray, *, projection_method: str) -> np.ndarray:
+    """Project a temporary ``TZCYX`` stack along Z while preserving Z as length 1."""
+
+    if projection_method == "max":
+        return np.max(stack, axis=1, keepdims=True)
+    if projection_method == "mean":
+        return np.mean(stack, axis=1, keepdims=True)
+    if projection_method == "median":
+        return np.median(stack, axis=1, keepdims=True)
+    if projection_method == "var":
+        return np.var(stack, axis=1, keepdims=True)
+    return np.std(stack, axis=1, keepdims=True)
 
 
 def apply_filters(
@@ -157,9 +184,14 @@ def apply_filters(
     return restore_promoted_shape(filtered, original_ndim)
 
 
-def max_z_project(stack, *, zrange: tuple[int, int] | Sequence[int] | None = None) -> np.ndarray:
+def z_project(
+    stack,
+    *,
+    zrange: tuple[int, int] | Sequence[int] | None = None,
+    projection_method: str = "max",
+) -> np.ndarray:
     """
-    Compute a maximum-intensity projection over Z while preserving ``T`` and ``C``.
+    Project over Z while preserving ``T`` and ``C``.
 
     Parameters
     ----------
@@ -168,6 +200,8 @@ def max_z_project(stack, *, zrange: tuple[int, int] | Sequence[int] | None = Non
     zrange : tuple[int, int] or None, optional
         Optional half-open Z range ``(start, stop)``. Out-of-bound values are
         clamped to the stack extent.
+    projection_method : {"max", "mean", "median", "var", "std"}, optional
+        Projection method used along Z.
 
     Returns
     -------
@@ -175,8 +209,22 @@ def max_z_project(stack, *, zrange: tuple[int, int] | Sequence[int] | None = Non
         Projected image. A ``TZCYX`` input returns a ``T, 1, C, Y, X`` stack.
     """
 
+    projection_method = _normalize_projection_method(projection_method)
     original_stack = np.asarray(stack)
     working_stack, original_ndim = promote_to_tzcyx(original_stack)
     z_start, z_stop = normalize_zrange(zrange, working_stack.shape[1])
-    projected = np.max(working_stack[:, z_start:z_stop, :, :, :], axis=1, keepdims=True)
+    projected = _project_z(
+        working_stack[:, z_start:z_stop, :, :, :],
+        projection_method=projection_method,
+    )
     return restore_promoted_shape(projected.astype(np.float32, copy=False), original_ndim)
+
+
+def max_z_project(stack, *, zrange: tuple[int, int] | Sequence[int] | None = None) -> np.ndarray:
+    """
+    Compute a maximum-intensity projection over Z while preserving ``T`` and ``C``.
+
+    This is a convenience wrapper around :func:`z_project`.
+    """
+
+    return z_project(stack, zrange=zrange, projection_method="max")
