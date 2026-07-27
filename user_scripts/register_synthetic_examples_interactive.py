@@ -10,8 +10,24 @@ Author: Fabrizio Musacchio
 Date: June 2026
 """
 # %% IMPORTS
+import os
 import sys
+import tempfile
 from pathlib import Path
+
+SCRIPT_CACHE_DIR = Path(
+    os.environ.get(
+        "ZENREG_OMIO_CACHE_DIR",
+        Path(tempfile.gettempdir()) / "zenreg-omio-cache",
+    )
+)
+SCRIPT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", str(SCRIPT_CACHE_DIR / "matplotlib"))
+os.environ.setdefault("NUMBA_CACHE_DIR", str(SCRIPT_CACHE_DIR / "numba"))
+if not os.access(Path.home(), os.W_OK):
+    script_home = SCRIPT_CACHE_DIR / "home"
+    script_home.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("HOME", str(script_home))
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,19 +38,20 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from zenreg import correct_intra_stack_z_drift, load_stack, register_stack, save_stack, z_project
+
 # %% DEFINE INPUT AND OUTPUT PATHS
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-STACK_2D_PATH = EXAMPLE_DIR / "motion_distorted_2d_tzcyx.tif"
-STACK_3D_PATH = EXAMPLE_DIR / "motion_distorted_3d_tzcyx.tif"
+STACK_2D_PATH = EXAMPLE_DIR / "motion_distorted_2d_tzcyx.ome.tif"
+STACK_3D_PATH = EXAMPLE_DIR / "motion_distorted_3d_tzcyx.ome.tif"
 GT_2D_TIME_PATH = EXAMPLE_DIR / "motion_distorted_2d_time_shifts_gt.csv"
 GT_3D_TIME_PATH = EXAMPLE_DIR / "motion_distorted_3d_time_shifts_gt.csv"
 GT_3D_SLICE_PATH = EXAMPLE_DIR / "motion_distorted_3d_slice_shifts_gt.csv"
 
-OUTPUT_2D_PATH = OUTPUT_DIR / "motion_distorted_2d_registered.tif"
-OUTPUT_3D_PATH = OUTPUT_DIR / "motion_distorted_3d_zcorrected_registered.tif"
+OUTPUT_2D_PATH = OUTPUT_DIR / "motion_distorted_2d_registered.ome.tif"
+OUTPUT_3D_PATH = OUTPUT_DIR / "motion_distorted_3d_zcorrected_registered.ome.tif"
 # %% REGISTRATION SETTINGS
 REGISTRATION_STACK = 0
 REGISTRATION_CHANNEL = 0
@@ -110,20 +127,20 @@ def compare_time_registration_backends(stack, expected_shifts, *, title: str) ->
     for method in ("phase_cross_correlation", "pystackreg"):
         _, shifts = register_stack(
             stack,
-            registration_channel=REGISTRATION_CHANNEL,
-            registration_stack=REGISTRATION_STACK,
-            method=method,
+            registration_channel=REGISTRATION_CHANNEL,  # channel used to estimate shifts
+            registration_stack=REGISTRATION_STACK,  # reference time point/template
+            method=method,  # "phase_cross_correlation" or "pystackreg"
             zrange=None,
-            projection_method=PROJECTION_METHOD,
-            filter_slices=True,
-            filter_projections=True,
-            median_kernel_size=3,
+            projection_method=PROJECTION_METHOD,  # "max", "mean", "median", "var", or "std"
+            filter_slices=True,  # median-filter Z slices before projection
+            filter_projections=True,  # median-filter projections before shift estimation
+            median_kernel_size=3,  # median-filter kernel size in pixels
             verbose=False,
             return_shifts=True,
         )
         print_shift_comparison(f"{title} / {method}", shifts, expected_shifts)
 # %% LOAD 2D SYNTHETIC STACK
-stack_2d = load_stack(STACK_2D_PATH)
+stack_2d, metadata_2d = load_stack(STACK_2D_PATH, return_metadata=True, verbose=False)
 expected_2d_time_shifts = load_expected_time_registration_shifts(
     GT_2D_TIME_PATH,
     registration_stack=REGISTRATION_STACK,
@@ -140,15 +157,16 @@ compare_time_registration_backends(stack_2d, expected_2d_time_shifts, title="2D 
 # %% REGISTER 2D STACK ACROSS TIME
 registered_2d, shifts_2d = register_stack(
     stack_2d,
-    registration_channel=REGISTRATION_CHANNEL,
-    registration_stack=REGISTRATION_STACK,
-    method=REGISTRATION_METHOD,
-    projection_method=PROJECTION_METHOD,
-    filter_slices=True,
-    filter_projections=True,
-    median_kernel_size=3,
+    registration_channel=REGISTRATION_CHANNEL,  # channel used to estimate shifts
+    registration_stack=REGISTRATION_STACK,  # reference time point/template
+    method=REGISTRATION_METHOD,  # "phase_cross_correlation" or "pystackreg"
+    projection_method=PROJECTION_METHOD,  # "max", "mean", "median", "var", or "std"
+    filter_slices=True,  # median-filter Z slices before projection
+    filter_projections=True,  # median-filter projections before shift estimation
+    median_kernel_size=3,  # median-filter kernel size in pixels
     verbose=True,
-    return_shifts=True)
+    return_shifts=True,
+)
 print("Estimated 2D time shifts:")
 print(shifts_2d)
 print_shift_comparison("2D selected backend", shifts_2d, expected_2d_time_shifts)
@@ -158,9 +176,10 @@ show_timepoints(
     channel=REGISTRATION_CHANNEL,
     projection_method=PROJECTION_METHOD,
 )
-save_stack(OUTPUT_2D_PATH, registered_2d)
+written_2d_path = save_stack(OUTPUT_2D_PATH, registered_2d, metadata=metadata_2d)
+print(f"Saved registered 2D stack to: {written_2d_path}")
 # %% LOAD 3D SYNTHETIC STACK
-stack_3d = load_stack(STACK_3D_PATH)
+stack_3d, metadata_3d = load_stack(STACK_3D_PATH, return_metadata=True, verbose=False)
 expected_3d_time_shifts = load_expected_time_registration_shifts(
     GT_3D_TIME_PATH,
     registration_stack=REGISTRATION_STACK,
@@ -175,16 +194,17 @@ show_timepoints(
 # %% CORRECT INTRA-STACK Z DRIFT
 z_corrected_3d, z_shifts_3d = correct_intra_stack_z_drift(
     stack_3d,
-    registration_channel=REGISTRATION_CHANNEL,
-    method="phase_cross_correlation",
-    reference_mode="full_projection", # neighbor or full_projection
-    neighbor_window_size=3,
-    projection_method=PROJECTION_METHOD,
-    filter_slices=True,
-    filter_projections=True,
-    median_kernel_size=3,
+    registration_channel=REGISTRATION_CHANNEL,  # channel used to estimate shifts
+    method="phase_cross_correlation",  # "phase_cross_correlation" or "pystackreg"
+    reference_mode="full_projection",  # "neighbor" or "full_projection"
+    neighbor_window_size=3,  # odd Z-window size for reference_mode="neighbor"
+    projection_method=PROJECTION_METHOD,  # "max", "mean", "median", "var", or "std"
+    filter_slices=True,  # median-filter Z slices before projection/reference creation
+    filter_projections=True,  # median-filter images before shift estimation
+    median_kernel_size=3,  # median-filter kernel size in pixels
     verbose=True,
-    return_shifts=True)
+    return_shifts=True,
+)
 print(f"Estimated Z shifts shape: {z_shifts_3d.shape}")
 print(f"3D slice GT table: {GT_3D_SLICE_PATH}")
 print(
@@ -206,16 +226,17 @@ compare_time_registration_backends(z_corrected_3d, expected_3d_time_shifts, titl
 # %% REGISTER 3D STACK ACROSS TIME
 registered_3d, time_shifts_3d = register_stack(
     z_corrected_3d,
-    registration_channel=REGISTRATION_CHANNEL,
-    registration_stack=REGISTRATION_STACK,
-    method=REGISTRATION_METHOD,
+    registration_channel=REGISTRATION_CHANNEL,  # channel used to estimate shifts
+    registration_stack=REGISTRATION_STACK,  # reference time point/template
+    method=REGISTRATION_METHOD,  # "phase_cross_correlation" or "pystackreg"
     zrange=None,
-    projection_method=PROJECTION_METHOD,
-    filter_slices=True,
-    filter_projections=True,
-    median_kernel_size=3,
+    projection_method=PROJECTION_METHOD,  # "max", "mean", "median", "var", or "std"
+    filter_slices=True,  # median-filter Z slices before projection
+    filter_projections=True,  # median-filter projections before shift estimation
+    median_kernel_size=3,  # median-filter kernel size in pixels
     verbose=True,
-    return_shifts=True)
+    return_shifts=True,
+)
 print("Estimated 3D time shifts:")
 print(time_shifts_3d)
 print_shift_comparison("3D selected backend", time_shifts_3d, expected_3d_time_shifts)
@@ -225,7 +246,8 @@ show_timepoints(
     channel=REGISTRATION_CHANNEL,
     projection_method=PROJECTION_METHOD,
 )
-save_stack(OUTPUT_3D_PATH, registered_3d)
+written_3d_path = save_stack(OUTPUT_3D_PATH, registered_3d, metadata=metadata_3d)
+print(f"Saved registered 3D stack to: {written_3d_path}")
 # %% PROJECT REGISTERED 3D STACK FOR QUICK INSPECTION
 projected_3d = z_project(registered_3d, projection_method=PROJECTION_METHOD)
 print(f"Projected 3D stack shape: {projected_3d.shape}")

@@ -9,16 +9,25 @@ Date: June 2026
 """
 
 from .filters import apply_filters, max_z_project, z_project
-from .io import load_stack, save_stack
+from .io import (
+    create_empty_stack,
+    create_stack_metadata,
+    load_stack,
+    save_stack,
+    update_stack_metadata,
+)
 from .registration import correct_intra_stack_z_drift, register_stack
 
 __all__ = [
     "apply_filters",
     "correct_intra_stack_z_drift",
+    "create_empty_stack",
+    "create_stack_metadata",
     "load_stack",
     "max_z_project",
     "register_stack",
     "save_stack",
+    "update_stack_metadata",
     "z_project",
 ]
 

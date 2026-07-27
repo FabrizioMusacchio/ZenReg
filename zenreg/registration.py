@@ -329,7 +329,13 @@ def correct_intra_stack_z_drift(
     neighbor_window_size : int, optional
         Odd number of slices used for ``reference_mode="neighbor"``.
     projection_method : {"max", "mean", "median", "var", "std"}, optional
-        Z-projection method used for reference construction.
+        Z-projection method used for reference construction. ``"max"`` remains
+        a good default for sparse spots or puncta. ``"mean"`` is often better
+        for dense, spatially extended signal. ``"median"`` is robust to
+        outliers, but can attenuate sparse spots. ``"std"`` and ``"var"`` can
+        be useful when contrast-rich structure matters more than absolute
+        intensity. A percentile projection, for example p95, would also be a
+        useful microscopy-oriented future extension.
     filter_slices : bool, optional
         If True, apply a slice-wise median filter before reference construction.
         This affects only shift estimation.
@@ -465,7 +471,13 @@ def register_stack(
         Optional half-open Z range ``(start, stop)`` used for the Z
         registration projection.
     projection_method : {"max", "mean", "median", "var", "std"}, optional
-        Z-projection method used for shift estimation.
+        Z-projection method used for shift estimation. ``"max"`` remains a
+        good default for sparse spots or puncta. ``"mean"`` is often better
+        for dense, spatially extended signal. ``"median"`` is robust to
+        outliers, but can attenuate sparse spots. ``"std"`` and ``"var"`` can
+        be useful when contrast-rich structure matters more than absolute
+        intensity. A percentile projection, for example p95, would also be a
+        useful microscopy-oriented future extension.
     filter_slices : bool, optional
         If True, apply slice-wise median filtering to the registration channel
         before projection. This affects only shift estimation.

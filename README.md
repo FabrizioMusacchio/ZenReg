@@ -34,7 +34,8 @@ The current core includes:
 - two shift-estimation backends: `phase_cross_correlation` from scikit-image and
   `pystackreg`;
 - small filtering and Z-projection helpers;
-- simple `.npy`, `.npz`, and `.tif/.tiff` stack I/O for examples.
+- OMIO-backed microscopy I/O for TIFF/OME-TIFF, CZI, LSM, and Thorlabs RAW,
+  normalized to canonical `TZCYX` with metadata inheritance on OME-TIFF output.
 
 ## Installation for local development
 We recommend using a Python virtual environment for local development. You can create one with:
@@ -90,7 +91,9 @@ VS Code's interactive window.
 ```python
 from zenreg import load_stack, register_stack, save_stack
 
-stack = load_stack("example_data/synthetic_data/motion_distorted_2d_tzcyx.tif")
+stack, metadata = load_stack(
+    "example_data/synthetic_data/motion_distorted_2d_tzcyx.ome.tif",
+    return_metadata=True)
 registered, shifts = register_stack(
     stack,
     registration_channel=0,
@@ -98,7 +101,10 @@ registered, shifts = register_stack(
     projection_method="max",
     method="phase_cross_correlation",
     return_shifts=True)
-save_stack("example_data/synthetic_data/registered/motion_distorted_2d_registered.tif", registered)
+save_stack(
+    "example_data/synthetic_data/registered/motion_distorted_2d_registered.ome.tif",
+    registered,
+    metadata=metadata)
 print(shifts)
 ```
 

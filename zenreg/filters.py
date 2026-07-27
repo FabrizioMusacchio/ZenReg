@@ -201,7 +201,13 @@ def z_project(
         Optional half-open Z range ``(start, stop)``. Out-of-bound values are
         clamped to the stack extent.
     projection_method : {"max", "mean", "median", "var", "std"}, optional
-        Projection method used along Z.
+        Projection method used along Z. ``"max"`` is a good default for sparse
+        spots or puncta. ``"mean"`` is often better for dense, spatially
+        extended signal. ``"median"`` is robust to outliers, but can attenuate
+        sparse spots. ``"std"`` and ``"var"`` can be useful when
+        contrast-rich structure matters more than absolute intensity. A
+        percentile projection, for example p95, would also be a useful
+        microscopy-oriented future extension.
 
     Returns
     -------

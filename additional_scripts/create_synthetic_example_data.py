@@ -1,7 +1,7 @@
 """
 Create synthetic example datasets for ZenReg.
 
-The script writes two canonical TZCYX stacks into ``example_data/synthetic_data``:
+The script writes two canonical TZCYX OME-TIFF stacks into ``example_data/synthetic_data``:
 - a 2D time-lapse stack with global time-wise motion artifacts;
 - a 3D time-lapse stack with global time-wise motion and intra-stack Z drift.
 

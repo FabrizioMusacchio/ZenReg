@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 from scipy.ndimage import shift as ndi_shift
 
-from .io import save_stack
+from .io import create_empty_stack, create_stack_metadata, save_stack
 
 
 def _gaussian_blob_grid(shape_yx: tuple[int, int], centers, sigmas) -> np.ndarray:
@@ -75,7 +75,12 @@ def create_2d_motion_distorted_stack(
     while len(base_channels) < channel_count:
         base_channels.append(rng.random(shape_yx, dtype=np.float32) * 0.2)
 
-    stack = np.zeros((time_count, 1, channel_count, *shape_yx), dtype=np.float32)
+    stack = create_empty_stack(
+        shape=(time_count, 1, channel_count, *shape_yx),
+        dtype=np.float32,
+        fill_value=0,
+        verbose=False,
+    )
     shifts = np.zeros((time_count, 2), dtype=np.float32)
 
     for t in range(time_count):
@@ -110,7 +115,12 @@ def create_3d_motion_distorted_stack(
     """
 
     rng = np.random.default_rng(random_state)
-    stack = np.zeros((time_count, z_count, channel_count, *shape_yx), dtype=np.float32)
+    stack = create_empty_stack(
+        shape=(time_count, z_count, channel_count, *shape_yx),
+        dtype=np.float32,
+        fill_value=0,
+        verbose=False,
+    )
     time_shifts = np.zeros((time_count, 2), dtype=np.float32)
     z_shifts = np.zeros((time_count, z_count, 2), dtype=np.float32)
 
@@ -247,10 +257,39 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
 
     stack_2d, shifts_2d = create_2d_motion_distorted_stack()
     stack_3d, time_shifts_3d, z_shifts_3d = create_3d_motion_distorted_stack()
+    metadata_2d = create_stack_metadata(
+        stack_2d,
+        annotations={
+            "ZenReg_SyntheticDataset": "motion_distorted_2d",
+            "ZenReg_TimeShiftGT": "motion_distorted_2d_time_shifts_gt.csv",
+        },
+        verbose=False,
+    )
+    metadata_3d = create_stack_metadata(
+        stack_3d,
+        annotations={
+            "ZenReg_SyntheticDataset": "motion_distorted_3d",
+            "ZenReg_TimeShiftGT": "motion_distorted_3d_time_shifts_gt.csv",
+            "ZenReg_SliceShiftGT": "motion_distorted_3d_slice_shifts_gt.csv",
+        },
+        verbose=False,
+    )
 
     paths = {
-        "motion_2d_tif": str(save_stack(output_dir / "motion_distorted_2d_tzcyx.tif", stack_2d)),
-        "motion_3d_tif": str(save_stack(output_dir / "motion_distorted_3d_tzcyx.tif", stack_3d)),
+        "motion_2d_ome_tif": str(
+            save_stack(
+                output_dir / "motion_distorted_2d_tzcyx.ome.tif",
+                stack_2d,
+                metadata=metadata_2d,
+            )
+        ),
+        "motion_3d_ome_tif": str(
+            save_stack(
+                output_dir / "motion_distorted_3d_tzcyx.ome.tif",
+                stack_3d,
+                metadata=metadata_3d,
+            )
+        ),
         "motion_2d_time_gt_csv": str(
             _write_time_shift_table(output_dir / "motion_distorted_2d_time_shifts_gt.csv", shifts_2d)
         ),
