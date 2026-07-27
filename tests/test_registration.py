@@ -4,6 +4,7 @@ from scipy.ndimage import shift as ndi_shift
 from zenreg import register_stack, z_project
 from zenreg.synthetic import (
     create_2d_motion_distorted_stack,
+    create_2d_time_rotation_motion_distorted_stack,
     create_3d_slice_motion_distorted_stack,
     create_3d_time_zyx_motion_distorted_stack,
 )
@@ -226,3 +227,73 @@ def test_synthetic_3d_time_zyx_example_matches_full_3d_gt():
     )
 
     np.testing.assert_allclose(shift_details["time_shifts_zyx"], applied_time_shifts[0] - applied_time_shifts, atol=0.2)
+
+
+def test_zero_clip_crops_directional_zyx_translation_borders():
+    stack = _two_timepoint_3d_stack((-1.0, -2.0, 3.0))
+
+    clipped, shift_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="full_3d",
+        zreg=True,
+        zero_clip=True,
+        verbose=False,
+        return_shifts=True,
+    )
+
+    assert clipped.shape == (2, stack.shape[1] - 1, 1, stack.shape[3] - 2, stack.shape[4] - 3)
+    assert shift_details["zero_clip_bounds"] == {
+        "z_top": 1,
+        "z_bottom": 0,
+        "y_top": 2,
+        "y_bottom": 0,
+        "x_left": 0,
+        "x_right": 3,
+    }
+
+
+def test_projection_range_alias_matches_zrange():
+    stack = _two_timepoint_3d_stack((0.0, 2.0, -3.0))
+
+    _, shifts_zrange = register_stack(
+        stack,
+        registration_channel=0,
+        zrange=(1, stack.shape[1] - 1),
+        verbose=False,
+        return_shifts=True,
+    )
+    _, shifts_projection_range = register_stack(
+        stack,
+        registration_channel=0,
+        projection_range=(1, stack.shape[1] - 1),
+        verbose=False,
+        return_shifts=True,
+    )
+
+    np.testing.assert_allclose(shifts_projection_range, shifts_zrange)
+
+
+def test_synthetic_rotation_example_matches_rotation_gt():
+    stack, _, applied_rotations_deg = create_2d_time_rotation_motion_distorted_stack(
+        time_count=5,
+        noise_sigma=0.0,
+    )
+
+    _, shift_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        rotreg=True,
+        max_xy_shifts=(0, 0),
+        max_rot_shifts=12,
+        verbose=False,
+        return_shifts=True,
+    )
+
+    np.testing.assert_allclose(
+        shift_details["rotation_shifts_deg"],
+        applied_rotations_deg[0] - applied_rotations_deg,
+        atol=0.25,
+    )

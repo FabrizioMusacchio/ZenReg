@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import shift as ndi_shift
+from skimage.transform import rotate
 
 from .io import create_empty_stack, create_stack_metadata, save_stack
 
@@ -52,6 +53,20 @@ def _apply_zyx_shift(volume: np.ndarray, shift_zyx: tuple[float, float, float]) 
         mode="constant",
         cval=0.0,
         prefilter=True,
+    ).astype(np.float32, copy=False)
+
+
+def _apply_yx_rotation(image: np.ndarray, angle_deg: float) -> np.ndarray:
+    """Apply an in-plane XY rotation to one image plane."""
+
+    return rotate(
+        image.astype(np.float32, copy=False),
+        float(angle_deg),
+        resize=False,
+        order=1,
+        mode="constant",
+        cval=0.0,
+        preserve_range=True,
     ).astype(np.float32, copy=False)
 
 
@@ -163,6 +178,17 @@ def _time_shifts_zyx(
         )
     shifts[0, :] = 0.0
     return shifts
+
+
+def _time_rotations_deg(time_count: int, *, amplitude_deg: float = 8.0) -> np.ndarray:
+    """Create deterministic time-wise in-plane rotations with t=0 as reference."""
+
+    rotations = np.zeros(time_count, dtype=np.float32)
+    denominator = max(time_count - 1, 1)
+    for t in range(time_count):
+        rotations[t] = amplitude_deg * np.sin(2 * np.pi * t / denominator)
+    rotations[0] = 0.0
+    return rotations
 
 
 def _slice_shifts_yx(
@@ -377,6 +403,44 @@ def create_3d_time_zyx_motion_distorted_stack(
     return stack, time_shifts
 
 
+def create_2d_time_rotation_motion_distorted_stack(
+    *,
+    time_count: int = 10,
+    channel_count: int = 2,
+    shape_yx: tuple[int, int] = (128, 128),
+    noise_sigma: float = 0.02,
+    random_state: int = 29,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Create a ``TZCYX`` 2D+t stack with global in-plane rotation.
+
+    This is the benchmark case for ``rotreg=True``. ``t=0`` is unshifted and
+    unrotated. Returns the stack, applied YX translations (zeros), and applied
+    rotations in degrees.
+    """
+
+    rng = np.random.default_rng(random_state)
+    base_channels = _base_2d_channels(shape_yx, channel_count=channel_count, rng=rng)
+    stack = create_empty_stack(
+        shape=(time_count, 1, channel_count, *shape_yx),
+        dtype=np.float32,
+        fill_value=0,
+        verbose=False,
+    )
+    time_shifts = np.zeros((time_count, 2), dtype=np.float32)
+    rotations_deg = _time_rotations_deg(time_count, amplitude_deg=8.0)
+
+    for t in range(time_count):
+        shift_yx = tuple(float(v) for v in time_shifts[t])
+        angle_deg = float(rotations_deg[t])
+        for c, base_image in enumerate(base_channels):
+            moved = _apply_yx_rotation(base_image, angle_deg)
+            moved = _apply_yx_shift(moved, shift_yx)
+            stack[t, 0, c, :, :] = _add_noise_and_clip(moved, rng=rng, noise_sigma=noise_sigma)
+
+    return stack, time_shifts, rotations_deg
+
+
 def create_3d_motion_distorted_stack(
     *,
     time_count: int = 10,
@@ -513,6 +577,31 @@ def _write_time_shift_zyx_table(
     return path
 
 
+def _write_time_rotation_table(
+    path: Path,
+    rotations_deg: np.ndarray,
+    *,
+    registration_stack: int = 0,
+) -> Path:
+    """Write applied and expected time-wise rotation corrections to a CSV table."""
+
+    expected_registration_rotations = rotations_deg[int(registration_stack)] - rotations_deg
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "t",
+                "applied_rotation_deg",
+                f"expected_registration_rotation_deg_ref_t{registration_stack}",
+            ]
+        )
+        for t, (applied_rotation, expected_rotation) in enumerate(
+            zip(rotations_deg, expected_registration_rotations, strict=True)
+        ):
+            writer.writerow([t, float(applied_rotation), float(expected_rotation)])
+    return path
+
+
 def _write_3d_slice_shift_table(
     path: Path,
     *,
@@ -581,6 +670,9 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
     stack_3d_t_xy, shifts_3d_t_xy = create_3d_time_xy_motion_distorted_stack()
     stack_3d_t_intra_xy, shifts_3d_t_intra_xy = create_3d_time_intra_motion_distorted_stack()
     stack_3d_t_zyx, shifts_3d_t_zyx = create_3d_time_zyx_motion_distorted_stack()
+    stack_2d_t_rot_xy, shifts_2d_t_rot_xy, rotations_2d_t_rot = (
+        create_2d_time_rotation_motion_distorted_stack()
+    )
 
     zero_time_shifts_3d = np.zeros((stack_3d_z_xy.shape[0], 2), dtype=np.float32)
     zero_time_shifts_3d_t = np.zeros((stack_3d_t_intra_xy.shape[0], 2), dtype=np.float32)
@@ -636,6 +728,18 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
                 "ZenReg_TimeShiftGT": "synthetic_3d_t_zyx_time_shifts_gt.csv",
             },
         },
+        "synthetic_2d_t_rot_xy": {
+            "stack": stack_2d_t_rot_xy,
+            "image": "synthetic_2d_t_rot_xy.ome.tif",
+            "time_gt": "synthetic_2d_t_rot_xy_time_shifts_gt.csv",
+            "rotation_gt": "synthetic_2d_t_rot_xy_time_rotations_gt.csv",
+            "annotations": {
+                "ZenReg_SyntheticDataset": "synthetic_2d_t_rot_xy",
+                "ZenReg_RegistrationTarget": "2D+t global in-plane rotation registration",
+                "ZenReg_TimeShiftGT": "synthetic_2d_t_rot_xy_time_shifts_gt.csv",
+                "ZenReg_RotationGT": "synthetic_2d_t_rot_xy_time_rotations_gt.csv",
+            },
+        },
     }
 
     paths: dict[str, str] = {}
@@ -677,6 +781,18 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
     paths["synthetic_3d_t_zyx_time_gt_csv"] = str(
         _write_time_shift_zyx_table(output_dir / "synthetic_3d_t_zyx_time_shifts_gt.csv", shifts_3d_t_zyx)
     )
+    paths["synthetic_2d_t_rot_xy_time_gt_csv"] = str(
+        _write_time_shift_table(
+            output_dir / "synthetic_2d_t_rot_xy_time_shifts_gt.csv",
+            shifts_2d_t_rot_xy,
+        )
+    )
+    paths["synthetic_2d_t_rot_xy_rotation_gt_csv"] = str(
+        _write_time_rotation_table(
+            output_dir / "synthetic_2d_t_rot_xy_time_rotations_gt.csv",
+            rotations_2d_t_rot,
+        )
+    )
 
     metadata = {
         "axis_order": "TZCYX",
@@ -685,11 +801,14 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
         "synthetic_3d_t_xy_shape": list(stack_3d_t_xy.shape),
         "synthetic_3d_t_intra_xy_shape": list(stack_3d_t_intra_xy.shape),
         "synthetic_3d_t_zyx_shape": list(stack_3d_t_zyx.shape),
+        "synthetic_2d_t_rot_xy_shape": list(stack_2d_t_rot_xy.shape),
         "synthetic_2d_t_xy_applied_time_shifts_yx": shifts_2d_t_xy.tolist(),
         "synthetic_3d_z_xy_applied_slice_shifts_yx": shifts_3d_z_xy.tolist(),
         "synthetic_3d_t_xy_applied_time_shifts_yx": shifts_3d_t_xy.tolist(),
         "synthetic_3d_t_intra_xy_applied_slice_shifts_yx": shifts_3d_t_intra_xy.tolist(),
         "synthetic_3d_t_zyx_applied_time_shifts_zyx": shifts_3d_t_zyx.tolist(),
+        "synthetic_2d_t_rot_xy_applied_time_shifts_yx": shifts_2d_t_rot_xy.tolist(),
+        "synthetic_2d_t_rot_xy_applied_rotations_deg": rotations_2d_t_rot.tolist(),
     }
     metadata_path = output_dir / "synthetic_motion_metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")

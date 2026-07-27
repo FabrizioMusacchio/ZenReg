@@ -32,6 +32,10 @@ The current core includes:
   to the first slice, local projections, or full-stack projections;
 - optional Z-shift estimation and correction for 3D+t time registration, either
   from full 3D phase cross-correlation or from orthogonal Z projections;
+- optional zero-clipping of translation-introduced borders in Z, Y, and X based
+  on the largest detected correction shifts in each direction;
+- optional in-plane XY rotation correction across time using polar projections
+  and phase cross-correlation;
 - template-based or sequential previous-frame time registration;
 - optional median filtering on slices before projection and on projections before
   shift estimation;
@@ -81,10 +85,11 @@ The examples use only local synthetic data. Generate the benchmark set with:
 python additional_scripts/create_synthetic_example_data.py
 ```
 
-This writes five two-channel OME-TIFF examples under
+This writes six two-channel OME-TIFF examples under
 `example_data/synthetic_data`: 2D+t global XY shifts, 3D per-slice XY shifts,
 3D+t global XY shifts, 3D+t intra-stack-only XY shifts, and 3D+t global ZYX
-shifts. Each stack has a matching GT CSV table.
+shifts, plus 2D+t global in-plane rotation. Each stack has a matching GT CSV
+table.
 
 Then run the interactive VS Code script:
 
@@ -145,9 +150,10 @@ registered, shift_details = register_stack(
     method="phase_cross_correlation",
     projection_method="max",
     zreg=True,
+    zero_clip=True,
     max_xy_shifts=None,
     max_z_shifts=None,
-    zrange=None,
+    projection_range=None,
     return_shifts=True)
 ```
 

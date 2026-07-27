@@ -14,6 +14,7 @@ import numpy as np
 from scipy.ndimage import median_filter
 from scipy.ndimage import shift as ndi_shift
 from skimage.registration import phase_cross_correlation
+from skimage.transform import rotate, warp_polar
 
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack, normalize_zrange
 
@@ -131,6 +132,40 @@ def _normalize_max_z_shifts(max_z_shifts: float | None):
     return limit
 
 
+def _normalize_max_rot_shifts(max_rot_shifts: float | None):
+    """Normalize an optional absolute rotation limit in degrees."""
+
+    if max_rot_shifts is None:
+        return None
+    limit = float(max_rot_shifts)
+    if limit < 0:
+        raise ValueError(f"max_rot_shifts must be >= 0. Got {max_rot_shifts!r}.")
+    return limit
+
+
+def _normalize_rotreg_iter(rotreg_iter: int) -> int:
+    """Validate the number of translation-rotation refinement iterations."""
+
+    rotreg_iter = int(rotreg_iter)
+    if rotreg_iter < 1:
+        raise ValueError(f"rotreg_iter must be >= 1. Got {rotreg_iter!r}.")
+    return rotreg_iter
+
+
+def _resolve_projection_range_alias(
+    *,
+    zrange: tuple[int, int] | Sequence[int] | None,
+    projection_range: tuple[int, int] | Sequence[int] | None,
+):
+    """Resolve preferred projection_range while keeping zrange compatible."""
+
+    if projection_range is None:
+        return zrange
+    if zrange is not None and tuple(zrange) != tuple(projection_range):
+        raise ValueError("Use either zrange or projection_range, not conflicting values for both.")
+    return projection_range
+
+
 def _clip_shift_yx(shift_yx: np.ndarray, max_xy_shifts: np.ndarray | None) -> np.ndarray:
     """Clip a ``YX`` correction shift to configured absolute limits."""
 
@@ -154,6 +189,93 @@ def _clip_shift_zyx(
     if max_xy_shifts is not None:
         shift_zyx[1:] = np.clip(shift_zyx[1:], -max_xy_shifts, max_xy_shifts)
     return shift_zyx.astype(np.float32, copy=False)
+
+
+def _clip_rotation_deg(angle_deg: float, max_rot_shifts: float | None) -> float:
+    """Clip a rotation correction to an optional absolute degree limit."""
+
+    angle_deg = float(angle_deg)
+    if max_rot_shifts is not None:
+        angle_deg = float(np.clip(angle_deg, -max_rot_shifts, max_rot_shifts))
+    return angle_deg
+
+
+def _crop_bounds_from_zyx_shifts(shifts_zyx: np.ndarray | None) -> dict[str, int]:
+    """Compute directional crop widths from applied ``ZYX`` correction shifts."""
+
+    bounds = {
+        "z_top": 0,
+        "z_bottom": 0,
+        "y_top": 0,
+        "y_bottom": 0,
+        "x_left": 0,
+        "x_right": 0,
+    }
+    if shifts_zyx is None:
+        return bounds
+
+    shifts = np.asarray(shifts_zyx, dtype=np.float32).reshape(-1, 3)
+    if shifts.size == 0:
+        return bounds
+    bounds["z_top"] = int(np.ceil(max(0.0, float(np.max(shifts[:, 0])))))
+    bounds["z_bottom"] = int(np.ceil(max(0.0, float(np.max(-shifts[:, 0])))))
+    bounds["y_top"] = int(np.ceil(max(0.0, float(np.max(shifts[:, 1])))))
+    bounds["y_bottom"] = int(np.ceil(max(0.0, float(np.max(-shifts[:, 1])))))
+    bounds["x_left"] = int(np.ceil(max(0.0, float(np.max(shifts[:, 2])))))
+    bounds["x_right"] = int(np.ceil(max(0.0, float(np.max(-shifts[:, 2])))))
+    return bounds
+
+
+def _crop_bounds_from_yx_shifts(shifts_yx: np.ndarray | None) -> dict[str, int]:
+    """Compute directional Y/X crop widths from applied ``YX`` correction shifts."""
+
+    bounds = {
+        "z_top": 0,
+        "z_bottom": 0,
+        "y_top": 0,
+        "y_bottom": 0,
+        "x_left": 0,
+        "x_right": 0,
+    }
+    if shifts_yx is None:
+        return bounds
+
+    shifts = np.asarray(shifts_yx, dtype=np.float32).reshape(-1, 2)
+    if shifts.size == 0:
+        return bounds
+    bounds["y_top"] = int(np.ceil(max(0.0, float(np.max(shifts[:, 0])))))
+    bounds["y_bottom"] = int(np.ceil(max(0.0, float(np.max(-shifts[:, 0])))))
+    bounds["x_left"] = int(np.ceil(max(0.0, float(np.max(shifts[:, 1])))))
+    bounds["x_right"] = int(np.ceil(max(0.0, float(np.max(-shifts[:, 1])))))
+    return bounds
+
+
+def _add_crop_bounds(*bounds_list: dict[str, int]) -> dict[str, int]:
+    """Add crop bounds from sequential correction stages."""
+
+    keys = ("z_top", "z_bottom", "y_top", "y_bottom", "x_left", "x_right")
+    return {key: int(sum(bounds.get(key, 0) for bounds in bounds_list)) for key in keys}
+
+
+def _zero_clip_stack(stack: np.ndarray, crop_bounds: dict[str, int]) -> np.ndarray:
+    """Crop zero-fill borders from a registered ``TZCYX`` stack."""
+
+    z_top = int(crop_bounds.get("z_top", 0))
+    z_bottom = int(crop_bounds.get("z_bottom", 0))
+    y_top = int(crop_bounds.get("y_top", 0))
+    y_bottom = int(crop_bounds.get("y_bottom", 0))
+    x_left = int(crop_bounds.get("x_left", 0))
+    x_right = int(crop_bounds.get("x_right", 0))
+
+    z_stop = stack.shape[1] - z_bottom
+    y_stop = stack.shape[3] - y_bottom
+    x_stop = stack.shape[4] - x_right
+    if z_top >= z_stop or y_top >= y_stop or x_left >= x_stop:
+        raise ValueError(
+            "zero_clip would remove the complete image. "
+            f"Shape={stack.shape}, crop_bounds={crop_bounds}."
+        )
+    return stack[:, z_top:z_stop, :, y_top:y_stop, x_left:x_stop].copy()
 
 
 def _project_zyx_to_yx(volume_zyx: np.ndarray, *, projection_method: str) -> np.ndarray:
@@ -425,6 +547,65 @@ def _estimate_z_shift_from_orthogonal_projections(
         )
         z_shifts.append(float(shift[0]))
     return float(np.mean(z_shifts))
+
+
+def _normalize_rotation_image(image: np.ndarray) -> np.ndarray:
+    """Normalize a 2D image for polar phase-correlation rotation estimation."""
+
+    image = np.asarray(image, dtype=np.float32)
+    image = image - float(np.min(image))
+    max_value = float(np.max(image))
+    if max_value > 0:
+        image = image / max_value
+    return image.astype(np.float32, copy=False)
+
+
+def _estimate_rotation_deg_from_projections(
+    reference_projection: np.ndarray,
+    moving_projection: np.ndarray,
+    *,
+    max_rot_shifts: float | None,
+    phase_cross_correlation_upsample_factor: int,
+    phase_cross_correlation_normalization: str | None,
+) -> float:
+    """Estimate an in-plane rotation angle in degrees from two 2D projections."""
+
+    reference_projection = _normalize_rotation_image(reference_projection)
+    moving_projection = _normalize_rotation_image(moving_projection)
+    radius = max(1, min(reference_projection.shape) // 2)
+    output_shape = (360, radius)
+    reference_polar = warp_polar(reference_projection, radius=radius, output_shape=output_shape)
+    moving_polar = warp_polar(moving_projection, radius=radius, output_shape=output_shape)
+    shift, _, _ = phase_cross_correlation(
+        reference_polar,
+        moving_polar,
+        upsample_factor=int(phase_cross_correlation_upsample_factor),
+        normalization=phase_cross_correlation_normalization,
+    )
+    angle_deg = float(shift[0]) * 360.0 / float(output_shape[0])
+    if angle_deg > 180.0:
+        angle_deg -= 360.0
+    if angle_deg <= -180.0:
+        angle_deg += 360.0
+    return _clip_rotation_deg(angle_deg, max_rot_shifts)
+
+
+def _apply_rotation_to_zcyx(stack_zcyx: np.ndarray, correction_angle_deg: float) -> np.ndarray:
+    """Apply one in-plane XY rotation to all Z slices and channels of one time point."""
+
+    rotated = np.empty_like(stack_zcyx, dtype=np.float32)
+    for z in range(stack_zcyx.shape[0]):
+        for c in range(stack_zcyx.shape[1]):
+            rotated[z, c, :, :] = rotate(
+                np.asarray(stack_zcyx[z, c, :, :], dtype=np.float32),
+                float(correction_angle_deg),
+                resize=False,
+                order=1,
+                mode="constant",
+                cval=0.0,
+                preserve_range=True,
+            ).astype(np.float32, copy=False)
+    return rotated
 
 
 def _apply_translation_to_tzyx(stack_tzyx: np.ndarray, shift_yx: np.ndarray) -> np.ndarray:
@@ -937,6 +1118,87 @@ def _register_stack_across_time(
     return registered, shifts_zyx, effective_mode
 
 
+def _register_stack_rotations_across_time(
+    stack: np.ndarray,
+    *,
+    registration_channel: int,
+    registration_stack: int,
+    time_reference_mode: str,
+    zrange: tuple[int, int] | Sequence[int] | None,
+    projection_method: str,
+    filter_slices: bool,
+    filter_projections: bool,
+    median_kernel_size: int,
+    max_rot_shifts: float | None,
+    phase_cross_correlation_upsample_factor: int,
+    phase_cross_correlation_normalization: str | None,
+    verbose: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Register in-plane XY rotations across time and return applied correction angles."""
+
+    volumes = _registration_channel_volumes(
+        stack,
+        registration_channel=registration_channel,
+        zrange=zrange,
+        filter_slices=filter_slices,
+        median_kernel_size=median_kernel_size,
+    )
+
+    projections = np.empty((volumes.shape[0], volumes.shape[2], volumes.shape[3]), dtype=np.float32)
+    for t in range(volumes.shape[0]):
+        projections[t, :, :] = _project_zyx_to_yx(
+            volumes[t, :, :, :],
+            projection_method=projection_method,
+        )
+    if filter_projections:
+        kernel = (int(median_kernel_size), int(median_kernel_size))
+        for t in range(projections.shape[0]):
+            projections[t, :, :] = median_filter(projections[t, :, :], size=kernel)
+
+    registered = stack.copy()
+    angles_deg = np.zeros(stack.shape[0], dtype=np.float32)
+    _print_verbose(
+        verbose,
+        (
+            f"Registering XY rotations with time_reference_mode='{time_reference_mode}', "
+            f"registration_stack={registration_stack}, projection_method='{projection_method}'"
+        ),
+    )
+
+    for t in range(stack.shape[0]):
+        if time_reference_mode == "template" and t == registration_stack:
+            _print_verbose(verbose, f"t={t} rotation_correction_deg=0.000")
+            continue
+        if time_reference_mode == "previous" and t == 0:
+            _print_verbose(verbose, "t=0 rotation_correction_deg=0.000")
+            continue
+
+        reference_t = _time_reference_index(
+            t=t,
+            registration_stack=registration_stack,
+            time_reference_mode=time_reference_mode,
+        )
+        detected_rotation_deg = _estimate_rotation_deg_from_projections(
+            projections[reference_t, :, :],
+            projections[t, :, :],
+            max_rot_shifts=max_rot_shifts,
+            phase_cross_correlation_upsample_factor=phase_cross_correlation_upsample_factor,
+            phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+        )
+        reference_angle = float(angles_deg[reference_t]) if time_reference_mode == "previous" else 0.0
+        angles_deg[t] = _clip_rotation_deg(
+            reference_angle - detected_rotation_deg,
+            max_rot_shifts,
+        )
+        _print_verbose(verbose, f"t={t} rotation_correction_deg={float(angles_deg[t]):.3f}")
+        registered[t, :, :, :, :] = _apply_rotation_to_zcyx(
+            stack[t, :, :, :, :],
+            float(angles_deg[t]),
+        )
+
+    return registered, angles_deg
+
+
 def _return_registration_result(
     registered: np.ndarray,
     *,
@@ -944,6 +1206,10 @@ def _return_registration_result(
     compatible_time_shifts_yx: bool,
     time_shifts_zyx: np.ndarray | None,
     intra_stack_shifts_yx: np.ndarray | None,
+    rotation_shifts_deg: np.ndarray | None,
+    translation_pass_shifts_zyx: list[np.ndarray],
+    rotation_pass_shifts_deg: list[np.ndarray],
+    zero_clip_bounds: dict[str, int] | None,
     time_registration_mode: str,
     effective_time_registration_mode: str,
     time_reference_mode: str,
@@ -952,14 +1218,24 @@ def _return_registration_result(
 
     if not return_shifts:
         return registered
-    if intra_stack_shifts_yx is None and compatible_time_shifts_yx and time_shifts_zyx is not None:
+    if (
+        intra_stack_shifts_yx is None
+        and rotation_shifts_deg is None
+        and zero_clip_bounds is None
+        and compatible_time_shifts_yx
+        and time_shifts_zyx is not None
+    ):
         return registered, time_shifts_zyx[:, 1:]
-    if time_shifts_zyx is None and intra_stack_shifts_yx is not None:
+    if time_shifts_zyx is None and rotation_shifts_deg is None and zero_clip_bounds is None and intra_stack_shifts_yx is not None:
         return registered, intra_stack_shifts_yx
     return registered, {
         "time_shifts_zyx": time_shifts_zyx,
         "time_shifts_yx": None if time_shifts_zyx is None else time_shifts_zyx[:, 1:],
         "intra_stack_shifts_yx": intra_stack_shifts_yx,
+        "rotation_shifts_deg": rotation_shifts_deg,
+        "translation_pass_shifts_zyx": translation_pass_shifts_zyx,
+        "rotation_pass_shifts_deg": rotation_pass_shifts_deg,
+        "zero_clip_bounds": zero_clip_bounds,
         "time_registration_mode": time_registration_mode,
         "effective_time_registration_mode": effective_time_registration_mode,
         "time_reference_mode": time_reference_mode,
@@ -976,10 +1252,15 @@ def register_stack(
     time_reference_mode: str = "template",
     intra_stack: bool = False,
     zrange: tuple[int, int] | Sequence[int] | None = None,
+    projection_range: tuple[int, int] | Sequence[int] | None = None,
     projection_method: str = "max",
     zreg: bool = False,
+    zero_clip: bool = False,
     max_xy_shifts: tuple[float, float] | Sequence[float] | None = None,
     max_z_shifts: float | None = None,
+    rotreg: bool = False,
+    max_rot_shifts: float | None = None,
+    rotreg_iter: int = 1,
     intra_stack_reference_mode: str = "neighbor",
     neighbor_window_size: int = 3,
     filter_slices: bool = False,
@@ -1026,8 +1307,11 @@ def register_stack(
         If True, run intra-stack XY slice correction independently for each time
         point before optional time registration.
     zrange : tuple[int, int] or None, optional
-        Optional half-open Z range ``(start, stop)`` used for the Z
-        registration projection or full-3D registration volume.
+        Deprecated alias for ``projection_range``.
+    projection_range : tuple[int, int] or None, optional
+        Optional half-open Z range ``(start, stop)`` used for the registration
+        projection or full-3D registration volume. This selects slices along the
+        canonical ``Z`` axis, not a range across time.
     projection_method : {"max", "mean", "median", "var", "std"}, optional
         Z-projection method used for shift estimation. ``"max"`` remains a
         good default for sparse spots or puncta. ``"mean"`` is often better
@@ -1041,12 +1325,28 @@ def register_stack(
         ``time_registration_mode="full_3d"`` this uses the Z component returned
         by 3D phase cross-correlation. In projection mode this estimates Z shifts
         from orthogonal ``ZY`` and ``ZX`` projections.
+    zero_clip : bool, optional
+        If True, crop zero-fill borders introduced by translation correction.
+        Crop widths are derived direction-wise from the largest applied
+        correction shifts: ``x_left``, ``x_right``, ``y_top``, ``y_bottom``,
+        ``z_top``, and ``z_bottom``.
     max_xy_shifts : tuple[float, float] or None, optional
         Optional absolute ``(max_y, max_x)`` correction-shift limits. If None,
         XY shifts are not clipped.
     max_z_shifts : int, float, or None, optional
         Optional absolute Z correction-shift limit. If None, Z shifts are not
         clipped.
+    rotreg : bool, optional
+        If True, estimate and correct in-plane XY rotations across time by
+        applying phase cross-correlation to polar-transformed registration
+        projections.
+    max_rot_shifts : int, float, or None, optional
+        Optional absolute rotation correction limit in degrees. If None,
+        rotation corrections are not clipped.
+    rotreg_iter : int, optional
+        Number of translation-rotation refinement iterations for ``rotreg=True``.
+        ``1`` runs translation, rotation, translation. Values > 1 repeat the
+        rotation and final translation pattern.
     intra_stack_reference_mode : {"neighbor", "full_projection", "first_slice"}, optional
         Reference strategy for ``intra_stack=True``.
     neighbor_window_size : int, optional
@@ -1082,12 +1382,15 @@ def register_stack(
     method = _normalize_registration_method(method)
     time_registration_mode = _normalize_time_registration_mode(time_registration_mode)
     time_reference_mode = _normalize_time_reference_mode(time_reference_mode)
+    zrange = _resolve_projection_range_alias(zrange=zrange, projection_range=projection_range)
     projection_method = _normalize_projection_method(projection_method)
     registration_stack = _normalize_registration_stack(registration_stack, stack.shape[0])
     intra_stack_reference_mode = _normalize_intra_stack_reference_mode(intra_stack_reference_mode)
     neighbor_window_size = _normalize_neighbor_window_size(neighbor_window_size)
     max_xy_shifts = _normalize_max_xy_shifts(max_xy_shifts)
     max_z_shifts = _normalize_max_z_shifts(max_z_shifts)
+    max_rot_shifts = _normalize_max_rot_shifts(max_rot_shifts)
+    rotreg_iter = _normalize_rotreg_iter(rotreg_iter)
     filter_slices, filter_projections = _resolve_filter_aliases(
         filter_slices=filter_slices,
         filter_projections=filter_projections,
@@ -1112,9 +1415,18 @@ def register_stack(
             "phase_cross_correlation_upsample_factor must be >= 1. "
             f"Got {phase_cross_correlation_upsample_factor!r}."
         )
+    if rotreg and time_registration_mode == "none":
+        warnings.warn(
+            "rotreg=True requires time registration. Ignoring rotreg because "
+            "time_registration_mode='none'.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        rotreg = False
 
     registered = stack
     intra_stack_shifts_yx = None
+    zero_clip_stage_bounds = []
     if intra_stack:
         registered, intra_stack_shifts_yx = _correct_intra_stack_z_drift_impl(
             registered,
@@ -1148,29 +1460,64 @@ def register_stack(
                             clipped_intra_stack_shifts_yx[t, z, :],
                         )
                 intra_stack_shifts_yx = clipped_intra_stack_shifts_yx
+        zero_clip_stage_bounds.append(_crop_bounds_from_yx_shifts(intra_stack_shifts_yx))
 
     time_shifts_zyx = None
+    rotation_shifts_deg = None
+    translation_pass_shifts_zyx = []
+    rotation_pass_shifts_deg = []
     effective_time_registration_mode = time_registration_mode
     if time_registration_mode != "none":
-        registered, time_shifts_zyx, effective_time_registration_mode = _register_stack_across_time(
-            registered,
-            registration_channel=int(registration_channel),
-            registration_stack=registration_stack,
-            method=method,
-            time_registration_mode=time_registration_mode,
-            time_reference_mode=time_reference_mode,
-            zrange=zrange,
-            projection_method=projection_method,
-            filter_slices=filter_slices,
-            filter_projections=filter_projections,
-            median_kernel_size=int(median_kernel_size),
-            zreg=bool(zreg),
-            max_xy_shifts=max_xy_shifts,
-            max_z_shifts=max_z_shifts,
-            phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
-            phase_cross_correlation_normalization=phase_cross_correlation_normalization,
-            verbose=verbose,
-        )
+        translation_pass_count = rotreg_iter + 1 if rotreg else 1
+        for pass_index in range(translation_pass_count):
+            registered, pass_shifts_zyx, effective_time_registration_mode = _register_stack_across_time(
+                registered,
+                registration_channel=int(registration_channel),
+                registration_stack=registration_stack,
+                method=method,
+                time_registration_mode=time_registration_mode,
+                time_reference_mode=time_reference_mode,
+                zrange=zrange,
+                projection_method=projection_method,
+                filter_slices=filter_slices,
+                filter_projections=filter_projections,
+                median_kernel_size=int(median_kernel_size),
+                zreg=bool(zreg),
+                max_xy_shifts=max_xy_shifts,
+                max_z_shifts=max_z_shifts,
+                phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
+                phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+                verbose=verbose,
+            )
+            translation_pass_shifts_zyx.append(pass_shifts_zyx)
+            zero_clip_stage_bounds.append(_crop_bounds_from_zyx_shifts(pass_shifts_zyx))
+
+            if rotreg and pass_index < rotreg_iter:
+                registered, pass_rotation_shifts_deg = _register_stack_rotations_across_time(
+                    registered,
+                    registration_channel=int(registration_channel),
+                    registration_stack=registration_stack,
+                    time_reference_mode=time_reference_mode,
+                    zrange=zrange,
+                    projection_method=projection_method,
+                    filter_slices=filter_slices,
+                    filter_projections=filter_projections,
+                    median_kernel_size=int(median_kernel_size),
+                    max_rot_shifts=max_rot_shifts,
+                    phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
+                    phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+                    verbose=verbose,
+                )
+                rotation_pass_shifts_deg.append(pass_rotation_shifts_deg)
+
+        time_shifts_zyx = np.sum(np.stack(translation_pass_shifts_zyx, axis=0), axis=0).astype(np.float32)
+        if rotation_pass_shifts_deg:
+            rotation_shifts_deg = np.sum(np.stack(rotation_pass_shifts_deg, axis=0), axis=0).astype(np.float32)
+
+    zero_clip_bounds = None
+    if zero_clip:
+        zero_clip_bounds = _add_crop_bounds(*zero_clip_stage_bounds)
+        registered = _zero_clip_stack(registered, zero_clip_bounds)
 
     compatible_time_shifts_yx = (
         time_registration_mode == "projection"
@@ -1178,6 +1525,8 @@ def register_stack(
         and time_reference_mode == "template"
         and not zreg
         and not intra_stack
+        and not rotreg
+        and not zero_clip
     )
     return _return_registration_result(
         registered,
@@ -1185,6 +1534,10 @@ def register_stack(
         compatible_time_shifts_yx=compatible_time_shifts_yx,
         time_shifts_zyx=time_shifts_zyx,
         intra_stack_shifts_yx=intra_stack_shifts_yx,
+        rotation_shifts_deg=rotation_shifts_deg,
+        translation_pass_shifts_zyx=translation_pass_shifts_zyx,
+        rotation_pass_shifts_deg=rotation_pass_shifts_deg,
+        zero_clip_bounds=zero_clip_bounds,
         time_registration_mode=time_registration_mode,
         effective_time_registration_mode=effective_time_registration_mode,
         time_reference_mode=time_reference_mode,
