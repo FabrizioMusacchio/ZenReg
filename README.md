@@ -33,7 +33,8 @@ The current core includes:
 - optional Z-shift estimation and correction for 3D+t time registration, either
   from full 3D phase cross-correlation or from orthogonal Z projections;
 - optional zero-clipping of translation-introduced borders in Z, Y, and X based
-  on the largest detected correction shifts in each direction;
+  on the largest detected correction shifts in each direction, or via an
+  internal transformed validity mask for rotation-induced angled borders;
 - optional in-plane XY rotation correction across time using polar projections
   and phase cross-correlation;
 - template-based or sequential previous-frame time registration;
@@ -151,6 +152,8 @@ registered, shift_details = register_stack(
     projection_method="max",
     zreg=True,
     zero_clip=True,
+    zero_clip_mode="auto",
+    zero_clip_margin=(0, 0, 0),
     max_xy_shifts=None,
     max_z_shifts=None,
     projection_range=None,

@@ -297,3 +297,27 @@ def test_synthetic_rotation_example_matches_rotation_gt():
         applied_rotations_deg[0] - applied_rotations_deg,
         atol=0.25,
     )
+
+
+def test_rotation_zero_clip_auto_uses_mask_bounds():
+    stack, _, _ = create_2d_time_rotation_motion_distorted_stack(
+        time_count=5,
+        noise_sigma=0.0,
+    )
+
+    clipped, shift_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        rotreg=True,
+        max_xy_shifts=(0, 0),
+        zero_clip=True,
+        verbose=False,
+        return_shifts=True,
+    )
+
+    assert shift_details["zero_clip_mode"] == "mask"
+    assert clipped.shape[3] < stack.shape[3]
+    assert clipped.shape[4] < stack.shape[4]
+    assert shift_details["zero_clip_bounds"]["y_top"] > 0
+    assert shift_details["zero_clip_bounds"]["x_left"] > 0

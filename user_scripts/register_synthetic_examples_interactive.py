@@ -38,11 +38,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from zenreg import load_stack, register_stack, save_stack, z_project
-import omio as om
 # %% DEFINE INPUT AND OUTPUT PATHS
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OPEN_IN_NAPARI = False
 
 STACK_2D_T_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_xy.ome.tif"
 STACK_3D_Z_XY_PATH = EXAMPLE_DIR / "synthetic_3d_z_xy.ome.tif"
@@ -193,6 +193,15 @@ def print_shift_comparison(name: str, estimated_shifts: np.ndarray, expected_shi
     print("  first rows [estimated..., expected..., delta...]:")
     print(np.column_stack([flat_estimated, flat_expected, flat_delta])[:5])
 
+
+def maybe_open_in_napari(stack, metadata, *, fname: str) -> None:
+    """Open a stack in Napari only when the interactive flag is enabled."""
+
+    if OPEN_IN_NAPARI:
+        import omio as om
+
+        om.open_in_napari(stack, metadata, fname=fname)
+
 # %% 1) 2D+t: GLOBAL XY TIME REGISTRATION RELATIVE TO t=0
 stack_2d_t_xy, metadata_2d_t_xy = load_stack(STACK_2D_T_XY_PATH, return_metadata=True, verbose=False)
 expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")
@@ -209,6 +218,9 @@ registered_2d_t_xy, shifts_2d_t_xy = register_stack(
     projection_method="max",  # "max", "mean", "median", "var", or "std"
     zreg=False,  # estimate/apply Z shifts during time registration
     zero_clip=False,  # crop translation-introduced zero borders in Z/Y/X
+    zero_clip_mode="auto",  # "auto", "shift", or "mask"
+    zero_clip_mask_threshold=0.999,  # threshold for mask-based clipping
+    zero_clip_margin=(0, 0, 0),  # extra crop margin as (z, y, x)
     max_xy_shifts=None,  # None or (max_y, max_x)
     max_z_shifts=None,  # None or max_z
     rotreg=False,  # estimate/apply in-plane XY rotations across time
@@ -238,6 +250,9 @@ registered_3d_z_xy, shifts_3d_z_xy = register_stack(
     intra_stack_reference_mode="first_slice",  # "neighbor", "full_projection", or "first_slice"
     projection_method="max",  # "max", "mean", "median", "var", or "std"
     zero_clip=False,  # crop translation-introduced zero borders in Z/Y/X
+    zero_clip_mode="auto",  # "auto", "shift", or "mask"
+    zero_clip_mask_threshold=0.999,  # threshold for mask-based clipping
+    zero_clip_margin=(0, 0, 0),  # extra crop margin as (z, y, x)
     max_xy_shifts=None,  # None or (max_y, max_x)
     filter_slices=False,  # median-filter Z slices before reference creation
     filter_projections=False,  # median-filter images before shift estimation
@@ -264,6 +279,9 @@ registered_3d_t_xy, shifts_3d_t_xy = register_stack(
     projection_method="max",  # "max", "mean", "median", "var", or "std"
     zreg=False,  # True also estimates/applies Z shifts
     zero_clip=False,  # crop translation-introduced zero borders in Z/Y/X
+    zero_clip_mode="auto",  # "auto", "shift", or "mask"
+    zero_clip_mask_threshold=0.999,  # threshold for mask-based clipping
+    zero_clip_margin=(0, 0, 0),  # extra crop margin as (z, y, x)
     max_xy_shifts=None,  # None or (max_y, max_x)
     max_z_shifts=None,  # None or max_z
     rotreg=False,  # estimate/apply in-plane XY rotations across time
@@ -296,6 +314,9 @@ registered_3d_t_intra_xy, shifts_3d_t_intra_xy = register_stack(
     intra_stack_reference_mode="first_slice",  # "neighbor", "full_projection", or "first_slice"
     projection_method="max",  # "max", "mean", "median", "var", or "std"
     zero_clip=False,  # crop translation-introduced zero borders in Z/Y/X
+    zero_clip_mode="auto",  # "auto", "shift", or "mask"
+    zero_clip_mask_threshold=0.999,  # threshold for mask-based clipping
+    zero_clip_margin=(0, 0, 0),  # extra crop margin as (z, y, x)
     max_xy_shifts=None,  # None or (max_y, max_x)
     filter_slices=False,  # median-filter Z slices before reference creation
     filter_projections=False,  # median-filter images before shift estimation
@@ -316,7 +337,7 @@ expected_3d_t_zyx = load_expected_time_registration_shifts(GT_3D_T_ZYX_PATH, reg
 print(f"3D+t ZYX stack shape: {stack_3d_t_zyx.shape} (TZCYX)")
 show_timepoints(stack_3d_t_zyx, title="3D+t ZYX before full 3D registration", channel=0, projection_method="max")
 
-om.open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX before full 3D registration")
+maybe_open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX before full 3D registration")
 
 registered_3d_t_zyx, details_3d_t_zyx = register_stack(
     stack_3d_t_zyx,
@@ -329,6 +350,9 @@ registered_3d_t_zyx, details_3d_t_zyx = register_stack(
     projection_method="max",  # used by projection fallback/z-projection paths
     zreg=True,  # apply Z shifts from full 3D phase cross-correlation
     zero_clip=True,  # crop translation-introduced zero borders in Z/Y/X
+    zero_clip_mode="auto",  # "auto", "shift", or "mask"
+    zero_clip_mask_threshold=0.999,  # threshold for mask-based clipping
+    zero_clip_margin=(0, 0, 0),  # extra crop margin as (z, y, x)
     max_xy_shifts=None,  # None or (max_y, max_x)
     max_z_shifts=None,  # None or max_z
     rotreg=False,  # estimate/apply in-plane XY rotations across time
@@ -350,7 +374,7 @@ show_timepoints(
     projection_method="max",)
 save_stack(OUTPUT_DIR / "synthetic_3d_t_zyx_registered.ome.tif", registered_3d_t_zyx, metadata=metadata_3d_t_zyx)
 
-om.open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX after full 3D registration")
+maybe_open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX after full 3D registration")
 # %% 6) 2D+t: GLOBAL XY ROTATION
 stack_2d_t_rot_xy, metadata_2d_t_rot_xy = load_stack(
     STACK_2D_T_ROT_XY_PATH,
@@ -369,7 +393,7 @@ show_timepoints(
     title="2D+t rotation before registration",
     channel=0,
     projection_method="max")
-om.open_in_napari(stack_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation before registration")
+maybe_open_in_napari(stack_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation before registration")
 
 
 registered_2d_t_rot_xy, details_2d_t_rot_xy = register_stack(
@@ -383,6 +407,9 @@ registered_2d_t_rot_xy, details_2d_t_rot_xy = register_stack(
     projection_method="max",  # "max", "mean", "median", "var", or "std"
     zreg=False,  # True also estimates/applies Z shifts
     zero_clip=True,  # crop translation-introduced zero borders in Z/Y/X
+    zero_clip_mode="auto",  # "auto", "shift", or "mask"; auto uses mask with rotreg=True
+    zero_clip_mask_threshold=0.999,  # threshold for mask-based clipping
+    zero_clip_margin=(0, 0, 0),  # extra crop margin as (z, y, x)
     max_xy_shifts=(0, 0),  # None or (max_y, max_x); here: isolate rotation
     max_z_shifts=None,  # None or max_z
     rotreg=True,  # estimate/apply in-plane XY rotations across time
@@ -412,5 +439,5 @@ save_stack(
     registered_2d_t_rot_xy,
     metadata=metadata_2d_t_rot_xy)
 
-om.open_in_napari(registered_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation after registration")
+maybe_open_in_napari(registered_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation after registration")
 # %% END
