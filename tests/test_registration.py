@@ -2,7 +2,11 @@ import numpy as np
 from scipy.ndimage import shift as ndi_shift
 
 from zenreg import register_stack, z_project
-from zenreg.synthetic import create_2d_motion_distorted_stack
+from zenreg.synthetic import (
+    create_2d_motion_distorted_stack,
+    create_3d_slice_motion_distorted_stack,
+    create_3d_time_zyx_motion_distorted_stack,
+)
 
 
 def _gaussian_volume(shape_zyx=(9, 48, 48)):
@@ -182,3 +186,43 @@ def test_previous_time_reference_accumulates_pairwise_shifts():
     )
 
     np.testing.assert_allclose(shift_details["time_shifts_zyx"][:, 1], [0.0, -2.0, -4.0], atol=0.08)
+
+
+def test_synthetic_3d_slice_example_matches_first_slice_intra_stack_gt():
+    stack, applied_slice_shifts = create_3d_slice_motion_distorted_stack(
+        z_count=8,
+        noise_sigma=0.0,
+    )
+
+    _, estimated_shifts = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="none",
+        intra_stack=True,
+        intra_stack_reference_mode="first_slice",
+        verbose=False,
+        return_shifts=True,
+    )
+
+    np.testing.assert_allclose(estimated_shifts, -applied_slice_shifts, atol=0.15)
+
+
+def test_synthetic_3d_time_zyx_example_matches_full_3d_gt():
+    stack, applied_time_shifts = create_3d_time_zyx_motion_distorted_stack(
+        time_count=5,
+        z_count=14,
+        noise_sigma=0.0,
+    )
+
+    _, shift_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="full_3d",
+        zreg=True,
+        verbose=False,
+        return_shifts=True,
+    )
+
+    np.testing.assert_allclose(shift_details["time_shifts_zyx"], applied_time_shifts[0] - applied_time_shifts, atol=0.2)

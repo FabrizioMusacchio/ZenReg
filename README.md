@@ -29,7 +29,7 @@ The current core includes:
 - time-wise stack registration with shifts estimated from configurable Z projections
   or full-3D phase cross-correlation;
 - optional intra-stack Z-drift correction, where individual z-slices are aligned
-  to local or full-stack projections;
+  to the first slice, local projections, or full-stack projections;
 - optional Z-shift estimation and correction for 3D+t time registration, either
   from full 3D phase cross-correlation or from orthogonal Z projections;
 - template-based or sequential previous-frame time registration;
@@ -75,11 +75,16 @@ python -m pip install -e ".[dev]" --upgrade
 ```
 
 
-The examples use only local synthetic data. Generate them with:
+The examples use only local synthetic data. Generate the benchmark set with:
 
 ```bash
 python additional_scripts/create_synthetic_example_data.py
 ```
+
+This writes five two-channel OME-TIFF examples under
+`example_data/synthetic_data`: 2D+t global XY shifts, 3D per-slice XY shifts,
+3D+t global XY shifts, 3D+t intra-stack-only XY shifts, and 3D+t global ZYX
+shifts. Each stack has a matching GT CSV table.
 
 Then run the interactive VS Code script:
 
@@ -96,7 +101,7 @@ VS Code's interactive window.
 from zenreg import load_stack, register_stack, save_stack
 
 stack, metadata = load_stack(
-    "example_data/synthetic_data/motion_distorted_2d_tzcyx.ome.tif",
+    "example_data/synthetic_data/synthetic_2d_t_xy.ome.tif",
     return_metadata=True)
 registered, shifts = register_stack(
     stack,
@@ -106,13 +111,13 @@ registered, shifts = register_stack(
     method="phase_cross_correlation",
     return_shifts=True)
 save_stack(
-    "example_data/synthetic_data/registered/motion_distorted_2d_registered.ome.tif",
+    "example_data/synthetic_data/registered/synthetic_2d_t_xy_registered.ome.tif",
     registered,
     metadata=metadata)
 print(shifts)
 ```
 
-For a 3D time-lapse stack with intra-stack Z motion:
+For a 3D stack with true intra-stack XY slice motion relative to z=0:
 
 ```python
 from zenreg import register_stack
@@ -122,11 +127,17 @@ z_corrected, intra_shifts = register_stack(
     registration_channel=0,
     time_registration_mode="none",
     intra_stack=True,
-    intra_stack_reference_mode="neighbor",
-    neighbor_window_size=3,
+    intra_stack_reference_mode="first_slice",
     return_shifts=True)
+```
+
+For a 3D time-lapse stack with global Z/Y/X motion:
+
+```python
+from zenreg import register_stack
+
 registered, shift_details = register_stack(
-    z_corrected,
+    stack,
     registration_channel=0,
     registration_stack=0,
     time_registration_mode="full_3d",

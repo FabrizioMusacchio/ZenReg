@@ -1,9 +1,13 @@
 """
 Create synthetic example datasets for ZenReg.
 
-The script writes two canonical TZCYX OME-TIFF stacks into ``example_data/synthetic_data``:
-- a 2D time-lapse stack with global time-wise motion artifacts;
-- a 3D time-lapse stack with global time-wise motion and intra-stack Z drift.
+The script writes canonical TZCYX OME-TIFF benchmark stacks into
+``example_data/synthetic_data``:
+- 2D+t with global XY time shifts;
+- 3D with per-slice XY shifts;
+- 3D+t with global XY time shifts;
+- 3D+t with intra-stack-only XY slice shifts;
+- 3D+t with global ZYX time shifts.
 
 The implementation uses ``zenreg.synthetic`` so the same data-generation code
 can later be extended as part of the package itself.
@@ -11,10 +15,7 @@ can later be extended as part of the package itself.
 Author: Fabrizio Musacchio
 Date: June 2026
 """
-# ruff: noqa: I001
-
-from __future__ import annotations
-
+# %% IMPORTS
 import sys
 from pathlib import Path
 
@@ -24,8 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from zenreg.synthetic import write_example_dataset
-
-
+# %% MAIN
 def main() -> None:
     """Generate the default ZenReg synthetic example datasets."""
 
@@ -35,6 +35,7 @@ def main() -> None:
     for label, path in paths.items():
         print(f"  {label}: {path}")
 
-
+# %% MAIN EXECUTION
 if __name__ == "__main__":
     main()
+# %%  END

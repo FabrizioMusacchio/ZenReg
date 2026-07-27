@@ -18,7 +18,7 @@ from skimage.registration import phase_cross_correlation
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack, normalize_zrange
 
 SUPPORTED_REGISTRATION_METHODS = {"phase_cross_correlation", "pystackreg"}
-SUPPORTED_INTRA_STACK_REFERENCE_MODES = {"neighbor", "full_projection"}
+SUPPORTED_INTRA_STACK_REFERENCE_MODES = {"neighbor", "full_projection", "first_slice"}
 SUPPORTED_PROJECTION_METHODS = {"max", "mean", "median", "var", "std"}
 SUPPORTED_TIME_REGISTRATION_MODES = {"projection", "full_3d", "none"}
 SUPPORTED_TIME_REFERENCE_MODES = {"template", "previous"}
@@ -258,6 +258,8 @@ def _build_intra_stack_reference_image(
 
     if reference_mode == "full_projection":
         return _project_zyx_to_yx(volume_zyx, projection_method=projection_method)
+    if reference_mode == "first_slice":
+        return volume_zyx[0, :, :]
 
     half_window = neighbor_window_size // 2
     start = max(0, z_index - half_window)
@@ -511,7 +513,7 @@ def _correct_intra_stack_z_drift_impl(
         channels of the affected Z slice.
     method : {"phase_cross_correlation", "pystackreg"}, optional
         Backend used for shift estimation.
-    reference_mode : {"neighbor", "full_projection"}, optional
+    reference_mode : {"neighbor", "full_projection", "first_slice"}, optional
         Strategy for constructing each per-slice reference image.
     neighbor_window_size : int, optional
         Odd number of slices used for ``reference_mode="neighbor"``.
@@ -1045,7 +1047,7 @@ def register_stack(
     max_z_shifts : int, float, or None, optional
         Optional absolute Z correction-shift limit. If None, Z shifts are not
         clipped.
-    intra_stack_reference_mode : {"neighbor", "full_projection"}, optional
+    intra_stack_reference_mode : {"neighbor", "full_projection", "first_slice"}, optional
         Reference strategy for ``intra_stack=True``.
     neighbor_window_size : int, optional
         Odd number of slices used for ``intra_stack_reference_mode="neighbor"``.
