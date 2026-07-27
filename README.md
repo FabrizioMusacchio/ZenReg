@@ -26,9 +26,13 @@ stacks represented in canonical `TZCYX` order:
 
 The current core includes:
 
-- time-wise stack registration with shifts estimated from configurable Z projections;
+- time-wise stack registration with shifts estimated from configurable Z projections
+  or full-3D phase cross-correlation;
 - optional intra-stack Z-drift correction, where individual z-slices are aligned
   to local or full-stack projections;
+- optional Z-shift estimation and correction for 3D+t time registration, either
+  from full 3D phase cross-correlation or from orthogonal Z projections;
+- template-based or sequential previous-frame time registration;
 - optional median filtering on slices before projection and on projections before
   shift estimation;
 - two shift-estimation backends: `phase_cross_correlation` from scikit-image and
@@ -111,19 +115,29 @@ print(shifts)
 For a 3D time-lapse stack with intra-stack Z motion:
 
 ```python
-from zenreg import correct_intra_stack_z_drift, register_stack
+from zenreg import register_stack
 
-z_corrected = correct_intra_stack_z_drift(
+z_corrected, intra_shifts = register_stack(
     stack,
     registration_channel=0,
-    reference_mode="neighbor",
-    neighbor_window_size=3)
-registered = register_stack(
+    time_registration_mode="none",
+    intra_stack=True,
+    intra_stack_reference_mode="neighbor",
+    neighbor_window_size=3,
+    return_shifts=True)
+registered, shift_details = register_stack(
     z_corrected,
     registration_channel=0,
     registration_stack=0,
+    time_registration_mode="full_3d",
+    time_reference_mode="template",
+    method="phase_cross_correlation",
     projection_method="max",
-    zrange=None)
+    zreg=True,
+    max_xy_shifts=None,
+    max_z_shifts=None,
+    zrange=None,
+    return_shifts=True)
 ```
 
 ## Project status

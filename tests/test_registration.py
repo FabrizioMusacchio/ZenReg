@@ -1,7 +1,35 @@
 import numpy as np
+from scipy.ndimage import shift as ndi_shift
 
 from zenreg import register_stack, z_project
 from zenreg.synthetic import create_2d_motion_distorted_stack
+
+
+def _gaussian_volume(shape_zyx=(9, 48, 48)):
+    zz, yy, xx = np.indices(shape_zyx, dtype=np.float32)
+    volume = np.zeros(shape_zyx, dtype=np.float32)
+    for cz, cy, cx, sz, sy, sx in [
+        (3.5, 15, 17, 1.2, 4.0, 5.0),
+        (5.0, 31, 28, 1.0, 5.0, 4.0),
+        (4.0, 22, 37, 1.4, 3.0, 3.0),
+    ]:
+        volume += np.exp(
+            -(
+                ((zz - cz) ** 2) / (2 * sz**2)
+                + ((yy - cy) ** 2) / (2 * sy**2)
+                + ((xx - cx) ** 2) / (2 * sx**2)
+            )
+        )
+    return volume.astype(np.float32)
+
+
+def _two_timepoint_3d_stack(applied_shift_zyx):
+    base = _gaussian_volume()
+    moved = ndi_shift(base, shift=applied_shift_zyx, order=1, mode="constant", cval=0.0)
+    stack = np.zeros((2, base.shape[0], 1, base.shape[1], base.shape[2]), dtype=np.float32)
+    stack[0, :, 0, :, :] = base
+    stack[1, :, 0, :, :] = moved
+    return stack
 
 
 def test_phase_cross_correlation_matches_synthetic_gt_default_reference():
@@ -51,3 +79,106 @@ def test_z_project_supports_expected_projection_methods():
     )
     np.testing.assert_allclose(z_project(stack, projection_method="var"), np.var(stack, axis=1, keepdims=True))
     np.testing.assert_allclose(z_project(stack, projection_method="std"), np.std(stack, axis=1, keepdims=True))
+
+
+def test_full_3d_time_registration_estimates_zyx_shift():
+    stack = _two_timepoint_3d_stack((1.0, 2.0, -3.0))
+
+    _, shift_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="full_3d",
+        zreg=True,
+        verbose=False,
+        return_shifts=True,
+    )
+
+    np.testing.assert_allclose(shift_details["time_shifts_zyx"][1], [-1.0, -2.0, 3.0], atol=0.08)
+
+
+def test_projection_time_registration_can_estimate_z_shift_from_orthogonal_projections():
+    stack = _two_timepoint_3d_stack((1.0, 0.0, 0.0))
+
+    _, shift_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="projection",
+        zreg=True,
+        verbose=False,
+        return_shifts=True,
+    )
+
+    np.testing.assert_allclose(shift_details["time_shifts_zyx"][1], [-1.0, 0.0, 0.0], atol=0.08)
+
+
+def test_shift_limits_clip_time_registration_shifts():
+    stack = _two_timepoint_3d_stack((0.0, 5.0, -7.0))
+
+    _, shifts = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        max_xy_shifts=(2.0, 3.0),
+        verbose=False,
+        return_shifts=True,
+    )
+
+    np.testing.assert_allclose(shifts[1], [-2.0, 3.0], atol=1e-6)
+
+
+def test_register_stack_can_run_intra_stack_only():
+    stack = _two_timepoint_3d_stack((0.0, 0.0, 0.0))
+
+    corrected, shifts = register_stack(
+        stack,
+        registration_channel=0,
+        time_registration_mode="none",
+        intra_stack=True,
+        intra_stack_reference_mode="full_projection",
+        verbose=False,
+        return_shifts=True,
+    )
+
+    assert corrected.shape == stack.shape
+    assert shifts.shape == (2, stack.shape[1], 2)
+
+
+def test_full_3d_pystackreg_falls_back_to_projection_mode():
+    stack = _two_timepoint_3d_stack((0.0, 1.0, -1.0))
+
+    _, shift_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="pystackreg",
+        time_registration_mode="full_3d",
+        verbose=False,
+        return_shifts=True,
+    )
+
+    assert shift_details["effective_time_registration_mode"] == "projection"
+
+
+def test_previous_time_reference_accumulates_pairwise_shifts():
+    base = _gaussian_volume()
+    stack = np.zeros((3, base.shape[0], 1, base.shape[1], base.shape[2]), dtype=np.float32)
+    for t, shift_y in enumerate([0.0, 2.0, 4.0]):
+        stack[t, :, 0, :, :] = ndi_shift(
+            base,
+            shift=(0.0, shift_y, 0.0),
+            order=1,
+            mode="constant",
+            cval=0.0,
+        )
+
+    _, shift_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_reference_mode="previous",
+        verbose=False,
+        return_shifts=True,
+    )
+
+    np.testing.assert_allclose(shift_details["time_shifts_zyx"][:, 1], [0.0, -2.0, -4.0], atol=0.08)
