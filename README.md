@@ -115,6 +115,8 @@ registered, shifts = register_stack(
     registration_stack=0,
     projection_method="max",
     method="phase_cross_correlation",
+    transform_backend="skimage",
+    transform_order=1,
     return_shifts=True)
 save_stack(
     "example_data/synthetic_data/registered/synthetic_2d_t_xy_registered.ome.tif",
@@ -134,6 +136,8 @@ z_corrected, intra_shifts = register_stack(
     time_registration_mode="none",
     intra_stack=True,
     intra_stack_reference_mode="first_slice",
+    transform_backend="skimage",
+    transform_order=1,
     return_shifts=True)
 ```
 
@@ -157,8 +161,17 @@ registered, shift_details = register_stack(
     max_xy_shifts=None,
     max_z_shifts=None,
     projection_range=None,
+    transform_backend="skimage",
+    transform_order=1,
     return_shifts=True)
 ```
+
+`transform_order=1` is a good default for intensity microscopy data because it
+keeps subpixel translations smooth. Use `transform_order=0` for sparse puncta,
+label-like images, or cases where preserving sharp peaks matters more than
+smooth interpolation. `transform_backend="skimage"` is the default XY correction
+path; true Z translations use a SciPy 3D shift internally even with the skimage
+backend.
 
 ## Project status
 No stable public API is provided yet.

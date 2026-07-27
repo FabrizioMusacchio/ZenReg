@@ -38,6 +38,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from zenreg import load_stack, register_stack, save_stack, z_project
+
 # %% DEFINE INPUT AND OUTPUT PATHS
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered"
@@ -226,6 +227,8 @@ registered_2d_t_xy, shifts_2d_t_xy = register_stack(
     rotreg=False,  # estimate/apply in-plane XY rotations across time
     max_rot_shifts=None,  # None or max rotation in degrees
     rotreg_iter=1,  # 1 = translation, rotation, translation if rotreg=True
+    transform_backend="skimage",  # "skimage" or "scipy"
+    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
     filter_slices=False,  # median-filter Z slices before projection
     filter_projections=False,  # median-filter projections before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
@@ -254,6 +257,8 @@ registered_3d_z_xy, shifts_3d_z_xy = register_stack(
     zero_clip_mask_threshold=0.999,  # threshold for mask-based clipping
     zero_clip_margin=(0, 0, 0),  # extra crop margin as (z, y, x)
     max_xy_shifts=None,  # None or (max_y, max_x)
+    transform_backend="skimage",  # "skimage" or "scipy"
+    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
     filter_slices=False,  # median-filter Z slices before reference creation
     filter_projections=False,  # median-filter images before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
@@ -287,6 +292,8 @@ registered_3d_t_xy, shifts_3d_t_xy = register_stack(
     rotreg=False,  # estimate/apply in-plane XY rotations across time
     max_rot_shifts=None,  # None or max rotation in degrees
     rotreg_iter=1,  # 1 = translation, rotation, translation if rotreg=True
+    transform_backend="skimage",  # "skimage" or "scipy"
+    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
     filter_slices=False,  # median-filter Z slices before projection
     filter_projections=False,  # median-filter projections before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
@@ -318,6 +325,8 @@ registered_3d_t_intra_xy, shifts_3d_t_intra_xy = register_stack(
     zero_clip_mask_threshold=0.999,  # threshold for mask-based clipping
     zero_clip_margin=(0, 0, 0),  # extra crop margin as (z, y, x)
     max_xy_shifts=None,  # None or (max_y, max_x)
+    transform_backend="skimage",  # "skimage" or "scipy"
+    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
     filter_slices=False,  # median-filter Z slices before reference creation
     filter_projections=False,  # median-filter images before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
@@ -358,6 +367,8 @@ registered_3d_t_zyx, details_3d_t_zyx = register_stack(
     rotreg=False,  # estimate/apply in-plane XY rotations across time
     max_rot_shifts=None,  # None or max rotation in degrees
     rotreg_iter=1,  # 1 = translation, rotation, translation if rotreg=True
+    transform_backend="skimage",  # "skimage" or "scipy"
+    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
     filter_slices=False,  # median-filter Z slices before shift estimation
     filter_projections=False,  # median-filter projections before projection fallback
     median_kernel_size=3,  # median-filter kernel size in pixels
@@ -415,6 +426,8 @@ registered_2d_t_rot_xy, details_2d_t_rot_xy = register_stack(
     rotreg=True,  # estimate/apply in-plane XY rotations across time
     max_rot_shifts=12,  # None or max rotation in degrees
     rotreg_iter=1,  # 1 = translation, rotation, translation
+    transform_backend="skimage",  # "skimage" or "scipy"
+    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
     filter_slices=False,  # median-filter Z slices before projection
     filter_projections=False,  # median-filter projections before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels

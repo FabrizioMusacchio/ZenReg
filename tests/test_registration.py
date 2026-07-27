@@ -133,6 +133,23 @@ def test_shift_limits_clip_time_registration_shifts():
     np.testing.assert_allclose(shifts[1], [-2.0, 3.0], atol=1e-6)
 
 
+def test_skimage_transform_backend_runs_with_nearest_neighbor_order():
+    stack = _two_timepoint_3d_stack((0.0, 2.0, -3.0))
+
+    registered, shifts = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        transform_backend="skimage",
+        transform_order=0,
+        verbose=False,
+        return_shifts=True,
+    )
+
+    assert registered.shape == stack.shape
+    np.testing.assert_allclose(shifts[1], [-2.0, 3.0], atol=0.08)
+
+
 def test_register_stack_can_run_intra_stack_only():
     stack = _two_timepoint_3d_stack((0.0, 0.0, 0.0))
 

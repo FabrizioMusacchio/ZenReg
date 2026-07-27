@@ -13,6 +13,7 @@ from collections.abc import Sequence
 import numpy as np
 from scipy.ndimage import median_filter
 from scipy.ndimage import shift as ndi_shift
+from skimage import transform
 from skimage.registration import phase_cross_correlation
 from skimage.transform import rotate, warp_polar
 
@@ -24,6 +25,7 @@ SUPPORTED_PROJECTION_METHODS = {"max", "mean", "median", "var", "std"}
 SUPPORTED_TIME_REGISTRATION_MODES = {"projection", "full_3d", "none"}
 SUPPORTED_TIME_REFERENCE_MODES = {"template", "previous"}
 SUPPORTED_ZERO_CLIP_MODES = {"auto", "shift", "mask"}
+SUPPORTED_TRANSFORM_BACKENDS = {"skimage", "scipy"}
 
 
 def _normalize_registration_method(method: str) -> str:
@@ -189,6 +191,27 @@ def _normalize_zero_clip_margin(zero_clip_margin: int | Sequence[int]) -> np.nda
     if np.any(margins < 0):
         raise ValueError(f"zero_clip_margin values must be >= 0. Got {zero_clip_margin!r}.")
     return margins
+
+
+def _normalize_transform_backend(transform_backend: str) -> str:
+    """Normalize and validate the image transformation backend."""
+
+    normalized = str(transform_backend).strip().lower()
+    if normalized not in SUPPORTED_TRANSFORM_BACKENDS:
+        raise ValueError(
+            f"Unsupported transform_backend {transform_backend!r}. "
+            f"Supported backends: {sorted(SUPPORTED_TRANSFORM_BACKENDS)}."
+        )
+    return normalized
+
+
+def _normalize_transform_order(transform_order: int) -> int:
+    """Validate interpolation order for geometric transformations."""
+
+    transform_order = int(transform_order)
+    if not 0 <= transform_order <= 5:
+        raise ValueError(f"transform_order must be between 0 and 5. Got {transform_order!r}.")
+    return transform_order
 
 
 def _effective_zero_clip_mode(*, zero_clip: bool, zero_clip_mode: str, rotreg: bool) -> str:
@@ -713,50 +736,123 @@ def _estimate_rotation_deg_from_projections(
     return _clip_rotation_deg(angle_deg, max_rot_shifts)
 
 
-def _apply_rotation_to_zcyx(stack_zcyx: np.ndarray, correction_angle_deg: float) -> np.ndarray:
+def _apply_translation_to_yx(
+    image_yx: np.ndarray,
+    shift_yx: np.ndarray,
+    *,
+    transform_backend: str,
+    transform_order: int,
+) -> np.ndarray:
+    """Apply one 2D translation with the selected transform backend."""
+
+    image_yx = np.asarray(image_yx, dtype=np.float32)
+    if transform_backend == "skimage":
+        shift_y, shift_x = float(shift_yx[0]), float(shift_yx[1])
+        tform = transform.SimilarityTransform(translation=(-shift_x, -shift_y))
+        return transform.warp(
+            image_yx,
+            tform,
+            order=int(transform_order),
+            mode="constant",
+            cval=0.0,
+            preserve_range=True,
+        ).astype(np.float32, copy=False)
+    return ndi_shift(
+        image_yx,
+        shift=tuple(float(v) for v in shift_yx),
+        order=int(transform_order),
+        mode="constant",
+        cval=0.0,
+        prefilter=True,
+    ).astype(np.float32, copy=False)
+
+
+def _apply_rotation_to_yx(
+    image_yx: np.ndarray,
+    correction_angle_deg: float,
+    *,
+    transform_order: int,
+) -> np.ndarray:
+    """Apply one in-plane XY rotation to one image plane."""
+
+    return rotate(
+        np.asarray(image_yx, dtype=np.float32),
+        float(correction_angle_deg),
+        resize=False,
+        order=int(transform_order),
+        mode="constant",
+        cval=0.0,
+        preserve_range=True,
+    ).astype(np.float32, copy=False)
+
+
+def _apply_rotation_to_zcyx(
+    stack_zcyx: np.ndarray,
+    correction_angle_deg: float,
+    *,
+    transform_order: int,
+) -> np.ndarray:
     """Apply one in-plane XY rotation to all Z slices and channels of one time point."""
 
     rotated = np.empty_like(stack_zcyx, dtype=np.float32)
     for z in range(stack_zcyx.shape[0]):
         for c in range(stack_zcyx.shape[1]):
-            rotated[z, c, :, :] = rotate(
-                np.asarray(stack_zcyx[z, c, :, :], dtype=np.float32),
-                float(correction_angle_deg),
-                resize=False,
-                order=1,
-                mode="constant",
-                cval=0.0,
-                preserve_range=True,
-            ).astype(np.float32, copy=False)
+            rotated[z, c, :, :] = _apply_rotation_to_yx(
+                stack_zcyx[z, c, :, :],
+                correction_angle_deg,
+                transform_order=transform_order,
+            )
     return rotated
 
 
-def _apply_translation_to_tzyx(stack_tzyx: np.ndarray, shift_yx: np.ndarray) -> np.ndarray:
+def _apply_translation_to_tzyx(
+    stack_tzyx: np.ndarray,
+    shift_yx: np.ndarray,
+    *,
+    transform_backend: str,
+    transform_order: int,
+) -> np.ndarray:
     """Apply one XY translation to all channels and Z slices of one time point."""
 
     shifted = np.empty_like(stack_tzyx, dtype=np.float32)
     for z in range(stack_tzyx.shape[0]):
         for c in range(stack_tzyx.shape[1]):
-            shifted[z, c, :, :] = ndi_shift(
-                np.asarray(stack_tzyx[z, c, :, :], dtype=np.float32),
-                shift=tuple(float(v) for v in shift_yx),
-                order=1,
-                mode="constant",
-                cval=0.0,
-                prefilter=True,
+            shifted[z, c, :, :] = _apply_translation_to_yx(
+                stack_tzyx[z, c, :, :],
+                shift_yx,
+                transform_backend=transform_backend,
+                transform_order=transform_order,
             )
     return shifted
 
 
-def _apply_translation_to_zcyx(stack_zcyx: np.ndarray, shift_zyx: np.ndarray) -> np.ndarray:
+def _apply_translation_to_zcyx(
+    stack_zcyx: np.ndarray,
+    shift_zyx: np.ndarray,
+    *,
+    transform_backend: str,
+    transform_order: int,
+) -> np.ndarray:
     """Apply one ZYX translation to all channels of one time point."""
 
     shifted = np.empty_like(stack_zcyx, dtype=np.float32)
+    shift_zyx = np.asarray(shift_zyx, dtype=np.float32)
+    if transform_backend == "skimage" and np.isclose(float(shift_zyx[0]), 0.0):
+        for z in range(stack_zcyx.shape[0]):
+            for c in range(stack_zcyx.shape[1]):
+                shifted[z, c, :, :] = _apply_translation_to_yx(
+                    stack_zcyx[z, c, :, :],
+                    shift_zyx[1:],
+                    transform_backend=transform_backend,
+                    transform_order=transform_order,
+                )
+        return shifted
+
     for c in range(stack_zcyx.shape[1]):
         shifted[:, c, :, :] = ndi_shift(
             np.asarray(stack_zcyx[:, c, :, :], dtype=np.float32),
             shift=tuple(float(v) for v in shift_zyx),
-            order=1,
+            order=int(transform_order),
             mode="constant",
             cval=0.0,
             prefilter=True,
@@ -764,25 +860,45 @@ def _apply_translation_to_zcyx(stack_zcyx: np.ndarray, shift_zyx: np.ndarray) ->
     return shifted
 
 
-def _apply_translation_to_cyx(slice_cyx: np.ndarray, shift_yx: np.ndarray) -> np.ndarray:
+def _apply_translation_to_cyx(
+    slice_cyx: np.ndarray,
+    shift_yx: np.ndarray,
+    *,
+    transform_backend: str,
+    transform_order: int,
+) -> np.ndarray:
     """Apply one XY translation to all channels of a single Z slice."""
 
     shifted = np.empty_like(slice_cyx, dtype=np.float32)
     for c in range(slice_cyx.shape[0]):
-        shifted[c, :, :] = ndi_shift(
-            np.asarray(slice_cyx[c, :, :], dtype=np.float32),
-            shift=tuple(float(v) for v in shift_yx),
-            order=1,
-            mode="constant",
-            cval=0.0,
-            prefilter=True,
+        shifted[c, :, :] = _apply_translation_to_yx(
+            slice_cyx[c, :, :],
+            shift_yx,
+            transform_backend=transform_backend,
+            transform_order=transform_order,
         )
     return shifted
 
 
-def _apply_translation_to_mask_zyx(mask_zyx: np.ndarray, shift_zyx: np.ndarray) -> np.ndarray:
+def _apply_translation_to_mask_zyx(
+    mask_zyx: np.ndarray,
+    shift_zyx: np.ndarray,
+    *,
+    transform_backend: str,
+) -> np.ndarray:
     """Apply one ZYX translation to one validity-mask volume."""
 
+    shift_zyx = np.asarray(shift_zyx, dtype=np.float32)
+    if transform_backend == "skimage" and np.isclose(float(shift_zyx[0]), 0.0):
+        translated = np.empty_like(mask_zyx, dtype=np.float32)
+        for z in range(mask_zyx.shape[0]):
+            translated[z, :, :] = _apply_translation_to_yx(
+                mask_zyx[z, :, :],
+                shift_zyx[1:],
+                transform_backend=transform_backend,
+                transform_order=1,
+            )
+        return translated
     return ndi_shift(
         np.asarray(mask_zyx, dtype=np.float32),
         shift=tuple(float(v) for v in shift_zyx),
@@ -793,17 +909,20 @@ def _apply_translation_to_mask_zyx(mask_zyx: np.ndarray, shift_zyx: np.ndarray) 
     ).astype(np.float32, copy=False)
 
 
-def _apply_translation_to_mask_yx(mask_yx: np.ndarray, shift_yx: np.ndarray) -> np.ndarray:
+def _apply_translation_to_mask_yx(
+    mask_yx: np.ndarray,
+    shift_yx: np.ndarray,
+    *,
+    transform_backend: str,
+) -> np.ndarray:
     """Apply one YX translation to one validity-mask plane."""
 
-    return ndi_shift(
-        np.asarray(mask_yx, dtype=np.float32),
-        shift=tuple(float(v) for v in shift_yx),
-        order=1,
-        mode="constant",
-        cval=0.0,
-        prefilter=True,
-    ).astype(np.float32, copy=False)
+    return _apply_translation_to_yx(
+        mask_yx,
+        shift_yx,
+        transform_backend=transform_backend,
+        transform_order=1,
+    )
 
 
 def _apply_rotation_to_mask_zyx(mask_zyx: np.ndarray, correction_angle_deg: float) -> np.ndarray:
@@ -811,15 +930,11 @@ def _apply_rotation_to_mask_zyx(mask_zyx: np.ndarray, correction_angle_deg: floa
 
     rotated = np.empty_like(mask_zyx, dtype=np.float32)
     for z in range(mask_zyx.shape[0]):
-        rotated[z, :, :] = rotate(
-            np.asarray(mask_zyx[z, :, :], dtype=np.float32),
+        rotated[z, :, :] = _apply_rotation_to_yx(
+            mask_zyx[z, :, :],
             float(correction_angle_deg),
-            resize=False,
-            order=1,
-            mode="constant",
-            cval=0.0,
-            preserve_range=True,
-        ).astype(np.float32, copy=False)
+            transform_order=1,
+        )
     return rotated
 
 
@@ -843,6 +958,8 @@ def _correct_intra_stack_z_drift_impl(
     median_kernel_size: int = 3,
     phase_cross_correlation_upsample_factor: int = 20,
     phase_cross_correlation_normalization: str | None = None,
+    transform_backend: str = "skimage",
+    transform_order: int = 1,
     verbose: bool = True,
     return_shifts: bool = False,
     pre_median_filter: bool | None = None,
@@ -885,6 +1002,16 @@ def _correct_intra_stack_z_drift_impl(
     phase_cross_correlation_normalization : {None, "phase"}, optional
         Normalization mode forwarded to scikit-image's phase cross-correlation.
         ``None`` is more robust for the smooth synthetic examples.
+    transform_backend : {"skimage", "scipy"}, optional
+        Backend used to apply correction shifts. ``"skimage"`` is the default
+        for XY transforms and matches the rotation-correction path. ``"scipy"``
+        keeps the legacy ``scipy.ndimage.shift`` behavior.
+    transform_order : int, optional
+        Interpolation order used for geometric correction. ``1`` is recommended
+        for intensity microscopy data because it gives smooth subpixel shifts.
+        ``0`` uses nearest-neighbor interpolation, which can preserve sparse
+        puncta or label-like images more sharply, but subpixel corrections become
+        more quantized.
     verbose : bool, optional
         If True, print progress messages.
     return_shifts : bool, optional
@@ -902,6 +1029,8 @@ def _correct_intra_stack_z_drift_impl(
     reference_mode = _normalize_intra_stack_reference_mode(reference_mode)
     neighbor_window_size = _normalize_neighbor_window_size(neighbor_window_size)
     projection_method = _normalize_projection_method(projection_method)
+    transform_backend = _normalize_transform_backend(transform_backend)
+    transform_order = _normalize_transform_order(transform_order)
     filter_slices, filter_projections = _resolve_filter_aliases(
         filter_slices=filter_slices,
         filter_projections=filter_projections,
@@ -967,7 +1096,12 @@ def _correct_intra_stack_z_drift_impl(
                 verbose,
                 f"t={t} z={z} shift_y={float(shift_yx[0]):.3f} shift_x={float(shift_yx[1]):.3f}",
             )
-            corrected[t, z, :, :, :] = _apply_translation_to_cyx(stack[t, z, :, :, :], shift_yx)
+            corrected[t, z, :, :, :] = _apply_translation_to_cyx(
+                stack[t, z, :, :, :],
+                shift_yx,
+                transform_backend=transform_backend,
+                transform_order=transform_order,
+            )
 
     return (corrected, shifts) if return_shifts else corrected
 
@@ -986,6 +1120,8 @@ def correct_intra_stack_z_drift(
     phase_cross_correlation_upsample_factor: int = 20,
     phase_cross_correlation_normalization: str | None = None,
     max_xy_shifts: tuple[float, float] | Sequence[float] | None = None,
+    transform_backend: str = "skimage",
+    transform_order: int = 1,
     verbose: bool = True,
     return_shifts: bool = False,
     pre_median_filter: bool | None = None,
@@ -1000,6 +1136,8 @@ def correct_intra_stack_z_drift(
     """
 
     max_xy_shifts = _normalize_max_xy_shifts(max_xy_shifts)
+    transform_backend = _normalize_transform_backend(transform_backend)
+    transform_order = _normalize_transform_order(transform_order)
     corrected = _correct_intra_stack_z_drift_impl(
         stack,
         registration_channel=registration_channel,
@@ -1012,6 +1150,8 @@ def correct_intra_stack_z_drift(
         median_kernel_size=median_kernel_size,
         phase_cross_correlation_upsample_factor=phase_cross_correlation_upsample_factor,
         phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+        transform_backend=transform_backend,
+        transform_order=transform_order,
         verbose=verbose,
         return_shifts=True,
         pre_median_filter=pre_median_filter,
@@ -1029,6 +1169,8 @@ def correct_intra_stack_z_drift(
                 corrected_stack[t, z, :, :, :] = _apply_translation_to_cyx(
                     np.asarray(stack)[t, z, :, :, :],
                     shifts[t, z, :],
+                    transform_backend=transform_backend,
+                    transform_order=transform_order,
                 )
     return (corrected_stack, shifts) if return_shifts else corrected_stack
 
@@ -1180,6 +1322,8 @@ def _register_stack_across_time(
     max_z_shifts: float | None,
     phase_cross_correlation_upsample_factor: int,
     phase_cross_correlation_normalization: str | None,
+    transform_backend: str,
+    transform_order: int,
     verbose: bool,
 ) -> tuple[np.ndarray, np.ndarray, str]:
     """Register a ``TZCYX`` stack across time and return applied ``TZYX`` shifts."""
@@ -1279,6 +1423,8 @@ def _register_stack_across_time(
         registered[t, :, :, :, :] = _apply_translation_to_zcyx(
             stack[t, :, :, :, :],
             shifts_zyx[t, :],
+            transform_backend=transform_backend,
+            transform_order=transform_order,
         )
 
     return registered, shifts_zyx, effective_mode
@@ -1298,6 +1444,7 @@ def _register_stack_rotations_across_time(
     max_rot_shifts: float | None,
     phase_cross_correlation_upsample_factor: int,
     phase_cross_correlation_normalization: str | None,
+    transform_order: int,
     verbose: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Register in-plane XY rotations across time and return applied correction angles."""
@@ -1360,6 +1507,7 @@ def _register_stack_rotations_across_time(
         registered[t, :, :, :, :] = _apply_rotation_to_zcyx(
             stack[t, :, :, :, :],
             float(angles_deg[t]),
+            transform_order=transform_order,
         )
 
     return registered, angles_deg
@@ -1382,6 +1530,8 @@ def _return_registration_result(
     time_registration_mode: str,
     effective_time_registration_mode: str,
     time_reference_mode: str,
+    transform_backend: str,
+    transform_order: int,
 ):
     """Return a backwards-compatible shift object for simple cases."""
 
@@ -1411,6 +1561,8 @@ def _return_registration_result(
         "time_registration_mode": time_registration_mode,
         "effective_time_registration_mode": effective_time_registration_mode,
         "time_reference_mode": time_reference_mode,
+        "transform_backend": transform_backend,
+        "transform_order": transform_order,
     }
 
 
@@ -1436,6 +1588,8 @@ def register_stack(
     rotreg: bool = False,
     max_rot_shifts: float | None = None,
     rotreg_iter: int = 1,
+    transform_backend: str = "skimage",
+    transform_order: int = 1,
     intra_stack_reference_mode: str = "neighbor",
     neighbor_window_size: int = 3,
     filter_slices: bool = False,
@@ -1532,6 +1686,21 @@ def register_stack(
         Number of translation-rotation refinement iterations for ``rotreg=True``.
         ``1`` runs translation, rotation, translation. Values > 1 repeat the
         rotation and final translation pattern.
+    transform_backend : {"skimage", "scipy"}, optional
+        Backend used to apply translation corrections. ``"skimage"`` is the
+        default for XY transforms and keeps translation correction aligned with
+        the scikit-image rotation-correction path. ``"scipy"`` uses
+        ``scipy.ndimage.shift`` and is useful for legacy comparison. True
+        subpixel Z translations are internally applied with SciPy even when
+        ``transform_backend="skimage"``, because the scikit-image path here is
+        intentionally restricted to explicit 2D XY transforms.
+    transform_order : int, optional
+        Interpolation order for correction transforms. ``1`` is recommended for
+        most intensity microscopy data because it gives smooth subpixel shifts.
+        ``0`` uses nearest-neighbor interpolation and is useful for sparse
+        puncta, label-like images, or cases where preserving peak sharpness is
+        more important than smooth subpixel interpolation. Higher orders are
+        available but can introduce more smoothing or ringing.
     intra_stack_reference_mode : {"neighbor", "full_projection", "first_slice"}, optional
         Reference strategy for ``intra_stack=True``.
     neighbor_window_size : int, optional
@@ -1579,6 +1748,8 @@ def register_stack(
     max_z_shifts = _normalize_max_z_shifts(max_z_shifts)
     max_rot_shifts = _normalize_max_rot_shifts(max_rot_shifts)
     rotreg_iter = _normalize_rotreg_iter(rotreg_iter)
+    transform_backend = _normalize_transform_backend(transform_backend)
+    transform_order = _normalize_transform_order(transform_order)
     filter_slices, filter_projections = _resolve_filter_aliases(
         filter_slices=filter_slices,
         filter_projections=filter_projections,
@@ -1638,6 +1809,8 @@ def register_stack(
             median_kernel_size=int(median_kernel_size),
             phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
             phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+            transform_backend=transform_backend,
+            transform_order=transform_order,
             verbose=verbose,
             return_shifts=True,
         )
@@ -1656,6 +1829,8 @@ def register_stack(
                         registered[t, z, :, :, :] = _apply_translation_to_cyx(
                             stack[t, z, :, :, :],
                             clipped_intra_stack_shifts_yx[t, z, :],
+                            transform_backend=transform_backend,
+                            transform_order=transform_order,
                         )
                 intra_stack_shifts_yx = clipped_intra_stack_shifts_yx
         if effective_zero_clip_mode == "mask":
@@ -1664,6 +1839,7 @@ def register_stack(
                     zero_clip_mask_tzyx[t, z, :, :] = _apply_translation_to_mask_yx(
                         zero_clip_mask_tzyx[t, z, :, :],
                         intra_stack_shifts_yx[t, z, :],
+                        transform_backend=transform_backend,
                     )
         elif effective_zero_clip_mode == "shift":
             zero_clip_stage_bounds.append(_crop_bounds_from_yx_shifts(intra_stack_shifts_yx))
@@ -1693,6 +1869,8 @@ def register_stack(
                 max_z_shifts=max_z_shifts,
                 phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
                 phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+                transform_backend=transform_backend,
+                transform_order=transform_order,
                 verbose=verbose,
             )
             translation_pass_shifts_zyx.append(pass_shifts_zyx)
@@ -1701,6 +1879,7 @@ def register_stack(
                     zero_clip_mask_tzyx[t, :, :, :] = _apply_translation_to_mask_zyx(
                         zero_clip_mask_tzyx[t, :, :, :],
                         pass_shifts_zyx[t, :],
+                        transform_backend=transform_backend,
                     )
             elif effective_zero_clip_mode == "shift":
                 zero_clip_stage_bounds.append(_crop_bounds_from_zyx_shifts(pass_shifts_zyx))
@@ -1719,6 +1898,7 @@ def register_stack(
                     max_rot_shifts=max_rot_shifts,
                     phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
                     phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+                    transform_order=transform_order,
                     verbose=verbose,
                 )
                 rotation_pass_shifts_deg.append(pass_rotation_shifts_deg)
@@ -1770,4 +1950,6 @@ def register_stack(
         time_registration_mode=time_registration_mode,
         effective_time_registration_mode=effective_time_registration_mode,
         time_reference_mode=time_reference_mode,
+        transform_backend=transform_backend,
+        transform_order=transform_order,
     )
