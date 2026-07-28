@@ -10,6 +10,7 @@ Date: June 2026
 
 from .filters import apply_filters, max_z_project, z_project
 from .io import (
+    cleanup_omio_cache,
     create_empty_stack,
     create_stack_metadata,
     load_stack,
@@ -21,6 +22,7 @@ from .reporting import write_registration_outputs
 
 __all__ = [
     "apply_filters",
+    "cleanup_omio_cache",
     "correct_intra_stack_z_drift",
     "create_empty_stack",
     "create_stack_metadata",

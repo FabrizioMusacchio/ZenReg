@@ -1,6 +1,8 @@
 import numpy as np
 
 from zenreg import (
+    cleanup_omio_cache,
+    create_empty_stack,
     create_stack_metadata,
     load_stack,
     register_stack,
@@ -45,6 +47,56 @@ def test_update_stack_metadata_syncs_modified_shape():
     assert cropped_metadata["SizeC"] == 1
     assert cropped_metadata["SizeY"] == 5
     assert cropped_metadata["SizeX"] == 5
+
+
+def test_load_stack_supports_omio_disk_memmap(tmp_path):
+    stack = np.arange(1 * 2 * 1 * 8 * 9, dtype=np.float32).reshape(1, 2, 1, 8, 9)
+    metadata = create_stack_metadata(stack, annotations={"test": "memmap"}, verbose=False)
+    output_path = save_stack(
+        tmp_path / "memmap_source.ome.tif",
+        stack,
+        metadata=metadata,
+        overwrite=True,
+        verbose=False,
+    )
+    cache_folder = tmp_path / "omio_cache"
+
+    loaded_stack, loaded_metadata = load_stack(
+        output_path,
+        return_metadata=True,
+        use_memmap=True,
+        memmap_folder=cache_folder,
+        verbose=False,
+    )
+
+    assert loaded_stack.shape == stack.shape
+    assert loaded_metadata["axes"] == "TZCYX"
+    assert "omio_cache_folder" in loaded_metadata
+    assert "omio_zarr_store_path" in loaded_metadata
+    np.testing.assert_allclose(np.asarray(loaded_stack), stack)
+    cleanup_omio_cache(cache_folder, verbose=False)
+
+
+def test_create_empty_stack_supports_omio_disk_memmap(tmp_path):
+    cache_folder = tmp_path / "created_cache"
+
+    stack, metadata = create_empty_stack(
+        shape=(2, 3, 1, 8, 9),
+        dtype=np.float32,
+        use_memmap=True,
+        memmap_folder=cache_folder,
+        memmap_name="empty_stack",
+        return_metadata=True,
+        verbose=False,
+    )
+
+    assert stack.shape == (2, 3, 1, 8, 9)
+    assert metadata["axes"] == "TZCYX"
+    assert "omio_cache_folder" in metadata
+    assert "omio_zarr_store_path" in metadata
+    stack[0, 0, 0, 2:4, 3:5] = 1.0
+    np.testing.assert_allclose(np.asarray(stack[0, 0, 0, 2:4, 3:5]), np.ones((2, 2)))
+    cleanup_omio_cache(metadata["omio_cache_folder"], verbose=False)
 
 
 def test_save_stack_writes_registration_report_sidecars(tmp_path):

@@ -37,12 +37,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from zenreg import load_stack, register_stack, save_stack, z_project
+from zenreg import cleanup_omio_cache, load_stack, register_stack, save_stack, z_project
 
 # %% DEFINE INPUT AND OUTPUT PATHS
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+MEMMAP_CACHE_DIR = OUTPUT_DIR / "omio_memmap_cache"
 OPEN_IN_NAPARI = False
 
 STACK_2D_T_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_xy.ome.tif"
@@ -490,4 +491,54 @@ save_stack(
     registration_details=details_2d_t_rot_xy)
 
 maybe_open_in_napari(registered_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation after registration")
+# %% 7) 2D+t: DISK-BACKED OMIO MEMMAP INPUT
+# to start fresh, clear any pre-existing OMIO cache in the local scratch folder:
+cleanup_omio_cache(MEMMAP_CACHE_DIR, full_cleanup=True, verbose=False)
+
+# load the stack:
+stack_2d_t_xy_memmap, metadata_2d_t_xy_memmap = load_stack(
+    STACK_2D_T_XY_PATH,
+    return_metadata=True,
+    use_memmap=True,  # read through OMIO disk-backed Zarr
+    memmap_folder=MEMMAP_CACHE_DIR,  # local scratch/cache folder for the Zarr store
+    verbose=False)
+print(f"2D+t memmap stack shape: {stack_2d_t_xy_memmap.shape} (TZCYX)")
+print(f"2D+t memmap stack type: {type(stack_2d_t_xy_memmap)}")
+print(f"OMIO cache folder: {metadata_2d_t_xy_memmap.get('omio_cache_folder')}")
+print(f"OMIO Zarr store path: {metadata_2d_t_xy_memmap.get('omio_zarr_store_path')}")
+
+# register:
+registered_2d_t_xy_memmap, details_2d_t_xy_memmap = register_stack(
+    stack_2d_t_xy_memmap,
+    registration_channel=0,  # channel used to estimate shifts
+    registration_stack=0,  # reference time point/template
+    method="phase_cross_correlation",  # "phase_cross_correlation" or "pystackreg"
+    time_registration_mode="projection",  # "projection", "full_3d", or "none"
+    time_reference_mode="template",  # "template" or "previous"
+    projection_method="max",  # "max", "mean", "median", "var", or "std"
+    zreg=False,  # estimate/apply Z shifts during time registration
+    zero_clip=False,  # crop translation-introduced zero borders in Z/Y/X
+    max_xy_shifts=None,  # None or (max_y, max_x)
+    max_z_shifts=None,  # None or max_z
+    transform_backend="skimage",  # "skimage" or "scipy"
+    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
+    filter_slices=False,  # median-filter Z slices before projection
+    filter_projections=False,  # median-filter projections before shift estimation
+    verbose=True,
+    return_shifts=True,
+    return_details=True)
+print_shift_comparison(
+    "2D+t memmap XY time registration",
+    details_2d_t_xy_memmap["time_shifts_yx"],
+    expected_2d_t_xy)
+
+# save the registered memmap stack to a new OME-TIFF file:
+save_stack(
+    OUTPUT_DIR / "synthetic_2d_t_xy_memmap_registered.ome.tif",
+    registered_2d_t_xy_memmap,
+    metadata=metadata_2d_t_xy_memmap,
+    registration_details=details_2d_t_xy_memmap)
+
+# clean up the OMIO cache after saving and in case you don't need the cached memmap anymore:
+cleanup_omio_cache(MEMMAP_CACHE_DIR, full_cleanup=True, verbose=False)
 # %% END

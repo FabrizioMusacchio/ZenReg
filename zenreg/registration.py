@@ -214,6 +214,16 @@ def _normalize_transform_order(transform_order: int) -> int:
     return transform_order
 
 
+def _as_float32_stack_copy(stack) -> np.ndarray:
+    """Return a float32 ``TZCYX`` working copy from NumPy or disk-backed arrays."""
+
+    stack = ensure_tzcyx_stack(stack)
+    try:
+        return stack.astype(np.float32, copy=True)
+    except (AttributeError, TypeError):
+        return np.asarray(stack, dtype=np.float32).copy()
+
+
 def _effective_zero_clip_mode(*, zero_clip: bool, zero_clip_mode: str, rotreg: bool) -> str:
     """Return the concrete zero-clipping mode for this registration run."""
 
@@ -1024,7 +1034,7 @@ def _correct_intra_stack_z_drift_impl(
         Corrected stack, optionally with the estimated shifts.
     """
 
-    stack = ensure_tzcyx_stack(stack).astype(np.float32, copy=True)
+    stack = _as_float32_stack_copy(stack)
     method = _normalize_registration_method(method)
     reference_mode = _normalize_intra_stack_reference_mode(reference_mode)
     neighbor_window_size = _normalize_neighbor_window_size(neighbor_window_size)
@@ -1163,11 +1173,11 @@ def correct_intra_stack_z_drift(
             [[_clip_shift_yx(shift, max_xy_shifts) for shift in shifts_t] for shifts_t in shifts],
             dtype=np.float32,
         )
-        corrected_stack = ensure_tzcyx_stack(stack).astype(np.float32, copy=True)
+        corrected_stack = _as_float32_stack_copy(stack)
         for t in range(corrected_stack.shape[0]):
             for z in range(corrected_stack.shape[1]):
                 corrected_stack[t, z, :, :, :] = _apply_translation_to_cyx(
-                    np.asarray(stack)[t, z, :, :, :],
+                    ensure_tzcyx_stack(stack)[t, z, :, :, :],
                     shifts[t, z, :],
                     transform_backend=transform_backend,
                     transform_order=transform_order,
@@ -1743,7 +1753,7 @@ def register_stack(
         Registered stack, optionally with the estimated shifts.
     """
 
-    stack = ensure_tzcyx_stack(stack).astype(np.float32, copy=True)
+    stack = _as_float32_stack_copy(stack)
     method = _normalize_registration_method(method)
     time_registration_mode = _normalize_time_registration_mode(time_registration_mode)
     time_reference_mode = _normalize_time_reference_mode(time_reference_mode)

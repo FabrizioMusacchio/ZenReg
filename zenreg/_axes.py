@@ -12,7 +12,7 @@ import numpy as np
 CANONICAL_AXIS_ORDER = "TZCYX"
 
 
-def ensure_tzcyx_stack(stack) -> np.ndarray:
+def ensure_tzcyx_stack(stack):
     """
     Validate that an input array follows canonical ``TZCYX`` order.
 
@@ -23,8 +23,9 @@ def ensure_tzcyx_stack(stack) -> np.ndarray:
 
     Returns
     -------
-    numpy.ndarray
-        View or array representation of the input.
+    array-like
+        Input array if it already exposes ``ndim``/``shape`` metadata, otherwise
+        a NumPy array representation.
 
     Raises
     ------
@@ -32,7 +33,8 @@ def ensure_tzcyx_stack(stack) -> np.ndarray:
         If the input does not have exactly five dimensions.
     """
 
-    stack = np.asarray(stack)
+    if not hasattr(stack, "ndim"):
+        stack = np.asarray(stack)
     if stack.ndim != 5:
         raise ValueError(
             f"Expected a {CANONICAL_AXIS_ORDER} stack with 5 dimensions. "

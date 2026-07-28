@@ -484,7 +484,7 @@ def write_registration_outputs(
     """
 
     output_image_path = Path(output_image_path)
-    registered_stack = ensure_tzcyx_stack(np.asarray(registered_stack))
+    registered_stack = ensure_tzcyx_stack(registered_stack)
     details = _as_details_dict(registration_details)
     prefix = _report_prefix(output_image_path, report_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)

@@ -151,6 +151,38 @@ Pearson correlations between the template frame and each registered frame. The
 plot shows shifts over frames, dashed max-shift limits when configured, Pearson
 correlation, and rotation on a second y-axis when rotation correction was used.
 
+For large files, OMIO can read through a disk-backed Zarr store:
+
+```python
+from zenreg import cleanup_omio_cache, load_stack, register_stack, save_stack
+
+memmap_folder = "example_data/synthetic_data/registered/omio_memmap_cache"
+cleanup_omio_cache(memmap_folder)
+stack, metadata = load_stack(
+    "example_data/synthetic_data/synthetic_2d_t_xy.ome.tif",
+    return_metadata=True,
+    use_memmap=True,
+    memmap_folder=memmap_folder)
+
+registered, details = register_stack(
+    stack,
+    registration_channel=0,
+    return_shifts=True,
+    return_details=True)
+save_stack(
+    "example_data/synthetic_data/registered/synthetic_2d_t_xy_registered.ome.tif",
+    registered,
+    metadata=metadata,
+    registration_details=details)
+cleanup_omio_cache(memmap_folder)
+```
+
+Use a local `memmap_folder` when the input data live on a server or network
+volume. The current registration core can accept disk-backed OMIO/Zarr inputs,
+but several registration steps still materialize float32 working arrays; the
+memmap path is therefore useful for I/O and cache locality now, while fully
+streaming block-wise registration remains a future optimization.
+
 For a 3D stack with true intra-stack XY slice motion relative to z=0:
 
 ```python

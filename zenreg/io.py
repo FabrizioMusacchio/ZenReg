@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import os
 import tempfile
+from contextlib import redirect_stdout
 from copy import deepcopy
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -143,6 +145,9 @@ def create_empty_stack(
     *,
     dtype=np.uint16,
     fill_value=0,
+    use_memmap: bool = False,
+    memmap_folder: str | Path | None = None,
+    memmap_name: str | None = None,
     return_metadata: bool = False,
     input_metadata: dict[str, Any] | None = None,
     verbose: bool = False,
@@ -152,20 +157,46 @@ def create_empty_stack(
 
     This is a thin ZenReg wrapper around ``om.create_empty_image``. OMIO creates
     the array and, optionally, a matching OME/OMIO metadata dictionary.
+
+    Parameters
+    ----------
+    use_memmap : bool, optional
+        If True, create a disk-backed Zarr array via ``zarr_store="disk"``.
+    memmap_folder : str, pathlib.Path, or None, optional
+        Optional folder forwarded to OMIO as ``zarr_store_path``. This is useful
+        when temporary data should live on local scratch storage instead of next
+        to a large input file.
+    memmap_name : str or None, optional
+        Optional Zarr store name forwarded to OMIO as ``zarr_store_name``.
     """
+
+    if not use_memmap and memmap_folder is not None:
+        raise ValueError("memmap_folder requires use_memmap=True.")
+    if not use_memmap and memmap_name is not None:
+        raise ValueError("memmap_name requires use_memmap=True.")
 
     om = _import_omio()
     return om.create_empty_image(
         shape=shape,
         dtype=dtype,
         fill_value=fill_value,
+        zarr_store="disk" if use_memmap else None,
+        zarr_store_path=None if memmap_folder is None else str(memmap_folder),
+        zarr_store_name=memmap_name,
         return_metadata=return_metadata,
         input_metadata=input_metadata,
         verbose=verbose,
     )
 
 
-def load_stack(path: str | Path, *, return_metadata: bool = False, **imread_kwargs):
+def load_stack(
+    path: str | Path,
+    *,
+    return_metadata: bool = False,
+    use_memmap: bool = False,
+    memmap_folder: str | Path | None = None,
+    **imread_kwargs,
+):
     """
     Load a microscopy stack with OMIO.
 
@@ -180,6 +211,13 @@ def load_stack(path: str | Path, *, return_metadata: bool = False, **imread_kwar
         Input file, folder, or OMIO-supported source.
     return_metadata : bool, optional
         If True, return ``(stack, metadata)``. If False, return only ``stack``.
+    use_memmap : bool, optional
+        If True, ask OMIO to read through a disk-backed Zarr store by forwarding
+        ``zarr_store="disk"``. This can reduce memory pressure and avoid repeated
+        reads from network/server storage.
+    memmap_folder : str, pathlib.Path, or None, optional
+        Optional folder forwarded to OMIO as ``zarr_store_path``. Use a local
+        scratch folder for large files stored on remote/network volumes.
     **imread_kwargs
         Extra keyword arguments forwarded to ``om.imread``.
 
@@ -189,6 +227,16 @@ def load_stack(path: str | Path, *, return_metadata: bool = False, **imread_kwar
         Loaded canonical ``TZCYX`` stack, optionally with OMIO metadata.
     """
 
+    if not use_memmap and memmap_folder is not None:
+        raise ValueError("memmap_folder requires use_memmap=True.")
+    if use_memmap:
+        zarr_store = imread_kwargs.get("zarr_store")
+        if zarr_store not in (None, "disk"):
+            raise ValueError("use_memmap=True requires zarr_store=None or zarr_store='disk'.")
+        imread_kwargs["zarr_store"] = "disk"
+        if memmap_folder is not None:
+            imread_kwargs["zarr_store_path"] = str(memmap_folder)
+
     om = _import_omio()
     stack, metadata = om.imread(path, **imread_kwargs)
     stack = ensure_tzcyx_stack(stack)
@@ -197,6 +245,32 @@ def load_stack(path: str | Path, *, return_metadata: bool = False, **imread_kwar
             f"OMIO returned axes={metadata.get('axes')!r}, expected {CANONICAL_AXIS_ORDER!r}."
         )
     return (stack, metadata) if return_metadata else stack
+
+
+def cleanup_omio_cache(
+    target: str | Path,
+    *,
+    full_cleanup: bool = True,
+    verbose: bool = False,
+) -> None:
+    """
+    Clean OMIO disk-backed Zarr cache folders.
+
+    Pass the original input filename when OMIO used its default ``.omio_cache``
+    location next to the file, or pass the custom ``memmap_folder`` when
+    ``load_stack(..., use_memmap=True, memmap_folder=...)`` was used. For large
+    workflows it is usually sensible to call this once before loading, for a
+    fresh start, and once after ``save_stack`` has written the registered result.
+    """
+
+    if not Path(target).exists():
+        return
+    cleanup = _import_omio().cleanup_omio_cache
+    if verbose:
+        cleanup(str(target), full_cleanup=full_cleanup, verbose=verbose)
+        return
+    with redirect_stdout(StringIO()):
+        cleanup(str(target), full_cleanup=full_cleanup, verbose=verbose)
 
 
 def _metadata_for_output_path(
@@ -281,9 +355,12 @@ def save_stack(
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    array = ensure_tzcyx_stack(np.asarray(stack))
+    array = ensure_tzcyx_stack(stack)
     if dtype is not None:
-        array = array.astype(dtype, copy=False)
+        try:
+            array = array.astype(dtype, copy=False)
+        except TypeError:
+            array = array.astype(dtype)
 
     output_metadata = _metadata_for_output_path(path, array, metadata, verbose=verbose)
     written_paths = _import_omio().imwrite(
