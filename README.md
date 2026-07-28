@@ -157,12 +157,14 @@ For large files, OMIO can read through a disk-backed Zarr store:
 from zenreg import cleanup_omio_cache, load_stack, register_stack, save_stack
 
 memmap_folder = "example_data/synthetic_data/registered/omio_memmap_cache"
+# Optional fresh start. Skip this line to reuse an existing cache after restart.
 cleanup_omio_cache(memmap_folder)
 stack, metadata = load_stack(
     "example_data/synthetic_data/synthetic_2d_t_xy.ome.tif",
     return_metadata=True,
     use_memmap=True,
-    memmap_folder=memmap_folder)
+    memmap_folder=memmap_folder,
+    memmap_reuse=True)
 
 registered, details = register_stack(
     stack,
@@ -178,7 +180,9 @@ cleanup_omio_cache(memmap_folder)
 ```
 
 Use a local `memmap_folder` when the input data live on a server or network
-volume. The current registration core can accept disk-backed OMIO/Zarr inputs,
+volume. `memmap_reuse=True` is the default and lets OMIO reuse an existing
+validated `.omio_cache` Zarr store; set it to `False` to force rebuilding the
+cache. The current registration core can accept disk-backed OMIO/Zarr inputs,
 but several registration steps still materialize float32 working arrays; the
 memmap path is therefore useful for I/O and cache locality now, while fully
 streaming block-wise registration remains a future optimization.

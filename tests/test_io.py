@@ -66,6 +66,15 @@ def test_load_stack_supports_omio_disk_memmap(tmp_path):
         return_metadata=True,
         use_memmap=True,
         memmap_folder=cache_folder,
+        memmap_reuse=False,
+        verbose=False,
+    )
+    reloaded_stack, reloaded_metadata = load_stack(
+        output_path,
+        return_metadata=True,
+        use_memmap=True,
+        memmap_folder=cache_folder,
+        memmap_reuse=True,
         verbose=False,
     )
 
@@ -74,6 +83,10 @@ def test_load_stack_supports_omio_disk_memmap(tmp_path):
     assert "omio_cache_folder" in loaded_metadata
     assert "omio_zarr_store_path" in loaded_metadata
     np.testing.assert_allclose(np.asarray(loaded_stack), stack)
+    assert reloaded_stack.shape == stack.shape
+    assert reloaded_metadata["axes"] == "TZCYX"
+    assert reloaded_metadata["omio_zarr_store_path"] == loaded_metadata["omio_zarr_store_path"]
+    np.testing.assert_allclose(np.asarray(reloaded_stack), stack)
     cleanup_omio_cache(cache_folder, verbose=False)
 
 

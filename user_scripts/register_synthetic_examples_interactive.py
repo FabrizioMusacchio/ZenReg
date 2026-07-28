@@ -492,7 +492,8 @@ save_stack(
 
 maybe_open_in_napari(registered_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation after registration")
 # %% 7) 2D+t: DISK-BACKED OMIO MEMMAP INPUT
-# to start fresh, clear any pre-existing OMIO cache in the local scratch folder:
+# To force a fresh start, clear any pre-existing OMIO cache in the local scratch folder.
+# Skip this cleanup line after a kernel restart if you want OMIO to reuse the existing cache.
 cleanup_omio_cache(MEMMAP_CACHE_DIR, full_cleanup=True, verbose=False)
 
 # load the stack:
@@ -501,6 +502,7 @@ stack_2d_t_xy_memmap, metadata_2d_t_xy_memmap = load_stack(
     return_metadata=True,
     use_memmap=True,  # read through OMIO disk-backed Zarr
     memmap_folder=MEMMAP_CACHE_DIR,  # local scratch/cache folder for the Zarr store
+    memmap_reuse=True,  # reuse an existing valid .omio_cache if present
     verbose=False)
 print(f"2D+t memmap stack shape: {stack_2d_t_xy_memmap.shape} (TZCYX)")
 print(f"2D+t memmap stack type: {type(stack_2d_t_xy_memmap)}")

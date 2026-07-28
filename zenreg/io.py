@@ -195,6 +195,7 @@ def load_stack(
     return_metadata: bool = False,
     use_memmap: bool = False,
     memmap_folder: str | Path | None = None,
+    memmap_reuse: bool = True,
     **imread_kwargs,
 ):
     """
@@ -218,6 +219,10 @@ def load_stack(
     memmap_folder : str, pathlib.Path, or None, optional
         Optional folder forwarded to OMIO as ``zarr_store_path``. Use a local
         scratch folder for large files stored on remote/network volumes.
+    memmap_reuse : bool, optional
+        If True with ``use_memmap=True``, forward ``reuse_disk_cache=True`` to
+        OMIO so an existing validated ``.omio_cache`` Zarr store is reused. If
+        no cache exists, OMIO builds it. If False, OMIO rebuilds the disk cache.
     **imread_kwargs
         Extra keyword arguments forwarded to ``om.imread``.
 
@@ -234,6 +239,7 @@ def load_stack(
         if zarr_store not in (None, "disk"):
             raise ValueError("use_memmap=True requires zarr_store=None or zarr_store='disk'.")
         imread_kwargs["zarr_store"] = "disk"
+        imread_kwargs["reuse_disk_cache"] = bool(memmap_reuse)
         if memmap_folder is not None:
             imread_kwargs["zarr_store_path"] = str(memmap_folder)
 
