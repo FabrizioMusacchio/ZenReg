@@ -1517,6 +1517,7 @@ def _return_registration_result(
     registered: np.ndarray,
     *,
     return_shifts: bool,
+    return_details: bool,
     compatible_time_shifts_yx: bool,
     time_shifts_zyx: np.ndarray | None,
     intra_stack_shifts_yx: np.ndarray | None,
@@ -1532,22 +1533,13 @@ def _return_registration_result(
     time_reference_mode: str,
     transform_backend: str,
     transform_order: int,
+    registration_settings: dict,
 ):
     """Return a backwards-compatible shift object for simple cases."""
 
     if not return_shifts:
         return registered
-    if (
-        intra_stack_shifts_yx is None
-        and rotation_shifts_deg is None
-        and zero_clip_bounds is None
-        and compatible_time_shifts_yx
-        and time_shifts_zyx is not None
-    ):
-        return registered, time_shifts_zyx[:, 1:]
-    if time_shifts_zyx is None and rotation_shifts_deg is None and zero_clip_bounds is None and intra_stack_shifts_yx is not None:
-        return registered, intra_stack_shifts_yx
-    return registered, {
+    details = {
         "time_shifts_zyx": time_shifts_zyx,
         "time_shifts_yx": None if time_shifts_zyx is None else time_shifts_zyx[:, 1:],
         "intra_stack_shifts_yx": intra_stack_shifts_yx,
@@ -1563,7 +1555,21 @@ def _return_registration_result(
         "time_reference_mode": time_reference_mode,
         "transform_backend": transform_backend,
         "transform_order": transform_order,
+        **registration_settings,
     }
+    if return_details:
+        return registered, details
+    if (
+        intra_stack_shifts_yx is None
+        and rotation_shifts_deg is None
+        and zero_clip_bounds is None
+        and compatible_time_shifts_yx
+        and time_shifts_zyx is not None
+    ):
+        return registered, time_shifts_zyx[:, 1:]
+    if time_shifts_zyx is None and rotation_shifts_deg is None and zero_clip_bounds is None and intra_stack_shifts_yx is not None:
+        return registered, intra_stack_shifts_yx
+    return registered, details
 
 
 def register_stack(
@@ -1599,6 +1605,7 @@ def register_stack(
     phase_cross_correlation_normalization: str | None = None,
     verbose: bool = True,
     return_shifts: bool = False,
+    return_details: bool = False,
     pre_median_filter: bool | None = None,
     post_median_filter: bool | None = None,
 ):
@@ -1725,6 +1732,10 @@ def register_stack(
         path, shifts remain a backwards-compatible ``T, 2`` array storing
         ``(shift_y, shift_x)``. Advanced modes return a dictionary containing
         ``time_shifts_zyx`` and/or ``intra_stack_shifts_yx``.
+    return_details : bool, optional
+        If True together with ``return_shifts=True``, always return the full
+        registration details dictionary, including settings used for reports,
+        instead of the backwards-compatible simple shift arrays.
 
     Returns
     -------
@@ -1759,7 +1770,6 @@ def register_stack(
     phase_cross_correlation_normalization = _normalize_phase_cross_correlation_normalization(
         phase_cross_correlation_normalization
     )
-
     if stack.shape[0] <= 1 and time_registration_mode != "none":
         raise ValueError("Registration requires T > 1.")
     if not 0 <= int(registration_channel) < stack.shape[2]:
@@ -1787,6 +1797,34 @@ def register_stack(
         zero_clip_mode=zero_clip_mode,
         rotreg=bool(rotreg),
     )
+    projection_range_setting = (
+        None
+        if zrange is None
+        else tuple(int(v) for v in normalize_zrange(zrange, stack.shape[1], strict=True))
+    )
+    registration_settings = {
+        "registration_channel": int(registration_channel),
+        "registration_stack": int(registration_stack),
+        "method": method,
+        "intra_stack": bool(intra_stack),
+        "zreg": bool(zreg),
+        "zero_clip": bool(zero_clip),
+        "rotreg": bool(rotreg),
+        "rotreg_iter": int(rotreg_iter),
+        "projection_range": projection_range_setting,
+        "projection_method": projection_method,
+        "filter_slices": bool(filter_slices),
+        "filter_projections": bool(filter_projections),
+        "median_kernel_size": int(median_kernel_size),
+        "max_xy_shifts": None
+        if max_xy_shifts is None
+        else tuple(float(v) for v in max_xy_shifts),
+        "max_z_shifts": None if max_z_shifts is None else float(max_z_shifts),
+        "max_rot_shifts": None if max_rot_shifts is None else float(max_rot_shifts),
+        "phase_cross_correlation_upsample_factor": int(phase_cross_correlation_upsample_factor),
+        "phase_cross_correlation_normalization": phase_cross_correlation_normalization,
+        "stack_shape_tzcyx": tuple(int(v) for v in stack.shape),
+    }
 
     registered = stack
     intra_stack_shifts_yx = None
@@ -1937,6 +1975,7 @@ def register_stack(
     return _return_registration_result(
         registered,
         return_shifts=return_shifts,
+        return_details=return_details,
         compatible_time_shifts_yx=compatible_time_shifts_yx,
         time_shifts_zyx=time_shifts_zyx,
         intra_stack_shifts_yx=intra_stack_shifts_yx,
@@ -1952,4 +1991,5 @@ def register_stack(
         time_reference_mode=time_reference_mode,
         transform_backend=transform_backend,
         transform_order=transform_order,
+        registration_settings=registration_settings,
     )

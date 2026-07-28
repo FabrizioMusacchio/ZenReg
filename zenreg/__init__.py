@@ -17,6 +17,7 @@ from .io import (
     update_stack_metadata,
 )
 from .registration import correct_intra_stack_z_drift, register_stack
+from .reporting import write_registration_outputs
 
 __all__ = [
     "apply_filters",
@@ -28,6 +29,7 @@ __all__ = [
     "register_stack",
     "save_stack",
     "update_stack_metadata",
+    "write_registration_outputs",
     "z_project",
 ]
 

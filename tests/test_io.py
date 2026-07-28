@@ -1,6 +1,12 @@
 import numpy as np
 
-from zenreg import create_stack_metadata, load_stack, save_stack, update_stack_metadata
+from zenreg import (
+    create_stack_metadata,
+    load_stack,
+    register_stack,
+    save_stack,
+    update_stack_metadata,
+)
 
 
 def test_omio_roundtrip_preserves_tzcyx_shape_and_metadata(tmp_path):
@@ -39,3 +45,36 @@ def test_update_stack_metadata_syncs_modified_shape():
     assert cropped_metadata["SizeC"] == 1
     assert cropped_metadata["SizeY"] == 5
     assert cropped_metadata["SizeX"] == 5
+
+
+def test_save_stack_writes_registration_report_sidecars(tmp_path):
+    stack = np.zeros((2, 1, 1, 16, 16), dtype=np.float32)
+    stack[:, 0, 0, 4:10, 5:11] = 1.0
+    registered, details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    output_path = save_stack(
+        tmp_path / "registered.ome.tif",
+        registered,
+        metadata=create_stack_metadata(stack, verbose=False),
+        registration_details=details,
+        overwrite=True,
+        verbose=False,
+    )
+
+    csv_path = tmp_path / "registered_registration_shifts.csv"
+    yaml_path = tmp_path / "registered_registration_settings.yaml"
+    plot_path = tmp_path / "registered_registration_summary.png"
+    assert output_path.exists()
+    assert csv_path.exists()
+    assert yaml_path.exists()
+    assert plot_path.exists()
+    assert "pearson_correlation" in csv_path.read_text(encoding="utf-8")
+    assert "registration_settings:" in yaml_path.read_text(encoding="utf-8")
+    assert plot_path.stat().st_size > 0

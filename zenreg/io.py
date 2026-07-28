@@ -16,6 +16,7 @@ from typing import Any
 import numpy as np
 
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack
+from .reporting import write_registration_outputs
 
 
 def _configure_omio_runtime() -> None:
@@ -234,6 +235,8 @@ def save_stack(
     stack,
     *,
     metadata: dict[str, Any] | None = None,
+    registration_details: dict[str, Any] | np.ndarray | None = None,
+    report_prefix: str | Path | None = None,
     dtype: str | np.dtype | None = None,
     compression_level: int = 3,
     overwrite: bool = True,
@@ -252,6 +255,15 @@ def save_stack(
     metadata : dict or None, optional
         OMIO metadata to inherit from the input image. Size and axis fields are
         updated to match ``stack`` before writing.
+    registration_details : dict, array-like, or None, optional
+        If provided, write ZenReg report sidecars next to the registered image:
+        ``*_registration_shifts.csv`` with detected shifts and Pearson
+        correlations, ``*_registration_settings.yaml`` with reproducibility
+        settings, and ``*_registration_summary.png`` with shift/correlation
+        plots.
+    report_prefix : str, pathlib.Path, or None, optional
+        Optional prefix for report sidecars. If None, the registered image path
+        is used as prefix.
     dtype : str, numpy dtype, or None, optional
         Optional output dtype conversion. If ``None``, the input dtype is kept.
     compression_level : int, optional
@@ -285,4 +297,12 @@ def save_stack(
     )
     if not written_paths:
         raise RuntimeError(f"OMIO did not report a written path for {path!s}.")
-    return Path(written_paths[0])
+    output_path = Path(written_paths[0])
+    if registration_details is not None:
+        write_registration_outputs(
+            output_path,
+            array,
+            registration_details,
+            report_prefix=report_prefix,
+        )
+    return output_path

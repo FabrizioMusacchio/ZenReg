@@ -125,6 +125,32 @@ save_stack(
 print(shifts)
 ```
 
+To write transparent registration sidecars next to the registered OME-TIFF, ask
+for full details and pass them to `save_stack`:
+
+```python
+registered, details = register_stack(
+    stack,
+    registration_channel=0,
+    registration_stack=0,
+    projection_method="max",
+    method="phase_cross_correlation",
+    return_shifts=True,
+    return_details=True)
+save_stack(
+    "example_data/synthetic_data/registered/synthetic_2d_t_xy_registered.ome.tif",
+    registered,
+    metadata=metadata,
+    registration_details=details)
+```
+
+This writes `*_registration_shifts.csv`, `*_registration_settings.yaml`, and
+`*_registration_summary.png` next to the registered image. The CSV contains
+detected shifts, optional intra-stack shifts, optional rotation corrections, and
+Pearson correlations between the template frame and each registered frame. The
+plot shows shifts over frames, dashed max-shift limits when configured, Pearson
+correlation, and rotation on a second y-axis when rotation correction was used.
+
 For a 3D stack with true intra-stack XY slice motion relative to z=0:
 
 ```python

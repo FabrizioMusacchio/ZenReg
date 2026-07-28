@@ -209,7 +209,7 @@ expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, regis
 print(f"2D+t XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
 show_timepoints(stack_2d_t_xy, title="2D+t XY before registration", channel=0, projection_method="max")
 
-registered_2d_t_xy, shifts_2d_t_xy = register_stack(
+registered_2d_t_xy, details_2d_t_xy = register_stack(
     stack_2d_t_xy,
     registration_channel=0,  # channel used to estimate shifts
     registration_stack=0,  # reference time point/template
@@ -234,17 +234,23 @@ registered_2d_t_xy, shifts_2d_t_xy = register_stack(
     median_kernel_size=3,  # median-filter kernel size in pixels
     verbose=True,
     return_shifts=True,
+    return_details=True,
 )
-print_shift_comparison("2D+t XY time registration", shifts_2d_t_xy, expected_2d_t_xy)
+print_shift_comparison("2D+t XY time registration", details_2d_t_xy["time_shifts_yx"], expected_2d_t_xy)
 show_timepoints(registered_2d_t_xy, title="2D+t XY after registration", channel=0, projection_method="max")
-save_stack(OUTPUT_DIR / "synthetic_2d_t_xy_registered.ome.tif", registered_2d_t_xy, metadata=metadata_2d_t_xy)
+save_stack(
+    OUTPUT_DIR / "synthetic_2d_t_xy_registered.ome.tif",
+    registered_2d_t_xy,
+    metadata=metadata_2d_t_xy,
+    registration_details=details_2d_t_xy,
+)
 # %% 2) 3D: INTRA-STACK XY SLICE REGISTRATION
 stack_3d_z_xy, metadata_3d_z_xy = load_stack(STACK_3D_Z_XY_PATH, return_metadata=True, verbose=False)
 expected_3d_z_xy = load_expected_slice_registration_shifts(GT_3D_Z_XY_PATH)
 print(f"3D Z-XY stack shape: {stack_3d_z_xy.shape} (TZCYX)")
 show_slices(stack_3d_z_xy, title="3D intra-stack before correction", channel=0, z0=0, z1=6)
 
-registered_3d_z_xy, shifts_3d_z_xy = register_stack(
+registered_3d_z_xy, details_3d_z_xy = register_stack(
     stack_3d_z_xy,
     registration_channel=0,  # channel used to estimate shifts
     method="phase_cross_correlation",  # "phase_cross_correlation" or "pystackreg"
@@ -263,17 +269,26 @@ registered_3d_z_xy, shifts_3d_z_xy = register_stack(
     filter_projections=False,  # median-filter images before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
     verbose=True,
-    return_shifts=True)
-print_shift_comparison("3D intra-stack XY correction", shifts_3d_z_xy, expected_3d_z_xy)
+    return_shifts=True,
+    return_details=True)
+print_shift_comparison(
+    "3D intra-stack XY correction",
+    details_3d_z_xy["intra_stack_shifts_yx"],
+    expected_3d_z_xy)
 show_slices(registered_3d_z_xy, title="3D intra-stack after correction", channel=0, z0=0, z1=6)
-save_stack(OUTPUT_DIR / "synthetic_3d_z_xy_registered.ome.tif", registered_3d_z_xy, metadata=metadata_3d_z_xy)
+save_stack(
+    OUTPUT_DIR / "synthetic_3d_z_xy_registered.ome.tif",
+    registered_3d_z_xy,
+    metadata=metadata_3d_z_xy,
+    registration_details=details_3d_z_xy,
+)
 # %% 3) 3D+t: GLOBAL XY TIME REGISTRATION RELATIVE TO t=0
 stack_3d_t_xy, metadata_3d_t_xy = load_stack(STACK_3D_T_XY_PATH, return_metadata=True, verbose=False)
 expected_3d_t_xy = load_expected_time_registration_shifts(GT_3D_T_XY_PATH, registration_stack=0, axes="yx")
 print(f"3D+t XY stack shape: {stack_3d_t_xy.shape} (TZCYX)")
 show_timepoints(stack_3d_t_xy, title="3D+t XY before time registration", channel=0, projection_method="max")
 
-registered_3d_t_xy, shifts_3d_t_xy = register_stack(
+registered_3d_t_xy, details_3d_t_xy = register_stack(
     stack_3d_t_xy,
     registration_channel=0,  # channel used to estimate shifts
     registration_stack=0,  # reference time point/template
@@ -298,10 +313,19 @@ registered_3d_t_xy, shifts_3d_t_xy = register_stack(
     filter_projections=False,  # median-filter projections before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
     verbose=True,
-    return_shifts=True)
-print_shift_comparison("3D+t global XY time registration", shifts_3d_t_xy, expected_3d_t_xy)
+    return_shifts=True,
+    return_details=True)
+print_shift_comparison(
+    "3D+t global XY time registration",
+    details_3d_t_xy["time_shifts_yx"],
+    expected_3d_t_xy)
 show_timepoints(registered_3d_t_xy, title="3D+t XY after time registration", channel=0, projection_method="max")
-save_stack(OUTPUT_DIR / "synthetic_3d_t_xy_registered.ome.tif", registered_3d_t_xy, metadata=metadata_3d_t_xy)
+save_stack(
+    OUTPUT_DIR / "synthetic_3d_t_xy_registered.ome.tif",
+    registered_3d_t_xy,
+    metadata=metadata_3d_t_xy,
+    registration_details=details_3d_t_xy,
+)
 # %% 4) 3D+t: INTRA-STACK ONLY, NO TIMEPOINT REGISTRATION
 stack_3d_t_intra_xy, metadata_3d_t_intra_xy = load_stack(
     STACK_3D_T_INTRA_XY_PATH,
@@ -312,7 +336,7 @@ expected_3d_t_intra_xy = load_expected_slice_registration_shifts(GT_3D_T_INTRA_X
 print(f"3D+t intra-only stack shape: {stack_3d_t_intra_xy.shape} (TZCYX)")
 show_slices(stack_3d_t_intra_xy, title="3D+t intra-only before correction", channel=0, z0=0, z1=6)
 
-registered_3d_t_intra_xy, shifts_3d_t_intra_xy = register_stack(
+registered_3d_t_intra_xy, details_3d_t_intra_xy = register_stack(
     stack_3d_t_intra_xy,
     registration_channel=0,  # channel used to estimate shifts
     method="phase_cross_correlation",  # "phase_cross_correlation" or "pystackreg"
@@ -332,13 +356,18 @@ registered_3d_t_intra_xy, shifts_3d_t_intra_xy = register_stack(
     median_kernel_size=3,  # median-filter kernel size in pixels
     verbose=True,
     return_shifts=True,
+    return_details=True,
 )
-print_shift_comparison("3D+t intra-stack-only XY correction", shifts_3d_t_intra_xy, expected_3d_t_intra_xy)
+print_shift_comparison(
+    "3D+t intra-stack-only XY correction",
+    details_3d_t_intra_xy["intra_stack_shifts_yx"],
+    expected_3d_t_intra_xy)
 show_slices(registered_3d_t_intra_xy, title="3D+t intra-only after correction", channel=0, z0=0, z1=6)
 save_stack(
     OUTPUT_DIR / "synthetic_3d_t_intra_xy_registered.ome.tif",
     registered_3d_t_intra_xy,
     metadata=metadata_3d_t_intra_xy,
+    registration_details=details_3d_t_intra_xy,
 )
 # %% 5) 3D+t: GLOBAL ZYX TIME REGISTRATION RELATIVE TO t=0
 stack_3d_t_zyx, metadata_3d_t_zyx = load_stack(STACK_3D_T_ZYX_PATH, return_metadata=True, verbose=False)
@@ -373,7 +402,8 @@ registered_3d_t_zyx, details_3d_t_zyx = register_stack(
     filter_projections=False,  # median-filter projections before projection fallback
     median_kernel_size=3,  # median-filter kernel size in pixels
     verbose=True,
-    return_shifts=True)
+    return_shifts=True,
+    return_details=True)
 print_shift_comparison(
     "3D+t global ZYX full-volume time registration",
     details_3d_t_zyx["time_shifts_zyx"],
@@ -383,7 +413,12 @@ show_timepoints(
     title="3D+t ZYX after full 3D registration",
     channel=0,
     projection_method="max",)
-save_stack(OUTPUT_DIR / "synthetic_3d_t_zyx_registered.ome.tif", registered_3d_t_zyx, metadata=metadata_3d_t_zyx)
+save_stack(
+    OUTPUT_DIR / "synthetic_3d_t_zyx_registered.ome.tif",
+    registered_3d_t_zyx,
+    metadata=metadata_3d_t_zyx,
+    registration_details=details_3d_t_zyx,
+)
 
 maybe_open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX after full 3D registration")
 # %% 6) 2D+t: GLOBAL XY ROTATION
@@ -432,7 +467,8 @@ registered_2d_t_rot_xy, details_2d_t_rot_xy = register_stack(
     filter_projections=False,  # median-filter projections before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
     verbose=True,
-    return_shifts=True)
+    return_shifts=True,
+    return_details=True)
 print_shift_comparison(
     "2D+t translation passes during rotation refinement",
     details_2d_t_rot_xy["time_shifts_yx"],
@@ -450,7 +486,8 @@ show_timepoints(
 save_stack(
     OUTPUT_DIR / "synthetic_2d_t_rot_xy_registered.ome.tif",
     registered_2d_t_rot_xy,
-    metadata=metadata_2d_t_rot_xy)
+    metadata=metadata_2d_t_rot_xy,
+    registration_details=details_2d_t_rot_xy)
 
 maybe_open_in_napari(registered_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation after registration")
 # %% END
