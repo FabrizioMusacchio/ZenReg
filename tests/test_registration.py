@@ -442,3 +442,64 @@ def test_rotation_zero_clip_auto_uses_mask_bounds():
     assert clipped.shape[4] < stack.shape[4]
     assert shift_details["zero_clip_bounds"]["y_top"] > 0
     assert shift_details["zero_clip_bounds"]["x_left"] > 0
+
+
+def test_standard_registration_output_memmap_matches_numpy(tmp_path):
+    stack, _ = create_2d_motion_distorted_stack(time_count=4, noise_sigma=0.0)
+
+    registered_numpy, details_numpy = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+    registered_memmap, details_memmap = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        output_use_memmap=True,
+        output_memmap_folder=tmp_path / "standard_cache",
+        output_memmap_name="registered_standard",
+        n_jobs=2,
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    assert registered_memmap.shape == registered_numpy.shape
+    assert details_memmap["output_use_memmap"] is True
+    np.testing.assert_allclose(details_memmap["time_shifts_zyx"], details_numpy["time_shifts_zyx"])
+    np.testing.assert_allclose(np.asarray(registered_memmap), registered_numpy)
+
+
+def test_standard_zero_clip_output_memmap_matches_numpy(tmp_path):
+    stack, _ = create_2d_motion_distorted_stack(time_count=4, noise_sigma=0.0)
+
+    clipped_numpy, details_numpy = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        zero_clip=True,
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+    clipped_memmap, details_memmap = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        zero_clip=True,
+        output_use_memmap=True,
+        output_memmap_folder=tmp_path / "zero_clip_cache",
+        output_memmap_name="registered_zero_clip",
+        n_jobs=2,
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    assert clipped_memmap.shape == clipped_numpy.shape
+    assert details_memmap["zero_clip_bounds"] == details_numpy["zero_clip_bounds"]
+    np.testing.assert_allclose(np.asarray(clipped_memmap), clipped_numpy)

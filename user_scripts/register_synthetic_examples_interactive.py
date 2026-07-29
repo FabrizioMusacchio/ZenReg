@@ -624,9 +624,14 @@ registered_2d_t_xy_memmap, details_2d_t_xy_memmap = register_stack(
     filter_slices=False,  # median-filter Z slices before projection
     filter_projections=False,  # median-filter projections before shift estimation
     n_jobs=2,  # CPU worker threads for independent time points/slices
+    output_use_memmap=True,  # write registered output into an OMIO/Zarr cache
+    output_memmap_folder=MEMMAP_CACHE_DIR,  # local scratch/cache folder for registered results
+    output_memmap_name="synthetic_2d_t_xy_registered",  # base Zarr store name for output stages
+    output_dtype=np.float32,  # float32 preserves interpolated subpixel intensities
     verbose=True,
     return_shifts=True,
     return_details=True)
+print(f"Registered memmap stack type: {type(registered_2d_t_xy_memmap)}")
 print_shift_comparison(
     "2D+t memmap XY time registration",
     details_2d_t_xy_memmap["time_shifts_yx"],

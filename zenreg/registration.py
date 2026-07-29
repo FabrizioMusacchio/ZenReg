@@ -184,6 +184,18 @@ def _parallel_map_ordered(function, items, *, n_jobs: int):
         return list(executor.map(function, items))
 
 
+def _iter_map_ordered(function, items, *, n_jobs: int):
+    """Yield mapped results in input order without storing all outputs first."""
+
+    items = list(items)
+    if int(n_jobs) <= 1 or len(items) <= 1:
+        for item in items:
+            yield function(item)
+        return
+    with ThreadPoolExecutor(max_workers=int(n_jobs)) as executor:
+        yield from executor.map(function, items)
+
+
 def _normalize_zero_clip_mode(zero_clip_mode: str) -> str:
     """Normalize and validate the zero-clipping strategy."""
 
@@ -275,6 +287,82 @@ def _as_float32_stack_copy(stack) -> np.ndarray:
         return stack.astype(np.float32, copy=True)
     except (AttributeError, TypeError):
         return np.asarray(stack, dtype=np.float32).copy()
+
+
+def _as_float32_work_array(array) -> np.ndarray:
+    """Return a local float32 working array for the currently processed chunk."""
+
+    return np.asarray(array, dtype=np.float32)
+
+
+def _normalize_output_dtype(output_dtype) -> np.dtype:
+    """Normalize the registered-output dtype."""
+
+    dtype = np.dtype(output_dtype)
+    if not np.issubdtype(dtype, np.floating):
+        warnings.warn(
+            "Registration output is usually safest as a floating dtype because "
+            "subpixel transforms create interpolated intensities. Continuing "
+            f"with output_dtype={dtype}.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+    return dtype
+
+
+def _compose_output_memmap_name(base_name: str | None, stage_name: str | None) -> str | None:
+    """Build a deterministic Zarr store name for intermediate registration stages."""
+
+    if base_name is None:
+        return None
+    if not stage_name:
+        return str(base_name)
+    return f"{base_name}_{stage_name}"
+
+
+def _create_registered_output(
+    shape: tuple[int, int, int, int, int],
+    *,
+    dtype,
+    output_use_memmap: bool,
+    output_memmap_folder: str | os.PathLike | None,
+    output_memmap_name: str | None,
+    stage_name: str | None = None,
+):
+    """Allocate a registered output stack in RAM or as an OMIO/Zarr array."""
+
+    if output_use_memmap:
+        from .io import create_empty_stack
+
+        return create_empty_stack(
+            shape=tuple(int(v) for v in shape),
+            dtype=np.dtype(dtype),
+            fill_value=0,
+            use_memmap=True,
+            memmap_folder=output_memmap_folder,
+            memmap_name=_compose_output_memmap_name(output_memmap_name, stage_name),
+            return_metadata=False,
+            verbose=False,
+        )
+    return np.empty(tuple(int(v) for v in shape), dtype=np.dtype(dtype))
+
+
+def _extract_registration_volume(
+    stack,
+    *,
+    t: int,
+    registration_channel: int,
+    zrange: tuple[int, int] | Sequence[int] | None,
+    filter_slices: bool,
+    median_kernel_size: int,
+) -> np.ndarray:
+    """Extract one registration-channel ``ZYX`` volume as a local float32 chunk."""
+
+    z_start, z_stop = normalize_zrange(zrange, stack.shape[1], strict=True)
+    volume = _as_float32_work_array(stack[int(t), int(z_start) : int(z_stop), int(registration_channel), :, :])
+    if filter_slices:
+        return _apply_median_to_zyx(volume, int(median_kernel_size))
+    return volume
 
 
 def _effective_zero_clip_mode(*, zero_clip: bool, zero_clip_mode: str, rotreg: bool) -> str:
@@ -606,7 +694,16 @@ def _crop_bounds_from_valid_mask(
     return _crop_bounds_from_valid_mask_greedy(valid)
 
 
-def _zero_clip_stack(stack: np.ndarray, crop_bounds: dict[str, int]) -> np.ndarray:
+def _zero_clip_stack(
+    stack,
+    crop_bounds: dict[str, int],
+    *,
+    output_use_memmap: bool = False,
+    output_memmap_folder: str | os.PathLike | None = None,
+    output_memmap_name: str | None = None,
+    output_dtype=np.float32,
+    n_jobs: int = 1,
+):
     """Crop zero-fill borders from a registered ``TZCYX`` stack."""
 
     z_top = int(crop_bounds.get("z_top", 0))
@@ -624,7 +721,38 @@ def _zero_clip_stack(stack: np.ndarray, crop_bounds: dict[str, int]) -> np.ndarr
             "zero_clip would remove the complete image. "
             f"Shape={stack.shape}, crop_bounds={crop_bounds}."
         )
-    return stack[:, z_top:z_stop, :, y_top:y_stop, x_left:x_stop].copy()
+    cropped_shape = (
+        int(stack.shape[0]),
+        int(z_stop - z_top),
+        int(stack.shape[2]),
+        int(y_stop - y_top),
+        int(x_stop - x_left),
+    )
+    if not output_use_memmap:
+        return np.asarray(
+            stack[:, z_top:z_stop, :, y_top:y_stop, x_left:x_stop],
+            dtype=np.dtype(output_dtype),
+        ).copy()
+
+    cropped = _create_registered_output(
+        cropped_shape,
+        dtype=output_dtype,
+        output_use_memmap=True,
+        output_memmap_folder=output_memmap_folder,
+        output_memmap_name=output_memmap_name,
+        stage_name="zero_clipped",
+    )
+
+    def copy_timepoint(t: int) -> tuple[int, np.ndarray]:
+        chunk = np.asarray(
+            stack[int(t), z_top:z_stop, :, y_top:y_stop, x_left:x_stop],
+            dtype=np.dtype(output_dtype),
+        )
+        return int(t), chunk
+
+    for t, chunk in _iter_map_ordered(copy_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
+        cropped[t, :, :, :, :] = chunk
+    return cropped
 
 
 def _project_zyx_to_yx(volume_zyx: np.ndarray, *, projection_method: str) -> np.ndarray:
@@ -1166,6 +1294,11 @@ def _correct_intra_stack_z_drift_impl(
     transform_backend: str = "skimage",
     transform_order: int = 1,
     n_jobs: int = 1,
+    output_use_memmap: bool = False,
+    output_memmap_folder: str | os.PathLike | None = None,
+    output_memmap_name: str | None = None,
+    output_dtype=np.float32,
+    output_stage_name: str | None = "intra_stack",
     verbose: bool = True,
     return_shifts: bool = False,
     pre_median_filter: bool | None = None,
@@ -1249,7 +1382,7 @@ def _correct_intra_stack_z_drift_impl(
         Corrected stack, optionally with the estimated shifts.
     """
 
-    stack = _as_float32_stack_copy(stack)
+    stack = ensure_tzcyx_stack(stack)
     method = _normalize_registration_method(method)
     reference_mode = _normalize_intra_stack_reference_mode(reference_mode)
     neighbor_window_size = _normalize_neighbor_window_size(neighbor_window_size)
@@ -1257,6 +1390,7 @@ def _correct_intra_stack_z_drift_impl(
     transform_backend = _normalize_transform_backend(transform_backend)
     transform_order = _normalize_transform_order(transform_order)
     n_jobs = _normalize_n_jobs(n_jobs)
+    output_dtype = _normalize_output_dtype(output_dtype)
     filter_slices, filter_projections = _resolve_filter_aliases(
         filter_slices=filter_slices,
         filter_projections=filter_projections,
@@ -1283,59 +1417,77 @@ def _correct_intra_stack_z_drift_impl(
     shifts = np.zeros((stack.shape[0], stack.shape[1], 2), dtype=np.float32)
     if stack.shape[1] <= 1:
         _print_verbose(verbose, "Skipping intra-stack Z drift correction because Z <= 1.")
-        return (stack.copy(), shifts) if return_shifts else stack.copy()
+        corrected = _create_registered_output(
+            tuple(int(v) for v in stack.shape),
+            dtype=output_dtype,
+            output_use_memmap=output_use_memmap,
+            output_memmap_folder=output_memmap_folder,
+            output_memmap_name=output_memmap_name,
+            stage_name=output_stage_name,
+        )
+        for t, frame in _iter_map_ordered(
+            lambda index: (int(index), np.asarray(stack[int(index)], dtype=output_dtype)),
+            range(stack.shape[0]),
+            n_jobs=n_jobs,
+        ):
+            corrected[t, :, :, :, :] = frame
+        return (corrected, shifts) if return_shifts else corrected
 
-    working_volumes = []
-    for t in range(stack.shape[0]):
-        volume_zyx = np.asarray(stack[t, :, int(registration_channel), :, :], dtype=np.float32)
-        working_volume = volume_zyx.copy()
+    def process_timepoint(t: int) -> tuple[int, np.ndarray, np.ndarray]:
+        working_volume = _as_float32_work_array(stack[int(t), :, int(registration_channel), :, :])
         if filter_slices:
             working_volume = _apply_median_to_zyx(working_volume, int(median_kernel_size))
-        working_volumes.append(working_volume)
+        corrected_frame = np.empty(stack.shape[1:], dtype=output_dtype)
+        shifts_t = np.zeros((stack.shape[1], 2), dtype=np.float32)
+        for z in range(stack.shape[1]):
+            moving_image = _as_float32_work_array(working_volume[z, :, :])
+            reference_image = _build_intra_stack_reference_image(
+                working_volume,
+                z_index=z,
+                reference_mode=reference_mode,
+                neighbor_window_size=neighbor_window_size,
+                projection_method=projection_method,
+            ).astype(np.float32, copy=False)
 
-    def process_slice(index: tuple[int, int]) -> tuple[int, int, np.ndarray, np.ndarray]:
-        t, z = index
-        working_volume = working_volumes[t]
-        moving_image = np.asarray(working_volume[z, :, :], dtype=np.float32)
-        reference_image = _build_intra_stack_reference_image(
-            working_volume,
-            z_index=z,
-            reference_mode=reference_mode,
-            neighbor_window_size=neighbor_window_size,
-            projection_method=projection_method,
-        ).astype(np.float32, copy=False)
+            if filter_projections:
+                kernel = (int(median_kernel_size), int(median_kernel_size))
+                moving_image = median_filter(moving_image, size=kernel)
+                reference_image = median_filter(reference_image, size=kernel)
 
-        if filter_projections:
-            kernel = (int(median_kernel_size), int(median_kernel_size))
-            moving_image = median_filter(moving_image, size=kernel)
-            reference_image = median_filter(reference_image, size=kernel)
+            shift_yx = _estimate_shift(
+                reference_image,
+                moving_image,
+                method=method,
+                phase_cross_correlation_upsample_factor=int(
+                    phase_cross_correlation_upsample_factor
+                ),
+                phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+            )
+            corrected_frame[z, :, :, :] = _apply_translation_to_cyx(
+                stack[int(t), z, :, :, :],
+                shift_yx,
+                transform_backend=transform_backend,
+                transform_order=transform_order,
+            ).astype(output_dtype, copy=False)
+            shifts_t[z, :] = shift_yx
+        return int(t), corrected_frame, shifts_t
 
-        shift_yx = _estimate_shift(
-            reference_image,
-            moving_image,
-            method=method,
-            phase_cross_correlation_upsample_factor=int(
-                phase_cross_correlation_upsample_factor
-            ),
-            phase_cross_correlation_normalization=phase_cross_correlation_normalization,
-        )
-        corrected_slice = _apply_translation_to_cyx(
-            stack[t, z, :, :, :],
-            shift_yx,
-            transform_backend=transform_backend,
-            transform_order=transform_order,
-        )
-        return t, z, shift_yx, corrected_slice
-
-    corrected = stack.copy()
-    tasks = [(t, z) for t in range(stack.shape[0]) for z in range(stack.shape[1])]
-    for t, z, shift_yx, corrected_slice in _parallel_map_ordered(process_slice, tasks, n_jobs=n_jobs):
-        shifts[t, z, :] = shift_yx
-        _print_verbose(
-            verbose,
-            f"t={t} z={z} shift_y={float(shift_yx[0]):.3f} shift_x={float(shift_yx[1]):.3f}",
-        )
-        corrected[t, z, :, :, :] = corrected_slice
+    corrected = _create_registered_output(
+        tuple(int(v) for v in stack.shape),
+        dtype=output_dtype,
+        output_use_memmap=output_use_memmap,
+        output_memmap_folder=output_memmap_folder,
+        output_memmap_name=output_memmap_name,
+        stage_name=output_stage_name,
+    )
+    for t, corrected_frame, shifts_t in _iter_map_ordered(process_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
+        shifts[t, :, :] = shifts_t
+        for z, shift_yx in enumerate(shifts_t):
+            _print_verbose(
+                verbose,
+                f"t={t} z={z} shift_y={float(shift_yx[0]):.3f} shift_x={float(shift_yx[1]):.3f}",
+            )
+        corrected[t, :, :, :, :] = corrected_frame
 
     return (corrected, shifts) if return_shifts else corrected
 
@@ -1400,8 +1552,15 @@ def correct_intra_stack_z_drift(
             [[_clip_shift_yx(shift, max_xy_shifts) for shift in shifts_t] for shifts_t in shifts],
             dtype=np.float32,
         )
-        corrected_stack = _as_float32_stack_copy(stack)
         canonical_stack = ensure_tzcyx_stack(stack)
+        corrected_stack = _create_registered_output(
+            tuple(int(v) for v in canonical_stack.shape),
+            dtype=np.float32,
+            output_use_memmap=False,
+            output_memmap_folder=None,
+            output_memmap_name=None,
+            stage_name=None,
+        )
 
         def apply_clipped_slice(index: tuple[int, int]) -> tuple[int, int, np.ndarray]:
             t, z = index
@@ -1413,7 +1572,7 @@ def correct_intra_stack_z_drift(
             )
 
         tasks = [(t, z) for t in range(corrected_stack.shape[0]) for z in range(corrected_stack.shape[1])]
-        for t, z, corrected_slice in _parallel_map_ordered(apply_clipped_slice, tasks, n_jobs=n_jobs):
+        for t, z, corrected_slice in _iter_map_ordered(apply_clipped_slice, tasks, n_jobs=n_jobs):
             corrected_stack[t, z, :, :, :] = corrected_slice
     return (corrected_stack, shifts) if return_shifts else corrected_stack
 
@@ -1548,7 +1707,7 @@ def _estimate_time_shift_from_full_3d(
 
 
 def _register_stack_across_time(
-    stack: np.ndarray,
+    stack,
     *,
     registration_channel: int,
     registration_stack: int,
@@ -1568,6 +1727,11 @@ def _register_stack_across_time(
     transform_backend: str,
     transform_order: int,
     n_jobs: int,
+    output_use_memmap: bool,
+    output_memmap_folder: str | os.PathLike | None,
+    output_memmap_name: str | None,
+    output_dtype,
+    output_stage_name: str | None,
     verbose: bool,
 ) -> tuple[np.ndarray, np.ndarray, str]:
     """Register a ``TZCYX`` stack across time and return applied ``TZYX`` shifts."""
@@ -1587,15 +1751,7 @@ def _register_stack_across_time(
         )
         effective_mode = "projection"
 
-    volumes = _registration_channel_volumes(
-        stack,
-        registration_channel=registration_channel,
-        zrange=zrange,
-        filter_slices=filter_slices,
-        median_kernel_size=median_kernel_size,
-    )
-
-    registered = stack.copy()
+    output_dtype = _normalize_output_dtype(output_dtype)
     shifts_zyx = np.zeros((stack.shape[0], 3), dtype=np.float32)
     _print_verbose(
         verbose,
@@ -1619,10 +1775,26 @@ def _register_stack_across_time(
             registration_stack=registration_stack,
             time_reference_mode=time_reference_mode,
         )
+        reference_volume = _extract_registration_volume(
+            stack,
+            t=reference_t,
+            registration_channel=registration_channel,
+            zrange=zrange,
+            filter_slices=filter_slices,
+            median_kernel_size=median_kernel_size,
+        )
+        moving_volume = _extract_registration_volume(
+            stack,
+            t=t,
+            registration_channel=registration_channel,
+            zrange=zrange,
+            filter_slices=filter_slices,
+            median_kernel_size=median_kernel_size,
+        )
         if effective_mode == "full_3d":
             pair_shift_zyx = _estimate_time_shift_from_full_3d(
-                volumes[reference_t, :, :, :],
-                volumes[t, :, :, :],
+                reference_volume,
+                moving_volume,
                 zreg=zreg,
                 max_xy_shifts=max_xy_shifts,
                 max_z_shifts=max_z_shifts,
@@ -1631,8 +1803,8 @@ def _register_stack_across_time(
             )
         else:
             pair_shift_zyx = _estimate_time_shift_from_projections(
-                volumes[reference_t, :, :, :],
-                volumes[t, :, :, :],
+                reference_volume,
+                moving_volume,
                 method=method,
                 projection_method=projection_method,
                 filter_projections=filter_projections,
@@ -1678,22 +1850,31 @@ def _register_stack_across_time(
             ),
         )
 
+    registered = _create_registered_output(
+        tuple(int(v) for v in stack.shape),
+        dtype=output_dtype,
+        output_use_memmap=output_use_memmap,
+        output_memmap_folder=output_memmap_folder,
+        output_memmap_name=output_memmap_name,
+        stage_name=output_stage_name,
+    )
+
     def apply_timepoint(t: int) -> tuple[int, np.ndarray]:
-        return t, _apply_translation_to_zcyx(
-            stack[t, :, :, :, :],
+        return int(t), _apply_translation_to_zcyx(
+            stack[int(t), :, :, :, :],
             shifts_zyx[t, :],
             transform_backend=transform_backend,
             transform_order=transform_order,
-        )
+        ).astype(output_dtype, copy=False)
 
-    for t, registered_timepoint in _parallel_map_ordered(apply_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
+    for t, registered_timepoint in _iter_map_ordered(apply_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
         registered[t, :, :, :, :] = registered_timepoint
 
     return registered, shifts_zyx, effective_mode
 
 
 def _register_stack_rotations_across_time(
-    stack: np.ndarray,
+    stack,
     *,
     registration_channel: int,
     registration_stack: int,
@@ -1708,30 +1889,16 @@ def _register_stack_rotations_across_time(
     phase_cross_correlation_normalization: str | None,
     transform_order: int,
     n_jobs: int,
+    output_use_memmap: bool,
+    output_memmap_folder: str | os.PathLike | None,
+    output_memmap_name: str | None,
+    output_dtype,
+    output_stage_name: str | None,
     verbose: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Register in-plane XY rotations across time and return applied correction angles."""
 
-    volumes = _registration_channel_volumes(
-        stack,
-        registration_channel=registration_channel,
-        zrange=zrange,
-        filter_slices=filter_slices,
-        median_kernel_size=median_kernel_size,
-    )
-
-    projections = np.empty((volumes.shape[0], volumes.shape[2], volumes.shape[3]), dtype=np.float32)
-    for t in range(volumes.shape[0]):
-        projections[t, :, :] = _project_zyx_to_yx(
-            volumes[t, :, :, :],
-            projection_method=projection_method,
-        )
-    if filter_projections:
-        kernel = (int(median_kernel_size), int(median_kernel_size))
-        for t in range(projections.shape[0]):
-            projections[t, :, :] = median_filter(projections[t, :, :], size=kernel)
-
-    registered = stack.copy()
+    output_dtype = _normalize_output_dtype(output_dtype)
     angles_deg = np.zeros(stack.shape[0], dtype=np.float32)
     _print_verbose(
         verbose,
@@ -1740,6 +1907,26 @@ def _register_stack_rotations_across_time(
             f"registration_stack={registration_stack}, projection_method='{projection_method}'"
         ),
     )
+
+    def build_projection(t: int) -> np.ndarray:
+        volume = _extract_registration_volume(
+            stack,
+            t=int(t),
+            registration_channel=registration_channel,
+            zrange=zrange,
+            filter_slices=filter_slices,
+            median_kernel_size=median_kernel_size,
+        )
+        projection = _project_zyx_to_yx(
+            volume,
+            projection_method=projection_method,
+        ).astype(np.float32, copy=False)
+        if filter_projections:
+            projection = median_filter(
+                projection,
+                size=(int(median_kernel_size), int(median_kernel_size)),
+            )
+        return projection
 
     def estimate_pair_rotation(t: int) -> tuple[int, int, float]:
         if time_reference_mode == "template" and t == registration_stack:
@@ -1753,8 +1940,8 @@ def _register_stack_rotations_across_time(
             time_reference_mode=time_reference_mode,
         )
         detected_rotation_deg = _estimate_rotation_deg_from_projections(
-            projections[reference_t, :, :],
-            projections[t, :, :],
+            build_projection(reference_t),
+            build_projection(t),
             max_rot_shifts=max_rot_shifts,
             phase_cross_correlation_upsample_factor=phase_cross_correlation_upsample_factor,
             phase_cross_correlation_normalization=phase_cross_correlation_normalization,
@@ -1781,14 +1968,23 @@ def _register_stack_rotations_across_time(
         )
         _print_verbose(verbose, f"t={t} rotation_correction_deg={float(angles_deg[t]):.3f}")
 
+    registered = _create_registered_output(
+        tuple(int(v) for v in stack.shape),
+        dtype=output_dtype,
+        output_use_memmap=output_use_memmap,
+        output_memmap_folder=output_memmap_folder,
+        output_memmap_name=output_memmap_name,
+        stage_name=output_stage_name,
+    )
+
     def apply_timepoint(t: int) -> tuple[int, np.ndarray]:
-        return t, _apply_rotation_to_zcyx(
-            stack[t, :, :, :, :],
+        return int(t), _apply_rotation_to_zcyx(
+            stack[int(t), :, :, :, :],
             float(angles_deg[t]),
             transform_order=transform_order,
-        )
+        ).astype(output_dtype, copy=False)
 
-    for t, registered_timepoint in _parallel_map_ordered(apply_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
+    for t, registered_timepoint in _iter_map_ordered(apply_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
         registered[t, :, :, :, :] = registered_timepoint
 
     return registered, angles_deg
@@ -2055,6 +2251,10 @@ def _register_stack_rigid_3d_from_main_wrapper(
     rot_points_threshold_rel: float,
     rot_points_iterations: int,
     rot_points_max_match_distance: float,
+    output_use_memmap: bool,
+    output_memmap_folder: str | os.PathLike | None,
+    output_memmap_name: str | None,
+    output_dtype,
     verbose: bool,
     return_shifts: bool,
     return_details: bool,
@@ -2091,6 +2291,10 @@ def _register_stack_rigid_3d_from_main_wrapper(
         points_iterations=rot_points_iterations,
         points_max_match_distance=rot_points_max_match_distance,
         n_jobs=rot_n_jobs,
+        output_use_memmap=output_use_memmap,
+        output_memmap_folder=output_memmap_folder,
+        output_memmap_name=output_memmap_name,
+        output_dtype=output_dtype,
         return_valid_mask=bool(zero_clip),
         verbose=verbose,
     )
@@ -2117,7 +2321,15 @@ def _register_stack_rigid_3d_from_main_wrapper(
                 min_fraction=zero_clip_mask_min_fraction,
             )
             zero_clip_bounds = _apply_zero_clip_margin(zero_clip_bounds, zero_clip_margin_zyx)
-            registered = _zero_clip_stack(registered, zero_clip_bounds)
+            registered = _zero_clip_stack(
+                registered,
+                zero_clip_bounds,
+                output_use_memmap=output_use_memmap,
+                output_memmap_folder=output_memmap_folder,
+                output_memmap_name=output_memmap_name,
+                output_dtype=output_dtype,
+                n_jobs=rot_n_jobs,
+            )
         except ValueError as exc:
             zero_clip_failed_reason = str(exc)
             zero_clip_bounds = None
@@ -2232,6 +2444,10 @@ def register_stack(
     nc_output_use_memmap: bool = False,
     nc_output_memmap_folder: str | None = None,
     nc_output_memmap_name: str | None = "zenreg_normcorre_registered",
+    output_use_memmap: bool = False,
+    output_memmap_folder: str | None = None,
+    output_memmap_name: str | None = "zenreg_registered",
+    output_dtype=np.float32,
     n_jobs: int = 1,
     verbose: bool = True,
     return_shifts: bool = False,
@@ -2397,6 +2613,26 @@ def register_stack(
         this value is used as ``nc_n_jobs`` unless ``nc_n_jobs`` is set
         explicitly. With full 3D rigid backends it is used as ``rot_n_jobs``
         unless ``rot_n_jobs`` is set explicitly.
+    output_use_memmap : bool, optional
+        If True, standard and full-3D rigid registration outputs are written to
+        an OMIO disk-backed Zarr store instead of a full in-memory NumPy output.
+        With ``method="normcorre"``, this is treated as a shared alias for
+        ``nc_output_use_memmap`` unless the NoRMCorre-specific setting is
+        already enabled. Shift estimation still reads only the currently needed
+        registration-channel volume; full 3D rigid registration necessarily
+        works on one complete ZYX volume per time point.
+    output_memmap_folder : str or None, optional
+        Folder forwarded to OMIO as ``zarr_store_path`` for registered outputs.
+        Use local scratch storage for large input files on network volumes.
+    output_memmap_name : str or None, optional
+        Base Zarr store name for standard registered outputs. Sequential
+        correction stages append a small suffix such as ``time_pass_1`` or
+        ``zero_clipped``.
+    output_dtype : dtype, optional
+        dtype used for registered outputs. The default ``np.float32`` is
+        recommended for intensity microscopy because subpixel transforms create
+        interpolated values and avoids integer clipping/rounding. Use integer
+        dtypes only when you intentionally want quantized output.
     verbose : bool, optional
         If True, print the estimated shifts.
     return_shifts : bool, optional
@@ -2415,7 +2651,12 @@ def register_stack(
         Registered stack, optionally with the estimated shifts.
     """
 
-    stack = _as_float32_stack_copy(stack)
+    stack = ensure_tzcyx_stack(stack)
+    output_dtype = _normalize_output_dtype(output_dtype)
+    if not output_use_memmap and output_memmap_folder is not None:
+        raise ValueError("output_memmap_folder requires output_use_memmap=True.")
+    if not output_use_memmap and output_memmap_name is not None and output_memmap_name != "zenreg_registered":
+        raise ValueError("Custom output_memmap_name requires output_use_memmap=True.")
     method = _normalize_registration_method(method)
     from .rigid3d import normalize_rigid_3d_backend, normalize_rigid_3d_metric
 
@@ -2447,6 +2688,13 @@ def register_stack(
     n_jobs = _normalize_n_jobs(n_jobs)
     effective_rot_n_jobs = int(rot_n_jobs if int(rot_n_jobs) != 1 else n_jobs)
     effective_nc_n_jobs = int(nc_n_jobs if int(nc_n_jobs) != 1 else n_jobs)
+    effective_nc_output_use_memmap = bool(nc_output_use_memmap or (output_use_memmap and method == "normcorre"))
+    effective_nc_output_memmap_folder = nc_output_memmap_folder
+    if effective_nc_output_use_memmap and effective_nc_output_memmap_folder is None:
+        effective_nc_output_memmap_folder = output_memmap_folder
+    effective_nc_output_memmap_name = nc_output_memmap_name
+    if output_use_memmap and method == "normcorre" and nc_output_memmap_name == "zenreg_normcorre_registered":
+        effective_nc_output_memmap_name = output_memmap_name
     transform_backend = _normalize_transform_backend(transform_backend)
     transform_order = _normalize_transform_order(transform_order)
     filter_slices, filter_projections = _resolve_filter_aliases(
@@ -2504,6 +2752,10 @@ def register_stack(
         "zero_clip_mask_strategy": effective_zero_clip_mask_strategy,
         "zero_clip_mask_min_fraction": float(zero_clip_mask_min_fraction),
         "n_jobs": int(n_jobs),
+        "output_use_memmap": bool(output_use_memmap),
+        "output_memmap_folder": output_memmap_folder,
+        "output_memmap_name": output_memmap_name if output_use_memmap else None,
+        "output_dtype": str(output_dtype),
         "rotreg": bool(rotreg),
         "rotreg_iter": int(rotreg_iter),
         "rigid_3d_backend": rigid_3d_backend,
@@ -2578,6 +2830,10 @@ def register_stack(
             rot_points_threshold_rel=float(rot_points_threshold_rel),
             rot_points_iterations=int(rot_points_iterations),
             rot_points_max_match_distance=float(rot_points_max_match_distance),
+            output_use_memmap=bool(output_use_memmap),
+            output_memmap_folder=output_memmap_folder,
+            output_memmap_name=output_memmap_name,
+            output_dtype=output_dtype,
             verbose=verbose,
             return_shifts=return_shifts,
             return_details=return_details,
@@ -2622,9 +2878,9 @@ def register_stack(
             nc_transform_cval=float(nc_transform_cval),
             nc_border_nan=nc_border_nan,
             nc_block_size=int(nc_block_size),
-            nc_output_use_memmap=bool(nc_output_use_memmap),
-            nc_output_memmap_folder=nc_output_memmap_folder,
-            nc_output_memmap_name=nc_output_memmap_name,
+            nc_output_use_memmap=bool(effective_nc_output_use_memmap),
+            nc_output_memmap_folder=effective_nc_output_memmap_folder,
+            nc_output_memmap_name=effective_nc_output_memmap_name,
             verbose=verbose,
             return_shifts=return_shifts,
             return_details=return_details,
@@ -2654,6 +2910,11 @@ def register_stack(
             transform_backend=transform_backend,
             transform_order=transform_order,
             n_jobs=n_jobs,
+            output_use_memmap=bool(output_use_memmap),
+            output_memmap_folder=output_memmap_folder,
+            output_memmap_name=output_memmap_name,
+            output_dtype=output_dtype,
+            output_stage_name="intra_stack",
             verbose=verbose,
             return_shifts=True,
         )
@@ -2666,7 +2927,14 @@ def register_stack(
                 dtype=np.float32,
             )
             if not np.allclose(clipped_intra_stack_shifts_yx, intra_stack_shifts_yx):
-                registered = stack.copy()
+                registered = _create_registered_output(
+                    tuple(int(v) for v in stack.shape),
+                    dtype=output_dtype,
+                    output_use_memmap=bool(output_use_memmap),
+                    output_memmap_folder=output_memmap_folder,
+                    output_memmap_name=output_memmap_name,
+                    stage_name="intra_stack_clipped",
+                )
 
                 def apply_clipped_intra_slice(index: tuple[int, int]) -> tuple[int, int, np.ndarray]:
                     t, z = index
@@ -2678,7 +2946,7 @@ def register_stack(
                     )
 
                 tasks = [(t, z) for t in range(stack.shape[0]) for z in range(stack.shape[1])]
-                for t, z, corrected_slice in _parallel_map_ordered(apply_clipped_intra_slice, tasks, n_jobs=n_jobs):
+                for t, z, corrected_slice in _iter_map_ordered(apply_clipped_intra_slice, tasks, n_jobs=n_jobs):
                     registered[t, z, :, :, :] = corrected_slice
                 intra_stack_shifts_yx = clipped_intra_stack_shifts_yx
         if effective_zero_clip_mode == "mask":
@@ -2724,6 +2992,11 @@ def register_stack(
                 transform_backend=transform_backend,
                 transform_order=transform_order,
                 n_jobs=n_jobs,
+                output_use_memmap=bool(output_use_memmap),
+                output_memmap_folder=output_memmap_folder,
+                output_memmap_name=output_memmap_name,
+                output_dtype=output_dtype,
+                output_stage_name=f"time_pass_{pass_index + 1}",
                 verbose=verbose,
             )
             translation_pass_shifts_zyx.append(pass_shifts_zyx)
@@ -2756,6 +3029,11 @@ def register_stack(
                     phase_cross_correlation_normalization=phase_cross_correlation_normalization,
                     transform_order=transform_order,
                     n_jobs=n_jobs,
+                    output_use_memmap=bool(output_use_memmap),
+                    output_memmap_folder=output_memmap_folder,
+                    output_memmap_name=output_memmap_name,
+                    output_dtype=output_dtype,
+                    output_stage_name=f"rotation_pass_{pass_index + 1}",
                     verbose=verbose,
                 )
                 rotation_pass_shifts_deg.append(pass_rotation_shifts_deg)
@@ -2791,7 +3069,15 @@ def register_stack(
             else:
                 zero_clip_bounds = _add_crop_bounds(*zero_clip_stage_bounds)
             zero_clip_bounds = _apply_zero_clip_margin(zero_clip_bounds, zero_clip_margin_zyx)
-            registered = _zero_clip_stack(registered, zero_clip_bounds)
+            registered = _zero_clip_stack(
+                registered,
+                zero_clip_bounds,
+                output_use_memmap=bool(output_use_memmap),
+                output_memmap_folder=output_memmap_folder,
+                output_memmap_name=output_memmap_name,
+                output_dtype=output_dtype,
+                n_jobs=n_jobs,
+            )
         except ValueError as exc:
             zero_clip_failed_reason = str(exc)
             zero_clip_bounds = None

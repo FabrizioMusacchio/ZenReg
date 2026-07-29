@@ -12,6 +12,7 @@ Date: July 2026
 
 from __future__ import annotations
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
@@ -99,6 +100,32 @@ def _as_float32_stack(stack) -> np.ndarray:
         return stack.astype(np.float32, copy=False)
     except (AttributeError, TypeError):
         return np.asarray(stack, dtype=np.float32)
+
+
+def _create_registered_output(
+    shape: tuple[int, int, int, int, int],
+    *,
+    dtype,
+    output_use_memmap: bool,
+    output_memmap_folder: str | os.PathLike | None,
+    output_memmap_name: str | None,
+):
+    """Allocate a registered rigid-3D output in RAM or as an OMIO/Zarr array."""
+
+    if output_use_memmap:
+        from .io import create_empty_stack
+
+        return create_empty_stack(
+            shape=tuple(int(v) for v in shape),
+            dtype=np.dtype(dtype),
+            fill_value=0,
+            use_memmap=True,
+            memmap_folder=output_memmap_folder,
+            memmap_name=output_memmap_name,
+            return_metadata=False,
+            verbose=False,
+        )
+    return np.empty(tuple(int(v) for v in shape), dtype=np.dtype(dtype))
 
 
 def _project(volume_zyx: np.ndarray, *, axis: int, method: str = "max") -> np.ndarray:
@@ -641,7 +668,10 @@ def _process_timepoint(
         else:
             final_transform = initial_transform
 
-    registered_frame = np.empty_like(stack[t], dtype=np.float32)
+    registered_frame = np.empty(
+        (stack.shape[1], stack.shape[2], stack.shape[3], stack.shape[4]),
+        dtype=np.float32,
+    )
     for c in range(stack.shape[2]):
         registered_frame[:, c, :, :] = _apply_rigid_transform_to_volume(
             stack[t, :, c, :, :],
@@ -698,14 +728,23 @@ def register_stack_rigid_3d(
     points_iterations: int = 20,
     points_max_match_distance: float = 8.0,
     n_jobs: int = 1,
+    output_use_memmap: bool = False,
+    output_memmap_folder: str | os.PathLike | None = None,
+    output_memmap_name: str | None = "zenreg_rigid_3d_registered",
+    output_dtype=np.float32,
     return_valid_mask: bool = False,
     verbose: bool = True,
 ):
     """Register a ``TZCYX`` stack with a full 6-DOF rigid 3D transform per time point."""
 
-    stack = _as_float32_stack(stack)
+    stack = ensure_tzcyx_stack(stack)
     if stack.ndim != 5:
         raise ValueError(f"Expected a 5D {CANONICAL_AXIS_ORDER} stack. Got shape {stack.shape!r}.")
+    output_dtype = np.dtype(output_dtype)
+    if not np.issubdtype(output_dtype, np.floating):
+        raise ValueError("Rigid 3D registration output_dtype must be a floating dtype.")
+    if not output_use_memmap and output_memmap_folder is not None:
+        raise ValueError("output_memmap_folder requires output_use_memmap=True.")
     if stack.shape[1] < 2:
         raise ValueError("Rigid 3D registration requires SizeZ >= 2.")
     backend = normalize_rigid_3d_backend(backend)
@@ -727,7 +766,13 @@ def register_stack_rigid_3d(
     if len(shrink_factors) != len(smoothing_sigmas):
         raise ValueError("rot_shrink_factors and rot_smoothing_sigmas must have the same length.")
 
-    registered = np.empty_like(stack, dtype=np.float32)
+    registered = _create_registered_output(
+        tuple(int(v) for v in stack.shape),
+        dtype=output_dtype,
+        output_use_memmap=bool(output_use_memmap),
+        output_memmap_folder=output_memmap_folder,
+        output_memmap_name=output_memmap_name,
+    )
     valid_mask_tzyx = (
         np.empty((stack.shape[0], stack.shape[1], stack.shape[3], stack.shape[4]), dtype=np.float32)
         if return_valid_mask
@@ -767,27 +812,36 @@ def register_stack_rigid_3d(
         "return_valid_mask": bool(return_valid_mask),
     }
     if int(n_jobs) <= 1:
-        results = [_process_timepoint(t, stack, **worker_kwargs) for t in range(stack.shape[0])]
+        result_iter = (_process_timepoint(t, stack, **worker_kwargs) for t in range(stack.shape[0]))
+        for t, registered_frame, valid_mask, details in result_iter:
+            registered[int(t)] = registered_frame.astype(output_dtype, copy=False)
+            if return_valid_mask and valid_mask_tzyx is not None:
+                valid_mask_tzyx[int(t)] = valid_mask
+            transform_details[int(t)] = details
+            if verbose:
+                shift = details["shift_zyx"]
+                rotation = details["rotation_zyx_deg"]
+                print(
+                    f"t={int(t)} shift_zyx=({shift[0]:.3f}, {shift[1]:.3f}, {shift[2]:.3f}) "
+                    f"rot_zyx_deg=({rotation[0]:.3f}, {rotation[1]:.3f}, {rotation[2]:.3f})"
+                )
     else:
         with ThreadPoolExecutor(max_workers=int(n_jobs)) as executor:
-            futures = [
-                executor.submit(_process_timepoint, t, stack, **worker_kwargs)
-                for t in range(stack.shape[0])
-            ]
-            results = [future.result() for future in futures]
-
-    for t, registered_frame, valid_mask, details in results:
-        registered[int(t)] = registered_frame
-        if return_valid_mask and valid_mask_tzyx is not None:
-            valid_mask_tzyx[int(t)] = valid_mask
-        transform_details[int(t)] = details
-        if verbose:
-            shift = details["shift_zyx"]
-            rotation = details["rotation_zyx_deg"]
-            print(
-                f"t={int(t)} shift_zyx=({shift[0]:.3f}, {shift[1]:.3f}, {shift[2]:.3f}) "
-                f"rot_zyx_deg=({rotation[0]:.3f}, {rotation[1]:.3f}, {rotation[2]:.3f})"
-            )
+            for t, registered_frame, valid_mask, details in executor.map(
+                lambda index: _process_timepoint(index, stack, **worker_kwargs),
+                range(stack.shape[0]),
+            ):
+                registered[int(t)] = registered_frame.astype(output_dtype, copy=False)
+                if return_valid_mask and valid_mask_tzyx is not None:
+                    valid_mask_tzyx[int(t)] = valid_mask
+                transform_details[int(t)] = details
+                if verbose:
+                    shift = details["shift_zyx"]
+                    rotation = details["rotation_zyx_deg"]
+                    print(
+                        f"t={int(t)} shift_zyx=({shift[0]:.3f}, {shift[1]:.3f}, {shift[2]:.3f}) "
+                        f"rot_zyx_deg=({rotation[0]:.3f}, {rotation[1]:.3f}, {rotation[2]:.3f})"
+                    )
 
     shifts_zyx = np.stack([details["shift_zyx"] for details in transform_details], axis=0).astype(np.float32)
     rotations_zyx_deg = np.stack(
@@ -827,6 +881,9 @@ def register_stack_rigid_3d(
         "rot_points_threshold_rel": float(points_threshold_rel),
         "rot_points_iterations": int(points_iterations),
         "rot_points_max_match_distance": float(points_max_match_distance),
+        "output_use_memmap": bool(output_use_memmap),
+        "output_memmap_name": output_memmap_name if output_use_memmap else None,
+        "output_dtype": str(output_dtype),
         "valid_mask_tzyx": valid_mask_tzyx,
     }
     return registered, details
