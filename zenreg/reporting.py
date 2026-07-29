@@ -249,38 +249,40 @@ def _pearson_correlation(template: np.ndarray, image: np.ndarray) -> float:
     return float(np.dot(template, image) / denominator)
 
 
-def _registration_images_for_correlation(
+def _registration_image_for_correlation_frame(
     registered_stack: np.ndarray,
     details: dict[str, Any],
+    t: int,
 ) -> tuple[np.ndarray, str]:
-    """Extract per-frame registration images used for Pearson reporting."""
+    """Extract one registration image used for Pearson reporting."""
 
     channel = int(details.get("registration_channel", 0))
     projection_range = details.get("projection_range")
     z_start, z_stop = normalize_zrange(projection_range, registered_stack.shape[1], strict=True)
-    volumes = np.asarray(registered_stack[:, z_start:z_stop, channel, :, :], dtype=np.float32)
+    volume = np.asarray(registered_stack[int(t), z_start:z_stop, channel, :, :], dtype=np.float32)
 
     if details.get("effective_time_registration_mode") == "full_3d":
-        return volumes.reshape(volumes.shape[0], -1), f"full_3d z={z_start}:{z_stop}"
+        return volume.ravel(), f"full_3d z={z_start}:{z_stop}"
 
     projection_method = str(details.get("projection_method", "max"))
-    projections = np.empty((volumes.shape[0], volumes.shape[2], volumes.shape[3]), dtype=np.float32)
-    for t in range(volumes.shape[0]):
-        projections[t, :, :] = _project_zyx_to_yx(
-            volumes[t, :, :, :],
-            projection_method=projection_method,
-        )
-    return projections.reshape(projections.shape[0], -1), f"{projection_method} projection z={z_start}:{z_stop}"
+    projection = _project_zyx_to_yx(
+        volume,
+        projection_method=projection_method,
+    )
+    return np.asarray(projection, dtype=np.float32).ravel(), f"{projection_method} projection z={z_start}:{z_stop}"
 
 
 def _frame_correlations(registered_stack: np.ndarray, details: dict[str, Any]) -> np.ndarray:
     """Compute template-vs-registered Pearson correlations per time frame."""
 
-    series, _ = _registration_images_for_correlation(registered_stack, details)
     registration_stack = int(details.get("registration_stack", 0))
-    registration_stack = int(np.clip(registration_stack, 0, series.shape[0] - 1))
-    template = series[registration_stack, :]
-    return np.asarray([_pearson_correlation(template, series[t, :]) for t in range(series.shape[0])])
+    registration_stack = int(np.clip(registration_stack, 0, registered_stack.shape[0] - 1))
+    template, _ = _registration_image_for_correlation_frame(registered_stack, details, registration_stack)
+    correlations = np.empty(registered_stack.shape[0], dtype=np.float32)
+    for t in range(registered_stack.shape[0]):
+        image, _ = _registration_image_for_correlation_frame(registered_stack, details, t)
+        correlations[t] = _pearson_correlation(template, image)
+    return correlations
 
 
 def _csv_value(value) -> str:
