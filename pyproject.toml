@@ -31,6 +31,7 @@ classifiers = [
 dependencies = [
   "scipy",
   "scikit-image",
+  "SimpleITK",
   "pystackreg",
   "omio-microscopy",
   "matplotlib",
