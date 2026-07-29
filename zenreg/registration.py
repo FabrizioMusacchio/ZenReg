@@ -25,6 +25,7 @@ SUPPORTED_PROJECTION_METHODS = {"max", "mean", "median", "var", "std"}
 SUPPORTED_TIME_REGISTRATION_MODES = {"projection", "full_3d", "none"}
 SUPPORTED_TIME_REFERENCE_MODES = {"template", "previous"}
 SUPPORTED_ZERO_CLIP_MODES = {"auto", "shift", "mask"}
+SUPPORTED_ZERO_CLIP_MASK_STRATEGIES = {"auto", "greedy", "relaxed", "max_volume"}
 SUPPORTED_TRANSFORM_BACKENDS = {"skimage", "scipy"}
 
 # %% FUNCTIONS
@@ -179,6 +180,30 @@ def _normalize_zero_clip_mask_threshold(zero_clip_mask_threshold: float) -> floa
     return threshold
 
 
+def _normalize_zero_clip_mask_strategy(zero_clip_mask_strategy: str) -> str:
+    """Normalize and validate the crop strategy used for mask-based zero-clipping."""
+
+    normalized = str(zero_clip_mask_strategy).strip().lower()
+    if normalized not in SUPPORTED_ZERO_CLIP_MASK_STRATEGIES:
+        raise ValueError(
+            f"Unsupported zero_clip_mask_strategy {zero_clip_mask_strategy!r}. "
+            f"Supported strategies: {sorted(SUPPORTED_ZERO_CLIP_MASK_STRATEGIES)}."
+        )
+    return normalized
+
+
+def _normalize_zero_clip_mask_min_fraction(zero_clip_mask_min_fraction: float) -> float:
+    """Validate the relaxed mask-crop minimum valid-plane fraction."""
+
+    fraction = float(zero_clip_mask_min_fraction)
+    if not 0.0 < fraction <= 1.0:
+        raise ValueError(
+            "zero_clip_mask_min_fraction must be > 0 and <= 1. "
+            f"Got {zero_clip_mask_min_fraction!r}."
+        )
+    return fraction
+
+
 def _normalize_zero_clip_margin(zero_clip_margin: int | Sequence[int]) -> np.ndarray:
     """Normalize optional extra ``(z, y, x)`` crop margins."""
 
@@ -232,6 +257,18 @@ def _effective_zero_clip_mode(*, zero_clip: bool, zero_clip_mode: str, rotreg: b
     if zero_clip_mode == "auto":
         return "mask" if rotreg else "shift"
     return zero_clip_mode
+
+
+def _effective_zero_clip_mask_strategy(
+    *,
+    zero_clip_mask_strategy: str,
+    rigid_3d: bool,
+) -> str:
+    """Return the concrete mask-cropping strategy for this registration run."""
+
+    if zero_clip_mask_strategy == "auto":
+        return "relaxed" if rigid_3d else "greedy"
+    return zero_clip_mask_strategy
 
 
 def _resolve_projection_range_alias(
@@ -353,64 +390,192 @@ def _apply_zero_clip_margin(crop_bounds: dict[str, int], margin_zyx: np.ndarray)
     }
 
 
-def _crop_bounds_from_valid_mask(mask_tzyx: np.ndarray, *, threshold: float) -> dict[str, int]:
-    """Compute conservative crop bounds from a transformed validity mask."""
+def _bounds_from_valid_starts_stops(valid: np.ndarray, starts: np.ndarray, stops: np.ndarray) -> dict[str, int]:
+    """Convert Z/Y/X start-stop indices to directional crop widths."""
 
-    valid = np.all(np.asarray(mask_tzyx, dtype=np.float32) > float(threshold), axis=0)
+    if np.any(starts >= stops):
+        raise ValueError("Mask-based zero_clip could not find a common valid image region.")
+    return {
+        "z_top": int(starts[0]),
+        "z_bottom": int(valid.shape[0] - stops[0]),
+        "y_top": int(starts[1]),
+        "y_bottom": int(valid.shape[1] - stops[1]),
+        "x_left": int(starts[2]),
+        "x_right": int(valid.shape[2] - stops[2]),
+    }
+
+
+def _crop_bounds_from_valid_mask_greedy(valid: np.ndarray) -> dict[str, int]:
+    """Compute strict crop bounds by greedily removing invalid border faces."""
+
     z_start = 0
     y_start = 0
     x_start = 0
     z_stop, y_stop, x_stop = valid.shape
 
     while z_start < z_stop and y_start < y_stop and x_start < x_stop:
-        changed = False
-        if z_start < z_stop and y_start < y_stop and not np.all(valid[z_start:z_stop, y_start, x_start:x_stop]):
-            y_start += 1
-            changed = True
-        if z_start < z_stop and y_start < y_stop and not np.all(valid[z_start:z_stop, y_stop - 1, x_start:x_stop]):
-            y_stop -= 1
-            changed = True
-        if (
-            z_start < z_stop
-            and y_start < y_stop
-            and x_start < x_stop
-            and not np.all(valid[z_start:z_stop, y_start:y_stop, x_start])
-        ):
-            x_start += 1
-            changed = True
-        if (
-            z_start < z_stop
-            and y_start < y_stop
-            and x_start < x_stop
-            and not np.all(valid[z_start:z_stop, y_start:y_stop, x_stop - 1])
-        ):
-            x_stop -= 1
-            changed = True
-        if not changed:
+        current = valid[z_start:z_stop, y_start:y_stop, x_start:x_stop]
+        if np.all(current):
+            break
+        faces = {
+            "z_top": valid[z_start, y_start:y_stop, x_start:x_stop] if z_stop - z_start > 1 else None,
+            "z_bottom": valid[z_stop - 1, y_start:y_stop, x_start:x_stop] if z_stop - z_start > 1 else None,
+            "y_top": valid[z_start:z_stop, y_start, x_start:x_stop],
+            "y_bottom": valid[z_start:z_stop, y_stop - 1, x_start:x_stop],
+            "x_left": valid[z_start:z_stop, y_start:y_stop, x_start],
+            "x_right": valid[z_start:z_stop, y_start:y_stop, x_stop - 1],
+        }
+        candidates = []
+        for name, face in faces.items():
+            if face is None:
+                continue
+            invalid_count = int(face.size - np.count_nonzero(face))
+            if invalid_count > 0:
+                invalid_fraction = invalid_count / max(int(face.size), 1)
+                candidates.append((invalid_fraction, invalid_count, name))
+        if not candidates:
             break
 
-    while z_start < z_stop and y_start < y_stop and x_start < x_stop:
-        changed = False
-        if not np.all(valid[z_start, y_start:y_stop, x_start:x_stop]):
+        _, _, selected = max(candidates)
+        if selected == "z_top":
             z_start += 1
-            changed = True
-        if z_start < z_stop and not np.all(valid[z_stop - 1, y_start:y_stop, x_start:x_stop]):
+        elif selected == "z_bottom":
             z_stop -= 1
-            changed = True
-        if not changed:
-            break
+        elif selected == "y_top":
+            y_start += 1
+        elif selected == "y_bottom":
+            y_stop -= 1
+        elif selected == "x_left":
+            x_start += 1
+        elif selected == "x_right":
+            x_stop -= 1
 
-    if z_start >= z_stop or y_start >= y_stop or x_start >= x_stop:
+    return _bounds_from_valid_starts_stops(
+        valid,
+        np.asarray([z_start, y_start, x_start], dtype=np.int64),
+        np.asarray([z_stop, y_stop, x_stop], dtype=np.int64),
+    )
+
+
+def _crop_bounds_from_valid_mask_relaxed(valid: np.ndarray, *, min_fraction: float) -> dict[str, int]:
+    """Crop border planes only while their valid fraction is below ``min_fraction``."""
+
+    fallback_fractions = (0.90, 0.75, 0.50, 0.25, 0.01)
+    fractions = [float(min_fraction)]
+    fractions.extend(fraction for fraction in fallback_fractions if fraction < float(min_fraction))
+    last_error: ValueError | None = None
+    for fraction in fractions:
+        z_start = 0
+        y_start = 0
+        x_start = 0
+        z_stop, y_stop, x_stop = valid.shape
+        while z_start < z_stop and y_start < y_stop and x_start < x_stop:
+            faces = {
+                "z_top": valid[z_start, y_start:y_stop, x_start:x_stop] if z_stop - z_start > 1 else None,
+                "z_bottom": valid[z_stop - 1, y_start:y_stop, x_start:x_stop] if z_stop - z_start > 1 else None,
+                "y_top": valid[z_start:z_stop, y_start, x_start:x_stop],
+                "y_bottom": valid[z_start:z_stop, y_stop - 1, x_start:x_stop],
+                "x_left": valid[z_start:z_stop, y_start:y_stop, x_start],
+                "x_right": valid[z_start:z_stop, y_start:y_stop, x_stop - 1],
+            }
+            candidates = []
+            for name, face in faces.items():
+                if face is None:
+                    continue
+                invalid_count = int(face.size - np.count_nonzero(face))
+                invalid_fraction = invalid_count / max(int(face.size), 1)
+                if invalid_fraction > (1.0 - fraction):
+                    candidates.append((invalid_fraction, invalid_count, name))
+            if not candidates:
+                break
+            _, _, selected = max(candidates)
+            if selected == "z_top":
+                z_start += 1
+            elif selected == "z_bottom":
+                z_stop -= 1
+            elif selected == "y_top":
+                y_start += 1
+            elif selected == "y_bottom":
+                y_stop -= 1
+            elif selected == "x_left":
+                x_start += 1
+            elif selected == "x_right":
+                x_stop -= 1
+        starts = np.asarray([z_start, y_start, x_start], dtype=np.int64)
+        stops = np.asarray([z_stop, y_stop, x_stop], dtype=np.int64)
+        try:
+            return _bounds_from_valid_starts_stops(valid, starts, stops)
+        except ValueError as exc:
+            last_error = exc
+    raise ValueError("Mask-based relaxed zero_clip could not find a valid image region.") from last_error
+
+
+def _largest_rectangle_in_binary_mask(mask_yx: np.ndarray) -> tuple[int, int, int, int, int]:
+    """Return area and Y/X bounds of the largest all-true rectangle."""
+
+    mask_yx = np.asarray(mask_yx, dtype=bool)
+    heights = np.zeros(mask_yx.shape[1], dtype=np.int64)
+    best_area = 0
+    best = (0, 0, 0, 0)
+    for y, row in enumerate(mask_yx):
+        heights[row] += 1
+        heights[~row] = 0
+        stack: list[int] = []
+        extended = np.concatenate([heights, np.asarray([0], dtype=np.int64)])
+        for x, height in enumerate(extended):
+            while stack and int(extended[stack[-1]]) > int(height):
+                h = int(extended[stack.pop()])
+                left = int(stack[-1] + 1) if stack else 0
+                width = int(x - left)
+                area = h * width
+                if area > best_area:
+                    best_area = area
+                    best = (int(y - h + 1), int(y + 1), left, int(x))
+            stack.append(int(x))
+    return int(best_area), best[0], best[1], best[2], best[3]
+
+
+def _crop_bounds_from_valid_mask_max_volume(valid: np.ndarray) -> dict[str, int]:
+    """Find the largest strict all-valid axis-aligned cuboid."""
+
+    valid = np.asarray(valid, dtype=bool)
+    z_size = int(valid.shape[0])
+    best_volume = 0
+    best_bounds: tuple[int, int, int, int, int, int] | None = None
+    for z_start in range(z_size):
+        slab = np.ones(valid.shape[1:], dtype=bool)
+        for z_stop in range(z_start + 1, z_size + 1):
+            slab &= valid[z_stop - 1]
+            area, y_start, y_stop, x_start, x_stop = _largest_rectangle_in_binary_mask(slab)
+            volume = int(area) * int(z_stop - z_start)
+            if volume > best_volume:
+                best_volume = volume
+                best_bounds = (z_start, z_stop, y_start, y_stop, x_start, x_stop)
+    if best_bounds is None or best_volume <= 0:
         raise ValueError("Mask-based zero_clip could not find a common valid image region.")
+    z_start, z_stop, y_start, y_stop, x_start, x_stop = best_bounds
+    return _bounds_from_valid_starts_stops(
+        valid,
+        np.asarray([z_start, y_start, x_start], dtype=np.int64),
+        np.asarray([z_stop, y_stop, x_stop], dtype=np.int64),
+    )
 
-    return {
-        "z_top": int(z_start),
-        "z_bottom": int(valid.shape[0] - z_stop),
-        "y_top": int(y_start),
-        "y_bottom": int(valid.shape[1] - y_stop),
-        "x_left": int(x_start),
-        "x_right": int(valid.shape[2] - x_stop),
-    }
+
+def _crop_bounds_from_valid_mask(
+    mask_tzyx: np.ndarray,
+    *,
+    threshold: float,
+    strategy: str = "greedy",
+    min_fraction: float = 0.50,
+) -> dict[str, int]:
+    """Compute crop bounds from a transformed validity mask."""
+
+    valid = np.all(np.asarray(mask_tzyx, dtype=np.float32) > float(threshold), axis=0)
+    if strategy == "relaxed":
+        return _crop_bounds_from_valid_mask_relaxed(valid, min_fraction=min_fraction)
+    if strategy == "max_volume":
+        return _crop_bounds_from_valid_mask_max_volume(valid)
+    return _crop_bounds_from_valid_mask_greedy(valid)
 
 
 def _zero_clip_stack(stack: np.ndarray, crop_bounds: dict[str, int]) -> np.ndarray:
@@ -1553,8 +1718,11 @@ def _return_registration_result(
     translation_pass_shifts_zyx: list[np.ndarray],
     rotation_pass_shifts_deg: list[np.ndarray],
     zero_clip_bounds: dict[str, int] | None,
+    zero_clip_failed_reason: str | None,
     zero_clip_mode: str,
     zero_clip_mask_threshold: float,
+    zero_clip_mask_strategy: str,
+    zero_clip_mask_min_fraction: float,
     zero_clip_margin_zyx: np.ndarray,
     time_registration_mode: str,
     effective_time_registration_mode: str,
@@ -1575,8 +1743,11 @@ def _return_registration_result(
         "translation_pass_shifts_zyx": translation_pass_shifts_zyx,
         "rotation_pass_shifts_deg": rotation_pass_shifts_deg,
         "zero_clip_bounds": zero_clip_bounds,
+        "zero_clip_failed_reason": zero_clip_failed_reason,
         "zero_clip_mode": zero_clip_mode,
         "zero_clip_mask_threshold": zero_clip_mask_threshold,
+        "zero_clip_mask_strategy": zero_clip_mask_strategy,
+        "zero_clip_mask_min_fraction": zero_clip_mask_min_fraction,
         "zero_clip_margin_zyx": tuple(int(v) for v in zero_clip_margin_zyx),
         "time_registration_mode": time_registration_mode,
         "effective_time_registration_mode": effective_time_registration_mode,
@@ -1760,6 +1931,146 @@ def _register_stack_normcorre_from_main_wrapper(
         return registered, details
     return registered
 
+
+def _register_stack_rigid_3d_from_main_wrapper(
+    stack: np.ndarray,
+    *,
+    registration_channel: int,
+    registration_stack: int,
+    method: str,
+    projection_range,
+    projection_method: str,
+    rigid_3d_backend: str,
+    zero_clip: bool,
+    zero_clip_mode: str,
+    zero_clip_mask_threshold: float,
+    zero_clip_mask_strategy: str,
+    zero_clip_mask_min_fraction: float,
+    zero_clip_margin_zyx: np.ndarray,
+    max_rot_shifts: float | None,
+    phase_cross_correlation_upsample_factor: int,
+    phase_cross_correlation_normalization: str | None,
+    transform_order: int,
+    rot_spacing_zyx,
+    rot_init_iterations: int,
+    rot_metric: str,
+    rot_shrink_factors,
+    rot_smoothing_sigmas,
+    rot_iterations: int,
+    rot_learning_rate: float,
+    rot_min_step: float,
+    rot_sampling_percentage: float | None,
+    rot_cval: float,
+    rot_n_jobs: int,
+    rot_points_max_points: int,
+    rot_points_min_distance: int,
+    rot_points_threshold_rel: float,
+    rot_points_iterations: int,
+    rot_points_max_match_distance: float,
+    verbose: bool,
+    return_shifts: bool,
+    return_details: bool,
+    registration_settings: dict,
+):
+    """Dispatch full 3D rigid rotation registration from ``register_stack``."""
+
+    from .rigid3d import register_stack_rigid_3d
+
+    registered, rigid_details = register_stack_rigid_3d(
+        stack,
+        registration_channel=registration_channel,
+        registration_stack=registration_stack,
+        backend=rigid_3d_backend,
+        projection_range=projection_range,
+        projection_method=projection_method,
+        spacing_zyx=rot_spacing_zyx,
+        init_iterations=rot_init_iterations,
+        max_rot_shifts=max_rot_shifts,
+        upsample_factor=phase_cross_correlation_upsample_factor,
+        normalization=phase_cross_correlation_normalization,
+        metric=rot_metric,
+        shrink_factors=rot_shrink_factors,
+        smoothing_sigmas=rot_smoothing_sigmas,
+        iterations=rot_iterations,
+        learning_rate=rot_learning_rate,
+        min_step=rot_min_step,
+        sampling_percentage=rot_sampling_percentage,
+        transform_order=transform_order,
+        cval=rot_cval,
+        points_max_points=rot_points_max_points,
+        points_min_distance=rot_points_min_distance,
+        points_threshold_rel=rot_points_threshold_rel,
+        points_iterations=rot_points_iterations,
+        points_max_match_distance=rot_points_max_match_distance,
+        n_jobs=rot_n_jobs,
+        return_valid_mask=bool(zero_clip),
+        verbose=verbose,
+    )
+    valid_mask_tzyx = rigid_details.pop("valid_mask_tzyx", None)
+    zero_clip_bounds = None
+    zero_clip_failed_reason = None
+    effective_zero_clip_mode = _effective_zero_clip_mode(
+        zero_clip=bool(zero_clip),
+        zero_clip_mode=zero_clip_mode,
+        rotreg=True,
+    )
+    if zero_clip:
+        if valid_mask_tzyx is None:
+            raise RuntimeError("Rigid 3D zero clipping requires a valid-mask transform.")
+        try:
+            effective_mask_strategy = _effective_zero_clip_mask_strategy(
+                zero_clip_mask_strategy=zero_clip_mask_strategy,
+                rigid_3d=True,
+            )
+            zero_clip_bounds = _crop_bounds_from_valid_mask(
+                valid_mask_tzyx,
+                threshold=zero_clip_mask_threshold,
+                strategy=effective_mask_strategy,
+                min_fraction=zero_clip_mask_min_fraction,
+            )
+            zero_clip_bounds = _apply_zero_clip_margin(zero_clip_bounds, zero_clip_margin_zyx)
+            registered = _zero_clip_stack(registered, zero_clip_bounds)
+        except ValueError as exc:
+            zero_clip_failed_reason = str(exc)
+            zero_clip_bounds = None
+            warnings.warn(
+                "zero_clip=True was requested, but no usable common valid "
+                f"3D region could be found. Returning the registered stack without cropping. {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+    details = {
+        **rigid_details,
+        **registration_settings,
+        "method": method,
+        "rigid_3d_backend": rigid_3d_backend,
+        "time_registration_mode": "full_3d",
+        "effective_time_registration_mode": "full_3d",
+        "time_reference_mode": "template",
+        "zreg": True,
+        "rotreg": True,
+        "rotation_shifts_deg": rigid_details["rotation_shifts_zyx_deg"][:, 0],
+        "zero_clip": bool(zero_clip),
+        "zero_clip_mode": effective_zero_clip_mode,
+        "zero_clip_mask_strategy": _effective_zero_clip_mask_strategy(
+            zero_clip_mask_strategy=zero_clip_mask_strategy,
+            rigid_3d=True,
+        ),
+        "zero_clip_bounds": zero_clip_bounds,
+        "zero_clip_failed_reason": zero_clip_failed_reason,
+        "zero_clip_mask_threshold": zero_clip_mask_threshold,
+        "zero_clip_mask_min_fraction": zero_clip_mask_min_fraction,
+        "zero_clip_margin_zyx": tuple(int(v) for v in zero_clip_margin_zyx),
+        "transform_backend": "rigid_3d",
+        "transform_order": transform_order,
+    }
+    if return_details:
+        return registered, details
+    if return_shifts:
+        return registered, details
+    return registered
+
 # %% MAIN REGISTRATION WRAPPER
 def register_stack(
     stack,
@@ -1774,15 +2085,34 @@ def register_stack(
     projection_range: tuple[int, int] | Sequence[int] | None = None,
     projection_method: str = "max",
     zreg: bool = False,
+    rigid_3d_backend: str = "phase_cross_correlation",
     zero_clip: bool = False,
     zero_clip_mode: str = "auto",
     zero_clip_mask_threshold: float = 0.999,
+    zero_clip_mask_strategy: str = "auto",
+    zero_clip_mask_min_fraction: float = 0.50,
     zero_clip_margin: int | Sequence[int] = 0,
     max_xy_shifts: tuple[float, float] | Sequence[float] | None = None,
     max_z_shifts: float | None = None,
     rotreg: bool = False,
     max_rot_shifts: float | None = None,
     rotreg_iter: int = 1,
+    rot_spacing_zyx: tuple[float, float, float] | Sequence[float] | None = None,
+    rot_init_iterations: int = 1,
+    rot_metric: str = "correlation",
+    rot_shrink_factors: tuple[int, ...] | Sequence[int] = (4, 2, 1),
+    rot_smoothing_sigmas: tuple[float, ...] | Sequence[float] = (2.0, 1.0, 0.0),
+    rot_iterations: int = 100,
+    rot_learning_rate: float = 1.0,
+    rot_min_step: float = 1e-4,
+    rot_sampling_percentage: float | None = None,
+    rot_cval: float = 0.0,
+    rot_n_jobs: int = 1,
+    rot_points_max_points: int = 200,
+    rot_points_min_distance: int = 3,
+    rot_points_threshold_rel: float = 0.25,
+    rot_points_iterations: int = 20,
+    rot_points_max_match_distance: float = 8.0,
     transform_backend: str = "skimage",
     transform_order: int = 1,
     intra_stack_reference_mode: str = "neighbor",
@@ -1838,8 +2168,11 @@ def register_stack(
         Channel used to compute the time-wise registration shifts.
     registration_stack : int, optional
         Time point used as reference/template for registration. Defaults to 0.
-    method : {"phase_cross_correlation", "pystackreg"}, optional
-        Backend used for shift estimation.
+    method : {"phase_cross_correlation", "pystackreg", "normcorre"}, optional
+        Backend used for shift estimation. With ``rigid_3d_backend="simpleitk"``
+        or ``"points"``, this mainly documents the translational/pre-estimation
+        strategy while the full 3D rigid transform is refined by the selected
+        3D backend.
     time_registration_mode : {"projection", "full_3d", "none"}, optional
         Time-registration strategy. ``"projection"`` registers per-time-point
         projections and applies the resulting shift to each Z slice. ``"full_3d"``
@@ -1872,6 +2205,11 @@ def register_stack(
         ``time_registration_mode="full_3d"`` this uses the Z component returned
         by 3D phase cross-correlation. In projection mode this estimates Z shifts
         from orthogonal ``ZY`` and ``ZX`` projections.
+    rigid_3d_backend : {"phase_cross_correlation", "simpleitk", "points"}, optional
+        Backend used when ``rotreg=True``. The default keeps the previous
+        projection-based XY rotation path. ``"simpleitk"`` runs full 6-DOF dense
+        rigid-volume registration. ``"points"`` estimates a rigid transform from
+        sparse detected 3D peaks and is intended for puncta/spot-like data.
     zero_clip : bool, optional
         If True, crop zero-fill borders introduced by registration correction.
     zero_clip_mode : {"auto", "shift", "mask"}, optional
@@ -1884,6 +2222,21 @@ def register_stack(
     zero_clip_mask_threshold : float, optional
         Threshold for mask-based zero-clipping. Conservative values close to
         ``1`` remove interpolated mask-edge pixels.
+    zero_clip_mask_strategy : {"auto", "greedy", "relaxed", "max_volume"}, optional
+        Crop strategy for mask-based zero-clipping. ``"greedy"`` is strict and
+        removes border faces until the remaining cuboid contains only valid
+        pixels. ``"max_volume"`` is also strict, but searches for the largest
+        all-valid cuboid. ``"relaxed"`` removes only border planes whose valid
+        fraction is below ``zero_clip_mask_min_fraction``; this is usually more
+        practical for full 3D rotations, where tiny angled corner wedges should
+        not force a large crop. ``"auto"`` uses ``"relaxed"`` for SimpleITK or
+        points-based full 3D rigid registration and ``"greedy"`` otherwise.
+    zero_clip_mask_min_fraction : float, optional
+        Minimum valid border-face fraction for
+        ``zero_clip_mask_strategy="relaxed"``. The default keeps border faces
+        once the majority of their pixels are valid. Lower values preserve more
+        field of view while allowing more angled invalid corner pixels to remain;
+        higher values crop more aggressively.
     zero_clip_margin : int or tuple[int, int, int], optional
         Extra symmetric crop margin in ``(z, y, x)`` after automatic crop-bound
         detection. A scalar applies the same margin to all three axes.
@@ -1894,9 +2247,11 @@ def register_stack(
         Optional absolute Z correction-shift limit. If None, Z shifts are not
         clipped.
     rotreg : bool, optional
-        If True, estimate and correct in-plane XY rotations across time by
-        applying phase cross-correlation to polar-transformed registration
-        projections.
+        If True, estimate and correct rotations across time. With the default
+        ``rigid_3d_backend="phase_cross_correlation"``, this uses the existing
+        projection-based in-plane XY rotation correction. With
+        ``rigid_3d_backend="simpleitk"`` or ``"points"``, this switches to full
+        3D rigid-volume registration with Z/Y/X translations and rotations.
     max_rot_shifts : int, float, or None, optional
         Optional absolute rotation correction limit in degrees. If None,
         rotation corrections are not clipped.
@@ -1904,6 +2259,14 @@ def register_stack(
         Number of translation-rotation refinement iterations for ``rotreg=True``.
         ``1`` runs translation, rotation, translation. Values > 1 repeat the
         rotation and final translation pattern.
+    rot_* : optional
+        Full-3D rigid registration settings used with
+        ``rigid_3d_backend="simpleitk"`` or ``"points"``. ``rot_spacing_zyx``
+        gives physical Z/Y/X spacing and is important for anisotropic stacks.
+        ``rot_init_iterations`` controls iterative orthogonal-projection
+        pre-estimation. ``rot_metric`` is ``"correlation"`` or
+        ``"mutual_information"`` for SimpleITK. ``rot_points_*`` settings apply
+        only to the sparse point-cloud backend.
     transform_backend : {"skimage", "scipy"}, optional
         Backend used to apply translation corrections. ``"skimage"`` is the
         default for XY transforms and keeps translation correction aligned with
@@ -1956,6 +2319,10 @@ def register_stack(
 
     stack = _as_float32_stack_copy(stack)
     method = _normalize_registration_method(method)
+    from .rigid3d import normalize_rigid_3d_backend, normalize_rigid_3d_metric
+
+    rigid_3d_backend = normalize_rigid_3d_backend(rigid_3d_backend)
+    rot_metric = normalize_rigid_3d_metric(rot_metric)
     time_registration_mode = _normalize_time_registration_mode(time_registration_mode)
     time_reference_mode = _normalize_time_reference_mode(time_reference_mode)
     zrange = _resolve_projection_range_alias(zrange=zrange, projection_range=projection_range)
@@ -1965,11 +2332,20 @@ def register_stack(
     neighbor_window_size = _normalize_neighbor_window_size(neighbor_window_size)
     zero_clip_mode = _normalize_zero_clip_mode(zero_clip_mode)
     zero_clip_mask_threshold = _normalize_zero_clip_mask_threshold(zero_clip_mask_threshold)
+    zero_clip_mask_strategy = _normalize_zero_clip_mask_strategy(zero_clip_mask_strategy)
+    zero_clip_mask_min_fraction = _normalize_zero_clip_mask_min_fraction(zero_clip_mask_min_fraction)
     zero_clip_margin_zyx = _normalize_zero_clip_margin(zero_clip_margin)
     max_xy_shifts = _normalize_max_xy_shifts(max_xy_shifts)
     max_z_shifts = _normalize_max_z_shifts(max_z_shifts)
     max_rot_shifts = _normalize_max_rot_shifts(max_rot_shifts)
     rotreg_iter = _normalize_rotreg_iter(rotreg_iter)
+    rot_init_iterations = int(rot_init_iterations)
+    if rot_init_iterations < 0:
+        raise ValueError(f"rot_init_iterations must be >= 0. Got {rot_init_iterations!r}.")
+    rot_iterations = int(rot_iterations)
+    if rot_iterations < 1:
+        raise ValueError(f"rot_iterations must be >= 1. Got {rot_iterations!r}.")
+    rot_n_jobs = max(int(rot_n_jobs), 1)
     transform_backend = _normalize_transform_backend(transform_backend)
     transform_order = _normalize_transform_order(transform_order)
     filter_slices, filter_projections = _resolve_filter_aliases(
@@ -2008,6 +2384,10 @@ def register_stack(
         zero_clip_mode=zero_clip_mode,
         rotreg=bool(rotreg),
     )
+    effective_zero_clip_mask_strategy = _effective_zero_clip_mask_strategy(
+        zero_clip_mask_strategy=zero_clip_mask_strategy,
+        rigid_3d=bool(rotreg and rigid_3d_backend in {"simpleitk", "points"}),
+    )
     projection_range_setting = (
         None
         if zrange is None
@@ -2020,8 +2400,27 @@ def register_stack(
         "intra_stack": bool(intra_stack),
         "zreg": bool(zreg),
         "zero_clip": bool(zero_clip),
+        "zero_clip_mask_strategy": effective_zero_clip_mask_strategy,
+        "zero_clip_mask_min_fraction": float(zero_clip_mask_min_fraction),
         "rotreg": bool(rotreg),
         "rotreg_iter": int(rotreg_iter),
+        "rigid_3d_backend": rigid_3d_backend,
+        "rot_spacing_zyx": None if rot_spacing_zyx is None else tuple(float(v) for v in rot_spacing_zyx),
+        "rot_init_iterations": int(rot_init_iterations),
+        "rot_metric": rot_metric,
+        "rot_shrink_factors": tuple(int(v) for v in rot_shrink_factors),
+        "rot_smoothing_sigmas": tuple(float(v) for v in rot_smoothing_sigmas),
+        "rot_iterations": int(rot_iterations),
+        "rot_learning_rate": float(rot_learning_rate),
+        "rot_min_step": float(rot_min_step),
+        "rot_sampling_percentage": rot_sampling_percentage,
+        "rot_cval": float(rot_cval),
+        "rot_n_jobs": int(rot_n_jobs),
+        "rot_points_max_points": int(rot_points_max_points),
+        "rot_points_min_distance": int(rot_points_min_distance),
+        "rot_points_threshold_rel": float(rot_points_threshold_rel),
+        "rot_points_iterations": int(rot_points_iterations),
+        "rot_points_max_match_distance": float(rot_points_max_match_distance),
         "projection_range": projection_range_setting,
         "projection_method": projection_method,
         "filter_slices": bool(filter_slices),
@@ -2036,6 +2435,52 @@ def register_stack(
         "phase_cross_correlation_normalization": phase_cross_correlation_normalization,
         "stack_shape_tzcyx": tuple(int(v) for v in stack.shape),
     }
+    if rotreg and rigid_3d_backend in {"simpleitk", "points"}:
+        if stack.shape[1] < 2:
+            raise ValueError("Full 3D rigid rotation registration requires SizeZ >= 2.")
+        if time_reference_mode != "template":
+            raise ValueError("Full 3D rigid rotation registration currently supports only time_reference_mode='template'.")
+        if intra_stack:
+            raise ValueError("Full 3D rigid rotation registration does not support intra_stack=True yet.")
+        return _register_stack_rigid_3d_from_main_wrapper(
+            stack,
+            registration_channel=int(registration_channel),
+            registration_stack=int(registration_stack),
+            method=method,
+            projection_range=projection_range_setting,
+            projection_method=projection_method,
+            rigid_3d_backend=rigid_3d_backend,
+            zero_clip=bool(zero_clip),
+            zero_clip_mode=zero_clip_mode,
+            zero_clip_mask_threshold=zero_clip_mask_threshold,
+            zero_clip_mask_strategy=zero_clip_mask_strategy,
+            zero_clip_mask_min_fraction=zero_clip_mask_min_fraction,
+            zero_clip_margin_zyx=zero_clip_margin_zyx,
+            max_rot_shifts=max_rot_shifts,
+            phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
+            phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+            transform_order=transform_order,
+            rot_spacing_zyx=rot_spacing_zyx,
+            rot_init_iterations=rot_init_iterations,
+            rot_metric=rot_metric,
+            rot_shrink_factors=rot_shrink_factors,
+            rot_smoothing_sigmas=rot_smoothing_sigmas,
+            rot_iterations=rot_iterations,
+            rot_learning_rate=float(rot_learning_rate),
+            rot_min_step=float(rot_min_step),
+            rot_sampling_percentage=rot_sampling_percentage,
+            rot_cval=float(rot_cval),
+            rot_n_jobs=rot_n_jobs,
+            rot_points_max_points=int(rot_points_max_points),
+            rot_points_min_distance=int(rot_points_min_distance),
+            rot_points_threshold_rel=float(rot_points_threshold_rel),
+            rot_points_iterations=int(rot_points_iterations),
+            rot_points_max_match_distance=float(rot_points_max_match_distance),
+            verbose=verbose,
+            return_shifts=return_shifts,
+            return_details=return_details,
+            registration_settings=registration_settings,
+        )
     if method == "normcorre":
         return _register_stack_normcorre_from_main_wrapper(
             stack,
@@ -2209,16 +2654,29 @@ def register_stack(
             rotation_shifts_deg = np.sum(np.stack(rotation_pass_shifts_deg, axis=0), axis=0).astype(np.float32)
 
     zero_clip_bounds = None
+    zero_clip_failed_reason = None
     if zero_clip:
-        if effective_zero_clip_mode == "mask":
-            zero_clip_bounds = _crop_bounds_from_valid_mask(
-                zero_clip_mask_tzyx,
-                threshold=zero_clip_mask_threshold,
+        try:
+            if effective_zero_clip_mode == "mask":
+                zero_clip_bounds = _crop_bounds_from_valid_mask(
+                    zero_clip_mask_tzyx,
+                    threshold=zero_clip_mask_threshold,
+                    strategy=effective_zero_clip_mask_strategy,
+                    min_fraction=zero_clip_mask_min_fraction,
+                )
+            else:
+                zero_clip_bounds = _add_crop_bounds(*zero_clip_stage_bounds)
+            zero_clip_bounds = _apply_zero_clip_margin(zero_clip_bounds, zero_clip_margin_zyx)
+            registered = _zero_clip_stack(registered, zero_clip_bounds)
+        except ValueError as exc:
+            zero_clip_failed_reason = str(exc)
+            zero_clip_bounds = None
+            warnings.warn(
+                "zero_clip=True was requested, but no usable common valid "
+                f"region could be found. Returning the registered stack without cropping. {exc}",
+                RuntimeWarning,
+                stacklevel=2,
             )
-        else:
-            zero_clip_bounds = _add_crop_bounds(*zero_clip_stage_bounds)
-        zero_clip_bounds = _apply_zero_clip_margin(zero_clip_bounds, zero_clip_margin_zyx)
-        registered = _zero_clip_stack(registered, zero_clip_bounds)
 
     compatible_time_shifts_yx = (
         time_registration_mode == "projection"
@@ -2240,8 +2698,11 @@ def register_stack(
         translation_pass_shifts_zyx=translation_pass_shifts_zyx,
         rotation_pass_shifts_deg=rotation_pass_shifts_deg,
         zero_clip_bounds=zero_clip_bounds,
+        zero_clip_failed_reason=zero_clip_failed_reason,
         zero_clip_mode=effective_zero_clip_mode,
         zero_clip_mask_threshold=zero_clip_mask_threshold,
+        zero_clip_mask_strategy=effective_zero_clip_mask_strategy,
+        zero_clip_mask_min_fraction=zero_clip_mask_min_fraction,
         zero_clip_margin_zyx=zero_clip_margin_zyx,
         time_registration_mode=time_registration_mode,
         effective_time_registration_mode=effective_time_registration_mode,

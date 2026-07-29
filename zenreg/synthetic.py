@@ -13,8 +13,9 @@ from pathlib import Path
 
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
-from scipy.ndimage import affine_transform, map_coordinates
+from scipy.ndimage import affine_transform, gaussian_filter, map_coordinates
 from scipy.ndimage import shift as ndi_shift
+from scipy.spatial.transform import Rotation
 from skimage.transform import rotate
 
 from .io import create_empty_stack, create_stack_metadata, save_stack
@@ -1010,6 +1011,87 @@ def create_3d_time_rigid_motion_distorted_stack(
     return stack, time_shifts, rotations, centers
 
 
+def create_3d_time_sparse_puncta_rigid_motion_distorted_stack(
+    *,
+    time_count: int = 7,
+    z_count: int = 20,
+    channel_count: int = 2,
+    shape_yx: tuple[int, int] = (96, 96),
+    point_count: int = 70,
+    noise_sigma: float = 0.004,
+    random_state: int = 73,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Create a sparse puncta ``TZCYX`` stack for point-based 3D rigid registration.
+
+    The registration channel contains many bright 3D spots with small,
+    deterministic global translations and rotations. The second channel carries
+    a dimmer, slightly blurred companion signal and is intended to verify that
+    transforms estimated from one channel are applied to all channels.
+    """
+
+    rng = np.random.default_rng(random_state)
+    shape_zyx = (int(z_count), int(shape_yx[0]), int(shape_yx[1]))
+    base = np.zeros(shape_zyx, dtype=np.float32)
+    points = np.column_stack(
+        [
+            rng.integers(2, max(3, shape_zyx[0] - 2), size=int(point_count)),
+            rng.integers(8, max(9, shape_zyx[1] - 8), size=int(point_count)),
+            rng.integers(8, max(9, shape_zyx[2] - 8), size=int(point_count)),
+        ]
+    )
+    amplitudes = rng.uniform(0.65, 1.0, size=int(point_count)).astype(np.float32)
+    for (z, y, x), amplitude in zip(points, amplitudes, strict=True):
+        base[int(z), int(y), int(x)] += float(amplitude)
+    base = gaussian_filter(base, sigma=(0.45, 0.9, 0.9)).astype(np.float32, copy=False)
+    base -= float(base.min())
+    base /= max(float(base.max()), 1e-6)
+
+    base_channels = [base]
+    for c in range(1, int(channel_count)):
+        companion = gaussian_filter(base, sigma=(0.15 * c, 0.35 * c, 0.35 * c))
+        companion = np.roll(companion, shift=c, axis=0)
+        base_channels.append((0.75 * companion).astype(np.float32, copy=False))
+
+    stack = create_empty_stack(
+        shape=(time_count, z_count, channel_count, *shape_yx),
+        dtype=np.float32,
+        fill_value=0,
+        verbose=False,
+    )
+    time_shifts = _time_shifts_zyx(
+        time_count,
+        amplitude_z=1.2,
+        amplitude_y=2.4,
+        amplitude_x=2.1,
+    )
+    rotations = _time_rotations_zyx_deg(
+        time_count,
+        amplitude_z_deg=3.0,
+        amplitude_y_deg=1.6,
+        amplitude_x_deg=2.0,
+    )
+    center = (np.asarray(shape_zyx, dtype=np.float32) - 1.0) / 2.0
+    centers = np.repeat(center[None, :], int(time_count), axis=0).astype(np.float32)
+
+    for t in range(int(time_count)):
+        shift_zyx = tuple(float(v) for v in time_shifts[t])
+        rot_z, rot_y, rot_x = [float(v) for v in rotations[t]]
+        center_zyx = tuple(float(v) for v in centers[t])
+        for c, base_volume in enumerate(base_channels):
+            moved = _apply_zyx_rigid_transform(
+                base_volume,
+                shift_zyx=shift_zyx,
+                rotation_z_deg=rot_z,
+                rotation_y_deg=rot_y,
+                rotation_x_deg=rot_x,
+                center_zyx=center_zyx,
+            )
+            stack[t, :, c, :, :] = _add_noise_and_clip(moved, rng=rng, noise_sigma=noise_sigma)
+
+    return stack, time_shifts, rotations, centers
+
+
 def create_3d_motion_distorted_stack(
     *,
     time_count: int = 10,
@@ -1167,7 +1249,7 @@ def _write_time_rotation_table(
         for t, (applied_rotation, expected_rotation) in enumerate(
             zip(rotations_deg, expected_registration_rotations, strict=True)
         ):
-                writer.writerow([t, float(applied_rotation), float(expected_rotation)])
+            writer.writerow([t, float(applied_rotation), float(expected_rotation)])
     return path
 
 
@@ -1242,8 +1324,23 @@ def _write_3d_rigid_transform_table(
 ) -> Path:
     """Write applied 3D rigid-transform GT parameters to CSV."""
 
-    expected_shifts = shifts_zyx[int(registration_stack), :] - shifts_zyx
-    expected_rotations = rotations_zyx_deg[int(registration_stack), :] - rotations_zyx_deg
+    reference_rotation = _rotation_matrix_zyx(
+        rotation_z_deg=float(rotations_zyx_deg[int(registration_stack), 0]),
+        rotation_y_deg=float(rotations_zyx_deg[int(registration_stack), 1]),
+        rotation_x_deg=float(rotations_zyx_deg[int(registration_stack), 2]),
+    ).astype(np.float64)
+    expected_shifts = np.zeros_like(shifts_zyx, dtype=np.float32)
+    expected_rotations = np.zeros_like(rotations_zyx_deg, dtype=np.float32)
+    reference_shift = np.asarray(shifts_zyx[int(registration_stack), :], dtype=np.float64)
+    for t in range(shifts_zyx.shape[0]):
+        moving_rotation = _rotation_matrix_zyx(
+            rotation_z_deg=float(rotations_zyx_deg[t, 0]),
+            rotation_y_deg=float(rotations_zyx_deg[t, 1]),
+            rotation_x_deg=float(rotations_zyx_deg[t, 2]),
+        ).astype(np.float64)
+        correction_rotation = reference_rotation @ moving_rotation.T
+        expected_rotations[t, :] = Rotation.from_matrix(correction_rotation).as_euler("ZYX", degrees=True)
+        expected_shifts[t, :] = reference_shift - correction_rotation @ np.asarray(shifts_zyx[t, :], dtype=np.float64)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(
@@ -1396,6 +1493,26 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
         rotations_3d_t_trans_rot_all_outside,
         centers_3d_t_trans_rot_all_outside,
     ) = create_3d_time_rigid_motion_distorted_stack(rotation_mode="all", center_mode="outside", random_state=61)
+    (
+        stack_3d_t_rigid_simpleitk,
+        shifts_3d_t_rigid_simpleitk,
+        rotations_3d_t_rigid_simpleitk,
+        centers_3d_t_rigid_simpleitk,
+    ) = create_3d_time_rigid_motion_distorted_stack(
+        time_count=7,
+        z_count=20,
+        shape_yx=(96, 96),
+        rotation_mode="all",
+        center_mode="middle",
+        noise_sigma=0.01,
+        random_state=71,
+    )
+    (
+        stack_3d_t_rigid_points,
+        shifts_3d_t_rigid_points,
+        rotations_3d_t_rigid_points,
+        centers_3d_t_rigid_points,
+    ) = create_3d_time_sparse_puncta_rigid_motion_distorted_stack(random_state=73)
 
     zero_time_shifts_3d = np.zeros((stack_3d_z_xy.shape[0], 2), dtype=np.float32)
     zero_time_shifts_3d_t = np.zeros((stack_3d_t_intra_xy.shape[0], 2), dtype=np.float32)
@@ -1545,6 +1662,26 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
                 "ZenReg_RigidTransformGT": "synthetic_3d_t_trans_rot_all_outside_rigid_transform_gt.csv",
             },
         },
+        "synthetic_3d_t_rigid_simpleitk": {
+            "stack": stack_3d_t_rigid_simpleitk,
+            "image": "synthetic_3d_t_rigid_simpleitk.ome.tif",
+            "rigid_gt": "synthetic_3d_t_rigid_simpleitk_rigid_transform_gt.csv",
+            "annotations": {
+                "ZenReg_SyntheticDataset": "synthetic_3d_t_rigid_simpleitk",
+                "ZenReg_RegistrationTarget": "Dense 3D+t 6-DOF rigid registration benchmark for SimpleITK",
+                "ZenReg_RigidTransformGT": "synthetic_3d_t_rigid_simpleitk_rigid_transform_gt.csv",
+            },
+        },
+        "synthetic_3d_t_rigid_points": {
+            "stack": stack_3d_t_rigid_points,
+            "image": "synthetic_3d_t_rigid_points.ome.tif",
+            "rigid_gt": "synthetic_3d_t_rigid_points_rigid_transform_gt.csv",
+            "annotations": {
+                "ZenReg_SyntheticDataset": "synthetic_3d_t_rigid_points",
+                "ZenReg_RegistrationTarget": "Sparse puncta 3D+t 6-DOF rigid registration benchmark for points backend",
+                "ZenReg_RigidTransformGT": "synthetic_3d_t_rigid_points_rigid_transform_gt.csv",
+            },
+        },
     }
 
     paths: dict[str, str] = {}
@@ -1659,6 +1796,22 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
             centers_zyx=centers_3d_t_trans_rot_all_outside,
         )
     )
+    paths["synthetic_3d_t_rigid_simpleitk_rigid_gt_csv"] = str(
+        _write_3d_rigid_transform_table(
+            output_dir / "synthetic_3d_t_rigid_simpleitk_rigid_transform_gt.csv",
+            shifts_zyx=shifts_3d_t_rigid_simpleitk,
+            rotations_zyx_deg=rotations_3d_t_rigid_simpleitk,
+            centers_zyx=centers_3d_t_rigid_simpleitk,
+        )
+    )
+    paths["synthetic_3d_t_rigid_points_rigid_gt_csv"] = str(
+        _write_3d_rigid_transform_table(
+            output_dir / "synthetic_3d_t_rigid_points_rigid_transform_gt.csv",
+            shifts_zyx=shifts_3d_t_rigid_points,
+            rotations_zyx_deg=rotations_3d_t_rigid_points,
+            centers_zyx=centers_3d_t_rigid_points,
+        )
+    )
 
     metadata = {
         "axis_order": "TZCYX",
@@ -1676,6 +1829,8 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
         "synthetic_3d_t_trans_rot_all_center_shape": list(stack_3d_t_trans_rot_all_center.shape),
         "synthetic_3d_t_trans_rot_all_offcenter_shape": list(stack_3d_t_trans_rot_all_offcenter.shape),
         "synthetic_3d_t_trans_rot_all_outside_shape": list(stack_3d_t_trans_rot_all_outside.shape),
+        "synthetic_3d_t_rigid_simpleitk_shape": list(stack_3d_t_rigid_simpleitk.shape),
+        "synthetic_3d_t_rigid_points_shape": list(stack_3d_t_rigid_points.shape),
         "synthetic_2d_t_xy_applied_time_shifts_yx": shifts_2d_t_xy.tolist(),
         "synthetic_3d_z_xy_applied_slice_shifts_yx": shifts_3d_z_xy.tolist(),
         "synthetic_3d_t_xy_applied_time_shifts_yx": shifts_3d_t_xy.tolist(),
@@ -1702,6 +1857,12 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
         "synthetic_3d_t_trans_rot_all_outside_applied_time_shifts_zyx": shifts_3d_t_trans_rot_all_outside.tolist(),
         "synthetic_3d_t_trans_rot_all_outside_applied_rotations_zyx_deg": rotations_3d_t_trans_rot_all_outside.tolist(),
         "synthetic_3d_t_trans_rot_all_outside_centers_zyx": centers_3d_t_trans_rot_all_outside.tolist(),
+        "synthetic_3d_t_rigid_simpleitk_applied_time_shifts_zyx": shifts_3d_t_rigid_simpleitk.tolist(),
+        "synthetic_3d_t_rigid_simpleitk_applied_rotations_zyx_deg": rotations_3d_t_rigid_simpleitk.tolist(),
+        "synthetic_3d_t_rigid_simpleitk_centers_zyx": centers_3d_t_rigid_simpleitk.tolist(),
+        "synthetic_3d_t_rigid_points_applied_time_shifts_zyx": shifts_3d_t_rigid_points.tolist(),
+        "synthetic_3d_t_rigid_points_applied_rotations_zyx_deg": rotations_3d_t_rigid_points.tolist(),
+        "synthetic_3d_t_rigid_points_centers_zyx": centers_3d_t_rigid_points.tolist(),
     }
     metadata_path = output_dir / "synthetic_motion_metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")

@@ -18,6 +18,7 @@ from .io import (
     update_stack_metadata,
 )
 from .normcorre import register_stack_normcorre
+from .rigid3d import register_stack_rigid_3d
 from .registration import correct_intra_stack_z_drift, register_stack
 from .reporting import write_registration_outputs
 
@@ -30,6 +31,7 @@ __all__ = [
     "load_stack",
     "max_z_project",
     "register_stack_normcorre",
+    "register_stack_rigid_3d",
     "register_stack",
     "save_stack",
     "update_stack_metadata",
