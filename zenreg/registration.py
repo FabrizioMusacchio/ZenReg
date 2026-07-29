@@ -4,7 +4,7 @@ Registration helpers for canonical ``TZCYX`` microscopy stacks.
 Author: Fabrizio Musacchio
 Date: June 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 import warnings
@@ -18,7 +18,7 @@ from skimage.registration import phase_cross_correlation
 from skimage.transform import rotate, warp_polar
 
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack, normalize_zrange
-
+# %% CONSTANTS
 SUPPORTED_REGISTRATION_METHODS = {"phase_cross_correlation", "pystackreg"}
 SUPPORTED_INTRA_STACK_REFERENCE_MODES = {"neighbor", "full_projection", "first_slice"}
 SUPPORTED_PROJECTION_METHODS = {"max", "mean", "median", "var", "std"}
@@ -27,7 +27,7 @@ SUPPORTED_TIME_REFERENCE_MODES = {"template", "previous"}
 SUPPORTED_ZERO_CLIP_MODES = {"auto", "shift", "mask"}
 SUPPORTED_TRANSFORM_BACKENDS = {"skimage", "scipy"}
 
-
+# %% FUNCTIONS
 def _normalize_registration_method(method: str) -> str:
     """Normalize and validate the requested registration backend."""
 
@@ -1581,7 +1581,7 @@ def _return_registration_result(
         return registered, intra_stack_shifts_yx
     return registered, details
 
-
+# %% MAIN REGISTRATION WRAPPER
 def register_stack(
     stack,
     *,
@@ -2003,3 +2003,4 @@ def register_stack(
         transform_order=transform_order,
         registration_settings=registration_settings,
     )
+# %% END
