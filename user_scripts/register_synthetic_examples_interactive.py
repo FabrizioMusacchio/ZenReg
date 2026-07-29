@@ -52,6 +52,7 @@ STACK_3D_T_XY_PATH = EXAMPLE_DIR / "synthetic_3d_t_xy.ome.tif"
 STACK_3D_T_INTRA_XY_PATH = EXAMPLE_DIR / "synthetic_3d_t_intra_xy.ome.tif"
 STACK_3D_T_ZYX_PATH = EXAMPLE_DIR / "synthetic_3d_t_zyx.ome.tif"
 STACK_2D_T_ROT_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_rot_xy.ome.tif"
+STACK_3D_T_TRANS_ROT_Z_PATH = EXAMPLE_DIR / "synthetic_3d_t_trans_rot_z.ome.tif"
 
 GT_2D_T_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_xy_time_shifts_gt.csv"
 GT_3D_Z_XY_PATH = EXAMPLE_DIR / "synthetic_3d_z_xy_slice_shifts_gt.csv"
@@ -60,6 +61,7 @@ GT_3D_T_INTRA_XY_PATH = EXAMPLE_DIR / "synthetic_3d_t_intra_xy_slice_shifts_gt.c
 GT_3D_T_ZYX_PATH = EXAMPLE_DIR / "synthetic_3d_t_zyx_time_shifts_gt.csv"
 GT_2D_T_ROT_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_rot_xy_time_shifts_gt.csv"
 GT_2D_T_ROT_DEG_PATH = EXAMPLE_DIR / "synthetic_2d_t_rot_xy_time_rotations_gt.csv"
+GT_3D_T_TRANS_ROT_Z_PATH = EXAMPLE_DIR / "synthetic_3d_t_trans_rot_z_rigid_transform_gt.csv"
 # %% QUICK VIEW AND GT HELPERS
 def show_timepoints(
     stack,
@@ -163,6 +165,20 @@ def load_expected_time_registration_rotations(path: Path, *, registration_stack:
     table = _load_csv(path)
     column = f"expected_registration_rotation_deg_ref_t{registration_stack}"
     return np.asarray(table[column], dtype=np.float32)
+
+
+def load_expected_rigid_z_rotation(path: Path, *, registration_stack: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """Load expected ZYX shifts and Z-axis rotation corrections from a 3D rigid GT table."""
+
+    table = _load_csv(path)
+    shift_columns = [
+        f"expected_registration_shift_{axis}_ref_t{registration_stack}"
+        for axis in ("z", "y", "x")
+    ]
+    rotation_column = f"expected_registration_rotation_z_deg_ref_t{registration_stack}"
+    shifts_zyx = np.column_stack([table[column] for column in shift_columns]).astype(np.float32)
+    rotations_z_deg = np.asarray(table[rotation_column], dtype=np.float32)
+    return shifts_zyx, rotations_z_deg
 
 
 def load_expected_slice_registration_shifts(path: Path) -> np.ndarray:
@@ -422,7 +438,80 @@ save_stack(
 )
 
 maybe_open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX after full 3D registration")
-# %% 6) 2D+t: GLOBAL XY ROTATION
+# %% 6) 3D+t: FULL 3D TRANSLATION PLUS XY-PLANE ROTATION ONLY
+stack_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z = load_stack(
+    STACK_3D_T_TRANS_ROT_Z_PATH,
+    return_metadata=True,
+    verbose=False)
+expected_3d_t_trans_rot_z_shifts, expected_3d_t_trans_rot_z_rot_deg = load_expected_rigid_z_rotation(
+    GT_3D_T_TRANS_ROT_Z_PATH,
+    registration_stack=0)
+print(f"3D+t ZYX translation + Z rotation stack shape: {stack_3d_t_trans_rot_z.shape} (TZCYX)")
+show_timepoints(
+    stack_3d_t_trans_rot_z,
+    title="3D+t ZYX translation + XY-plane rotation before registration",
+    channel=0,
+    projection_method="max")
+maybe_open_in_napari(
+    stack_3d_t_trans_rot_z,
+    metadata_3d_t_trans_rot_z,
+    fname="3D+t translation + XY rotation before registration")
+
+registered_3d_t_trans_rot_z, details_3d_t_trans_rot_z = register_stack(
+    stack_3d_t_trans_rot_z,
+    registration_channel=0,  # channel used to estimate shifts and XY-plane rotation
+    registration_stack=0,  # reference time point/template
+    method="phase_cross_correlation",  # translation and projection-polar rotation estimator
+    time_registration_mode="full_3d",  # full ZYX translation correction
+    time_reference_mode="template",  # "template" or "previous"
+    projection_range=None,  # None or (z_start, z_stop)
+    projection_method="max",  # projection used for XY-plane rotation estimation
+    zreg=True,  # estimate/apply Z shifts from full 3D phase cross-correlation
+    zero_clip=True,  # crop zero borders from translation/rotation correction
+    zero_clip_mode="auto",  # "auto", "shift", or "mask"; auto uses mask with rotreg=True
+    zero_clip_mask_threshold=0.999,  # threshold for mask-based clipping
+    zero_clip_mask_strategy="auto",  # "auto", "relaxed", "greedy", or "max_volume"
+    zero_clip_mask_min_fraction=0.5,  # relaxed crop: lower keeps more FOV
+    zero_clip_margin=(0, 0, 0),  # extra crop margin as (z, y, x)
+    max_xy_shifts=None,  # None or (max_y, max_x)
+    max_z_shifts=None,  # None or max_z
+    rotreg=True,  # estimate/apply only in-plane XY rotations across time
+    rigid_3d_backend="phase_cross_correlation",  # projection-polar Z-axis rotation, not full 6-DOF
+    max_rot_shifts=12,  # None or max rotation in degrees
+    rotreg_iter=1,  # 1 = translation, rotation, translation
+    transform_backend="skimage",  # "skimage" or "scipy"
+    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
+    filter_slices=False,  # median-filter Z slices before projection
+    filter_projections=False,  # median-filter projections before shift estimation
+    median_kernel_size=3,  # median-filter kernel size in pixels
+    verbose=True,
+    return_shifts=True,
+    return_details=True)
+print_shift_comparison(
+    "3D+t full-volume translation during XY-plane rotation refinement",
+    details_3d_t_trans_rot_z["time_shifts_zyx"],
+    expected_3d_t_trans_rot_z_shifts)
+print_shift_comparison(
+    "3D+t XY-plane rotation correction [deg]",
+    details_3d_t_trans_rot_z["rotation_shifts_deg"][:, None],
+    expected_3d_t_trans_rot_z_rot_deg[:, None])
+print(f"Zero-clip bounds: {details_3d_t_trans_rot_z['zero_clip_bounds']}")
+show_timepoints(
+    registered_3d_t_trans_rot_z,
+    title="3D+t ZYX translation + XY-plane rotation after registration",
+    channel=0,
+    projection_method="max")
+save_stack(
+    OUTPUT_DIR / "synthetic_3d_t_trans_rot_z_projection_registered.ome.tif",
+    registered_3d_t_trans_rot_z,
+    metadata=metadata_3d_t_trans_rot_z,
+    registration_details=details_3d_t_trans_rot_z)
+maybe_open_in_napari(
+    registered_3d_t_trans_rot_z,
+    metadata_3d_t_trans_rot_z,
+    fname="3D+t translation + XY rotation after registration")
+
+# %% 7) 2D+t: GLOBAL XY ROTATION
 stack_2d_t_rot_xy, metadata_2d_t_rot_xy = load_stack(
     STACK_2D_T_ROT_XY_PATH,
     return_metadata=True,
@@ -491,7 +580,7 @@ save_stack(
     registration_details=details_2d_t_rot_xy)
 
 maybe_open_in_napari(registered_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation after registration")
-# %% 7) 2D+t: DISK-BACKED OMIO MEMMAP INPUT
+# %% 8) 2D+t: DISK-BACKED OMIO MEMMAP INPUT
 # To force a fresh start, clear any pre-existing OMIO cache in the local scratch folder.
 # Skip this cleanup line after a kernel restart if you want OMIO to reuse the existing cache.
 cleanup_omio_cache(MEMMAP_CACHE_DIR, full_cleanup=True, verbose=False)
