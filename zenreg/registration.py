@@ -1278,6 +1278,16 @@ def _print_verbose(verbose: bool, message: str) -> None:
         print(message)
 
 
+def _memory_mark(memory_tracker, step: str) -> None:
+    """Record an optional memory profiling marker."""
+
+    if memory_tracker is None:
+        return
+    mark = getattr(memory_tracker, "mark", None)
+    if mark is not None:
+        mark(step)
+
+
 def _correct_intra_stack_z_drift_impl(
     stack,
     *,
@@ -1299,6 +1309,7 @@ def _correct_intra_stack_z_drift_impl(
     output_memmap_name: str | None = None,
     output_dtype=np.float32,
     output_stage_name: str | None = "intra_stack",
+    memory_tracker=None,
     verbose: bool = True,
     return_shifts: bool = False,
     pre_median_filter: bool | None = None,
@@ -1415,6 +1426,7 @@ def _correct_intra_stack_z_drift_impl(
         )
 
     shifts = np.zeros((stack.shape[0], stack.shape[1], 2), dtype=np.float32)
+    _memory_mark(memory_tracker, "intra_stack:start")
     if stack.shape[1] <= 1:
         _print_verbose(verbose, "Skipping intra-stack Z drift correction because Z <= 1.")
         corrected = _create_registered_output(
@@ -1431,6 +1443,7 @@ def _correct_intra_stack_z_drift_impl(
             n_jobs=n_jobs,
         ):
             corrected[t, :, :, :, :] = frame
+        _memory_mark(memory_tracker, "intra_stack:end")
         return (corrected, shifts) if return_shifts else corrected
 
     def process_timepoint(t: int) -> tuple[int, np.ndarray, np.ndarray]:
@@ -1489,6 +1502,7 @@ def _correct_intra_stack_z_drift_impl(
             )
         corrected[t, :, :, :, :] = corrected_frame
 
+    _memory_mark(memory_tracker, "intra_stack:end")
     return (corrected, shifts) if return_shifts else corrected
 
 
@@ -1732,6 +1746,7 @@ def _register_stack_across_time(
     output_memmap_name: str | None,
     output_dtype,
     output_stage_name: str | None,
+    memory_tracker=None,
     verbose: bool,
 ) -> tuple[np.ndarray, np.ndarray, str]:
     """Register a ``TZCYX`` stack across time and return applied ``TZYX`` shifts."""
@@ -1818,11 +1833,13 @@ def _register_stack_across_time(
 
         return t, reference_t, pair_shift_zyx
 
+    _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:estimate_shifts:start")
     pair_results = _parallel_map_ordered(
         estimate_pair_shift,
         range(stack.shape[0]),
         n_jobs=n_jobs,
     )
+    _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:estimate_shifts:end")
     pair_shifts = np.zeros_like(shifts_zyx)
     reference_indices = np.zeros(stack.shape[0], dtype=np.int32)
     for t, reference_t, pair_shift_zyx in pair_results:
@@ -1867,8 +1884,10 @@ def _register_stack_across_time(
             transform_order=transform_order,
         ).astype(output_dtype, copy=False)
 
+    _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:apply_transforms:start")
     for t, registered_timepoint in _iter_map_ordered(apply_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
         registered[t, :, :, :, :] = registered_timepoint
+    _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:apply_transforms:end")
 
     return registered, shifts_zyx, effective_mode
 
@@ -1894,6 +1913,7 @@ def _register_stack_rotations_across_time(
     output_memmap_name: str | None,
     output_dtype,
     output_stage_name: str | None,
+    memory_tracker=None,
     verbose: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Register in-plane XY rotations across time and return applied correction angles."""
@@ -1948,11 +1968,13 @@ def _register_stack_rotations_across_time(
         )
         return t, reference_t, detected_rotation_deg
 
+    _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:estimate_rotations:start")
     pair_results = _parallel_map_ordered(
         estimate_pair_rotation,
         range(stack.shape[0]),
         n_jobs=n_jobs,
     )
+    _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:estimate_rotations:end")
     pair_rotations = np.zeros(stack.shape[0], dtype=np.float32)
     reference_indices = np.zeros(stack.shape[0], dtype=np.int32)
     for t, reference_t, detected_rotation_deg in pair_results:
@@ -1984,8 +2006,10 @@ def _register_stack_rotations_across_time(
             transform_order=transform_order,
         ).astype(output_dtype, copy=False)
 
+    _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:apply_rotations:start")
     for t, registered_timepoint in _iter_map_ordered(apply_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
         registered[t, :, :, :, :] = registered_timepoint
+    _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:apply_rotations:end")
 
     return registered, angles_deg
 
@@ -2117,6 +2141,7 @@ def _register_stack_normcorre_from_main_wrapper(
     nc_output_use_memmap: bool,
     nc_output_memmap_folder: str | None,
     nc_output_memmap_name: str | None,
+    memory_tracker=None,
     verbose: bool,
     return_shifts: bool,
     return_details: bool,
@@ -2145,6 +2170,7 @@ def _register_stack_normcorre_from_main_wrapper(
 
     from .normcorre import register_stack_normcorre
 
+    _memory_mark(memory_tracker, "normcorre:start")
     registered, details = register_stack_normcorre(
         stack,
         registration_channel=registration_channel,
@@ -2185,6 +2211,7 @@ def _register_stack_normcorre_from_main_wrapper(
         verbose=verbose,
         return_details=True,
     )
+    _memory_mark(memory_tracker, "normcorre:end")
     details["method"] = "normcorre"
     details["time_registration_mode"] = "full_3d" if is3d else "projection"
     details["effective_time_registration_mode"] = "full_3d" if is3d else "projection"
@@ -2255,6 +2282,7 @@ def _register_stack_rigid_3d_from_main_wrapper(
     output_memmap_folder: str | os.PathLike | None,
     output_memmap_name: str | None,
     output_dtype,
+    memory_tracker=None,
     verbose: bool,
     return_shifts: bool,
     return_details: bool,
@@ -2264,6 +2292,7 @@ def _register_stack_rigid_3d_from_main_wrapper(
 
     from .rigid3d import register_stack_rigid_3d
 
+    _memory_mark(memory_tracker, "rigid_3d:start")
     registered, rigid_details = register_stack_rigid_3d(
         stack,
         registration_channel=registration_channel,
@@ -2298,6 +2327,7 @@ def _register_stack_rigid_3d_from_main_wrapper(
         return_valid_mask=bool(zero_clip),
         verbose=verbose,
     )
+    _memory_mark(memory_tracker, "rigid_3d:end")
     valid_mask_tzyx = rigid_details.pop("valid_mask_tzyx", None)
     zero_clip_bounds = None
     zero_clip_failed_reason = None
@@ -2310,6 +2340,7 @@ def _register_stack_rigid_3d_from_main_wrapper(
         if valid_mask_tzyx is None:
             raise RuntimeError("Rigid 3D zero clipping requires a valid-mask transform.")
         try:
+            _memory_mark(memory_tracker, "zero_clip:compute_bounds:start")
             effective_mask_strategy = _effective_zero_clip_mask_strategy(
                 zero_clip_mask_strategy=zero_clip_mask_strategy,
                 rigid_3d=True,
@@ -2321,6 +2352,8 @@ def _register_stack_rigid_3d_from_main_wrapper(
                 min_fraction=zero_clip_mask_min_fraction,
             )
             zero_clip_bounds = _apply_zero_clip_margin(zero_clip_bounds, zero_clip_margin_zyx)
+            _memory_mark(memory_tracker, "zero_clip:compute_bounds:end")
+            _memory_mark(memory_tracker, "zero_clip:crop:start")
             registered = _zero_clip_stack(
                 registered,
                 zero_clip_bounds,
@@ -2330,6 +2363,7 @@ def _register_stack_rigid_3d_from_main_wrapper(
                 output_dtype=output_dtype,
                 n_jobs=rot_n_jobs,
             )
+            _memory_mark(memory_tracker, "zero_clip:crop:end")
         except ValueError as exc:
             zero_clip_failed_reason = str(exc)
             zero_clip_bounds = None
@@ -2449,6 +2483,7 @@ def register_stack(
     output_memmap_name: str | None = "zenreg_registered",
     output_dtype=np.float32,
     n_jobs: int = 1,
+    memory_tracker=None,
     verbose: bool = True,
     return_shifts: bool = False,
     return_details: bool = False,
@@ -2633,6 +2668,10 @@ def register_stack(
         recommended for intensity microscopy because subpixel transforms create
         interpolated values and avoids integer clipping/rounding. Use integer
         dtypes only when you intentionally want quantized output.
+    memory_tracker : zenreg.profiling.MemoryTracker or None, optional
+        Optional diagnostic memory tracker. If provided, ``register_stack`` and
+        major internal steps add markers to the tracker's RSS trace. The default
+        ``None`` keeps profiling fully disabled and has negligible overhead.
     verbose : bool, optional
         If True, print the estimated shifts.
     return_shifts : bool, optional
@@ -2652,6 +2691,7 @@ def register_stack(
     """
 
     stack = ensure_tzcyx_stack(stack)
+    _memory_mark(memory_tracker, "register_stack:start")
     output_dtype = _normalize_output_dtype(output_dtype)
     if not output_use_memmap and output_memmap_folder is not None:
         raise ValueError("output_memmap_folder requires output_use_memmap=True.")
@@ -2796,7 +2836,7 @@ def register_stack(
             raise ValueError("Full 3D rigid rotation registration currently supports only time_reference_mode='template'.")
         if intra_stack:
             raise ValueError("Full 3D rigid rotation registration does not support intra_stack=True yet.")
-        return _register_stack_rigid_3d_from_main_wrapper(
+        result = _register_stack_rigid_3d_from_main_wrapper(
             stack,
             registration_channel=int(registration_channel),
             registration_stack=int(registration_stack),
@@ -2834,13 +2874,16 @@ def register_stack(
             output_memmap_folder=output_memmap_folder,
             output_memmap_name=output_memmap_name,
             output_dtype=output_dtype,
+            memory_tracker=memory_tracker,
             verbose=verbose,
             return_shifts=return_shifts,
             return_details=return_details,
             registration_settings=registration_settings,
         )
+        _memory_mark(memory_tracker, "register_stack:end")
+        return result
     if method == "normcorre":
-        return _register_stack_normcorre_from_main_wrapper(
+        result = _register_stack_normcorre_from_main_wrapper(
             stack,
             registration_channel=int(registration_channel),
             registration_stack=int(registration_stack),
@@ -2881,19 +2924,25 @@ def register_stack(
             nc_output_use_memmap=bool(effective_nc_output_use_memmap),
             nc_output_memmap_folder=effective_nc_output_memmap_folder,
             nc_output_memmap_name=effective_nc_output_memmap_name,
+            memory_tracker=memory_tracker,
             verbose=verbose,
             return_shifts=return_shifts,
             return_details=return_details,
         )
+        _memory_mark(memory_tracker, "register_stack:end")
+        return result
 
     registered = stack
     intra_stack_shifts_yx = None
     zero_clip_stage_bounds = []
-    zero_clip_mask_tzyx = (
-        np.ones((stack.shape[0], stack.shape[1], stack.shape[3], stack.shape[4]), dtype=np.float32)
-        if effective_zero_clip_mode == "mask"
-        else None
-    )
+    zero_clip_mask_tzyx = None
+    if effective_zero_clip_mode == "mask":
+        _memory_mark(memory_tracker, "zero_clip_mask:allocate:start")
+        zero_clip_mask_tzyx = np.ones(
+            (stack.shape[0], stack.shape[1], stack.shape[3], stack.shape[4]),
+            dtype=np.float32,
+        )
+        _memory_mark(memory_tracker, "zero_clip_mask:allocate:end")
     if intra_stack:
         registered, intra_stack_shifts_yx = _correct_intra_stack_z_drift_impl(
             registered,
@@ -2915,6 +2964,7 @@ def register_stack(
             output_memmap_name=output_memmap_name,
             output_dtype=output_dtype,
             output_stage_name="intra_stack",
+            memory_tracker=memory_tracker,
             verbose=verbose,
             return_shifts=True,
         )
@@ -2997,6 +3047,7 @@ def register_stack(
                 output_memmap_name=output_memmap_name,
                 output_dtype=output_dtype,
                 output_stage_name=f"time_pass_{pass_index + 1}",
+                memory_tracker=memory_tracker,
                 verbose=verbose,
             )
             translation_pass_shifts_zyx.append(pass_shifts_zyx)
@@ -3034,6 +3085,7 @@ def register_stack(
                     output_memmap_name=output_memmap_name,
                     output_dtype=output_dtype,
                     output_stage_name=f"rotation_pass_{pass_index + 1}",
+                    memory_tracker=memory_tracker,
                     verbose=verbose,
                 )
                 rotation_pass_shifts_deg.append(pass_rotation_shifts_deg)
@@ -3059,6 +3111,7 @@ def register_stack(
     zero_clip_failed_reason = None
     if zero_clip:
         try:
+            _memory_mark(memory_tracker, "zero_clip:compute_bounds:start")
             if effective_zero_clip_mode == "mask":
                 zero_clip_bounds = _crop_bounds_from_valid_mask(
                     zero_clip_mask_tzyx,
@@ -3069,6 +3122,8 @@ def register_stack(
             else:
                 zero_clip_bounds = _add_crop_bounds(*zero_clip_stage_bounds)
             zero_clip_bounds = _apply_zero_clip_margin(zero_clip_bounds, zero_clip_margin_zyx)
+            _memory_mark(memory_tracker, "zero_clip:compute_bounds:end")
+            _memory_mark(memory_tracker, "zero_clip:crop:start")
             registered = _zero_clip_stack(
                 registered,
                 zero_clip_bounds,
@@ -3078,6 +3133,7 @@ def register_stack(
                 output_dtype=output_dtype,
                 n_jobs=n_jobs,
             )
+            _memory_mark(memory_tracker, "zero_clip:crop:end")
         except ValueError as exc:
             zero_clip_failed_reason = str(exc)
             zero_clip_bounds = None
@@ -3097,7 +3153,7 @@ def register_stack(
         and not rotreg
         and not zero_clip
     )
-    return _return_registration_result(
+    result = _return_registration_result(
         registered,
         return_shifts=return_shifts,
         return_details=return_details,
@@ -3121,4 +3177,6 @@ def register_stack(
         transform_order=transform_order,
         registration_settings=registration_settings,
     )
+    _memory_mark(memory_tracker, "register_stack:end")
+    return result
 # %% END

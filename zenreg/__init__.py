@@ -20,6 +20,7 @@ from .io import (
     update_stack_metadata,
 )
 from .normcorre import register_stack_normcorre
+from .profiling import MemoryTracker, profile_memory
 from .rigid3d import register_stack_rigid_3d
 from .registration import correct_intra_stack_z_drift, register_stack
 from .reporting import write_registration_outputs
@@ -34,7 +35,9 @@ __all__ = [
     "crop_stack",
     "load_stack",
     "max_z_project",
+    "MemoryTracker",
     "print_available_compute",
+    "profile_memory",
     "register_stack_normcorre",
     "register_stack_rigid_3d",
     "register_stack",
