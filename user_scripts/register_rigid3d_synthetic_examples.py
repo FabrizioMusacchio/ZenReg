@@ -35,7 +35,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from zenreg import load_stack, register_stack, save_stack, z_project
+from zenreg import crop_stack, load_stack, register_stack, save_stack, z_project
 from zenreg.synthetic import write_example_dataset
 
 # %% DEFINE INPUT AND OUTPUT PATHS
@@ -226,6 +226,12 @@ show_before_after(
     channel=0,
     moving_time=1,
 )
+# Optional post-hoc crop after visual inspection. Missing keys are treated as 0.
+# registered_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk = crop_stack(
+#     registered_3d_rigid_simpleitk,
+#     metadata_3d_rigid_simpleitk,
+#     {"top": 1, "bottom": 1, "left": 2, "right": 2, "up": 2, "down": 2},
+# )
 save_stack(
     OUTPUT_DIR / "synthetic_3d_t_rigid_simpleitk_registered.ome.tif",
     registered_3d_rigid_simpleitk,
@@ -290,6 +296,12 @@ show_before_after(
     channel=0,
     moving_time=1,
 )
+# Optional post-hoc crop after visual inspection. Missing keys are treated as 0.
+# registered_3d_rigid_points, metadata_3d_rigid_points = crop_stack(
+#     registered_3d_rigid_points,
+#     metadata_3d_rigid_points,
+#     {"top": 1, "bottom": 1, "left": 2, "right": 2, "up": 2, "down": 2},
+# )
 save_stack(
     OUTPUT_DIR / "synthetic_3d_t_rigid_points_registered.ome.tif",
     registered_3d_rigid_points,
@@ -358,6 +370,12 @@ show_before_after(
     channel=0,
     moving_time=1,
 )
+# Optional post-hoc crop after visual inspection. Missing keys are treated as 0.
+# registered_3d_rigid_points_simpleitk, metadata_3d_rigid_points_simpleitk = crop_stack(
+#     registered_3d_rigid_points_simpleitk,
+#     metadata_3d_rigid_points_simpleitk,
+#     {"top": 1, "bottom": 1, "left": 2, "right": 2, "up": 2, "down": 2},
+# )
 save_stack(
     OUTPUT_DIR / "synthetic_3d_t_rigid_points_simpleitk_registered.ome.tif",
     registered_3d_rigid_points_simpleitk,

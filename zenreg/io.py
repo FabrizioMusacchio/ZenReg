@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import warnings
 from contextlib import redirect_stdout
 from copy import deepcopy
 from io import StringIO
@@ -138,6 +139,96 @@ def update_stack_metadata(
         stack,
         verbose=verbose,
     )
+
+
+def _normalize_crop_value(crop: dict[str, int], key: str) -> int:
+    """Return one non-negative integer crop value from a sparse crop dictionary."""
+
+    value = int(crop.get(key, 0))
+    if value < 0:
+        raise ValueError(f"crop[{key!r}] must be >= 0. Got {value!r}.")
+    return value
+
+
+def crop_stack(
+    stack,
+    metadata: dict[str, Any] | None,
+    crop: dict[str, int],
+    *,
+    verbose: bool = False,
+):
+    """
+    Post-hoc crop a canonical ``TZCYX`` stack and update OMIO metadata.
+
+    Parameters
+    ----------
+    stack : array-like
+        Image stack in canonical ``TZCYX`` order.
+    metadata : dict or None
+        OMIO metadata inherited from the input or previous processing step.
+    crop : dict
+        Sparse crop dictionary. Supported keys are ``top`` and ``bottom`` for
+        the Z axis, ``up`` and ``down`` for the Y axis, and ``left`` and
+        ``right`` for the X axis. Omitted keys default to zero. For effectively
+        2D or 2D+t stacks with ``SizeZ == 1``, requested Z cropping is ignored
+        and a warning is emitted.
+    verbose : bool, optional
+        If True, let OMIO print metadata update diagnostics.
+
+    Returns
+    -------
+    tuple[numpy.ndarray, dict]
+        Cropped stack and OMIO metadata synchronized to the cropped shape.
+    """
+
+    if not isinstance(crop, dict):
+        raise TypeError("crop must be a dictionary with optional top/bottom/left/right/up/down entries.")
+    allowed = {"top", "bottom", "left", "right", "up", "down"}
+    unknown = sorted(set(crop) - allowed)
+    if unknown:
+        raise ValueError(f"Unsupported crop keys: {unknown}. Supported keys: {sorted(allowed)}.")
+
+    array = ensure_tzcyx_stack(stack)
+    top = _normalize_crop_value(crop, "top")
+    bottom = _normalize_crop_value(crop, "bottom")
+    left = _normalize_crop_value(crop, "left")
+    right = _normalize_crop_value(crop, "right")
+    up = _normalize_crop_value(crop, "up")
+    down = _normalize_crop_value(crop, "down")
+
+    if array.shape[1] <= 1 and (top > 0 or bottom > 0):
+        warnings.warn(
+            "Requested top/bottom Z cropping for an effectively 2D stack "
+            f"with SizeZ={array.shape[1]}. Ignoring Z crop values.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        top = 0
+        bottom = 0
+
+    z_stop = array.shape[1] - bottom
+    y_stop = array.shape[3] - down
+    x_stop = array.shape[4] - right
+    if top >= z_stop:
+        raise ValueError(f"Z crop would remove the complete stack. SizeZ={array.shape[1]}, top={top}, bottom={bottom}.")
+    if up >= y_stop:
+        raise ValueError(f"Y crop would remove the complete stack. SizeY={array.shape[3]}, up={up}, down={down}.")
+    if left >= x_stop:
+        raise ValueError(f"X crop would remove the complete stack. SizeX={array.shape[4]}, left={left}, right={right}.")
+
+    cropped = array[:, top:z_stop, :, up:y_stop, left:x_stop].copy()
+    cropped_metadata = update_stack_metadata(metadata, cropped, verbose=verbose)
+    annotations = cropped_metadata.setdefault("Annotations", {})
+    if isinstance(annotations, dict):
+        annotations["ZenReg_PosthocCrop"] = {
+            "top": int(top),
+            "bottom": int(bottom),
+            "left": int(left),
+            "right": int(right),
+            "up": int(up),
+            "down": int(down),
+        }
+    return cropped, cropped_metadata
 
 
 def create_empty_stack(

@@ -1,9 +1,11 @@
 import numpy as np
+import pytest
 
 from zenreg import (
     cleanup_omio_cache,
     create_empty_stack,
     create_stack_metadata,
+    crop_stack,
     load_stack,
     register_stack,
     save_stack,
@@ -47,6 +49,47 @@ def test_update_stack_metadata_syncs_modified_shape():
     assert cropped_metadata["SizeC"] == 1
     assert cropped_metadata["SizeY"] == 5
     assert cropped_metadata["SizeX"] == 5
+
+
+def test_crop_stack_crops_tzcyx_and_updates_metadata():
+    stack = np.arange(2 * 4 * 1 * 8 * 9, dtype=np.float32).reshape(2, 4, 1, 8, 9)
+    metadata = create_stack_metadata(stack, annotations={"test": "posthoc_crop"}, verbose=False)
+
+    cropped, cropped_metadata = crop_stack(
+        stack,
+        metadata,
+        {"top": 1, "bottom": 1, "up": 2, "down": 1, "left": 3, "right": 2},
+        verbose=False,
+    )
+
+    expected = stack[:, 1:3, :, 2:7, 3:7]
+    np.testing.assert_allclose(cropped, expected)
+    assert cropped_metadata["axes"] == "TZCYX"
+    assert cropped_metadata["shape"] == cropped.shape
+    assert cropped_metadata["SizeT"] == 2
+    assert cropped_metadata["SizeZ"] == 2
+    assert cropped_metadata["SizeC"] == 1
+    assert cropped_metadata["SizeY"] == 5
+    assert cropped_metadata["SizeX"] == 4
+    assert cropped_metadata["Annotations"]["ZenReg_PosthocCrop"]["left"] == 3
+
+
+def test_crop_stack_ignores_z_crop_for_effective_2d_stack():
+    stack = np.zeros((3, 1, 1, 8, 9), dtype=np.float32)
+    metadata = create_stack_metadata(stack, verbose=False)
+
+    with pytest.warns(RuntimeWarning, match="Ignoring Z crop"):
+        cropped, cropped_metadata = crop_stack(
+            stack,
+            metadata,
+            {"top": 1, "bottom": 1, "left": 2},
+            verbose=False,
+        )
+
+    assert cropped.shape == (3, 1, 1, 8, 7)
+    assert cropped_metadata["SizeZ"] == 1
+    assert cropped_metadata["SizeX"] == 7
+    assert cropped_metadata["Annotations"]["ZenReg_PosthocCrop"]["top"] == 0
 
 
 def test_load_stack_supports_omio_disk_memmap(tmp_path):
