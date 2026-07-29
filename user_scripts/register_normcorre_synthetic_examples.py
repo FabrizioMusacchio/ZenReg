@@ -41,13 +41,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from zenreg import load_stack, register_stack, save_stack, z_project
+from zenreg import load_stack, print_available_compute, register_stack, save_stack, z_project
 from zenreg.synthetic import write_example_dataset
 
 # %% PATHS
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered_normcorre"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+AVAILABLE_CPUS = print_available_compute()
 
 STACK_2D_T_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_xy.ome.tif"
 STACK_2D_T_LOCAL_PATH = EXAMPLE_DIR / "synthetic_2d_t_local.ome.tif"
@@ -442,6 +443,7 @@ registered_2d_t_xy_phase, details_2d_t_xy_phase = register_stack(
     filter_projections=False,  # median-filter projections before shift estimation
     phase_cross_correlation_upsample_factor=20,  # subpixel precision
     phase_cross_correlation_normalization=None,  # None or "phase"
+    n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
     return_details=True,
@@ -840,6 +842,7 @@ registered_2d_t_piecewise_phase, details_2d_t_piecewise_phase = register_stack(
     filter_projections=False,  # median-filter projections before shift estimation
     phase_cross_correlation_upsample_factor=20,  # subpixel precision
     phase_cross_correlation_normalization=None,  # None or "phase"
+    n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
     return_details=True,

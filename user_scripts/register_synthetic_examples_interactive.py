@@ -37,7 +37,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from zenreg import cleanup_omio_cache, load_stack, register_stack, save_stack, z_project
+from zenreg import cleanup_omio_cache, load_stack, print_available_compute, register_stack, save_stack, z_project
 
 # %% DEFINE INPUT AND OUTPUT PATHS
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
@@ -45,6 +45,7 @@ OUTPUT_DIR = EXAMPLE_DIR / "registered"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MEMMAP_CACHE_DIR = OUTPUT_DIR / "omio_memmap_cache"
 OPEN_IN_NAPARI = False
+AVAILABLE_CPUS = print_available_compute()
 
 STACK_2D_T_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_xy.ome.tif"
 STACK_3D_Z_XY_PATH = EXAMPLE_DIR / "synthetic_3d_z_xy.ome.tif"
@@ -249,6 +250,7 @@ registered_2d_t_xy, details_2d_t_xy = register_stack(
     filter_slices=False,  # median-filter Z slices before projection
     filter_projections=False,  # median-filter projections before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
+    n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
     return_details=True,
@@ -285,6 +287,7 @@ registered_3d_z_xy, details_3d_z_xy = register_stack(
     filter_slices=False,  # median-filter Z slices before reference creation
     filter_projections=False,  # median-filter images before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
+    n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
     return_details=True)
@@ -329,6 +332,7 @@ registered_3d_t_xy, details_3d_t_xy = register_stack(
     filter_slices=False,  # median-filter Z slices before projection
     filter_projections=False,  # median-filter projections before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
+    n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
     return_details=True)
@@ -371,6 +375,7 @@ registered_3d_t_intra_xy, details_3d_t_intra_xy = register_stack(
     filter_slices=False,  # median-filter Z slices before reference creation
     filter_projections=False,  # median-filter images before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
+    n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
     return_details=True,
@@ -418,6 +423,7 @@ registered_3d_t_zyx, details_3d_t_zyx = register_stack(
     filter_slices=False,  # median-filter Z slices before shift estimation
     filter_projections=False,  # median-filter projections before projection fallback
     median_kernel_size=3,  # median-filter kernel size in pixels
+    n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
     return_details=True)
@@ -478,12 +484,13 @@ registered_3d_t_trans_rot_z, details_3d_t_trans_rot_z = register_stack(
     rotreg=True,  # estimate/apply only in-plane XY rotations across time
     rigid_3d_backend="phase_cross_correlation",  # projection-polar Z-axis rotation, not full 6-DOF
     max_rot_shifts=12,  # None or max rotation in degrees
-    rotreg_iter=1,  # 1 = translation, rotation, translation
+    rotreg_iter=2,  # 1 = translation, rotation, translation
     transform_backend="skimage",  # "skimage" or "scipy"
     transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
     filter_slices=False,  # median-filter Z slices before projection
     filter_projections=False,  # median-filter projections before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
+    n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
     return_details=True)
@@ -556,6 +563,7 @@ registered_2d_t_rot_xy, details_2d_t_rot_xy = register_stack(
     filter_slices=False,  # median-filter Z slices before projection
     filter_projections=False,  # median-filter projections before shift estimation
     median_kernel_size=3,  # median-filter kernel size in pixels
+    n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
     return_details=True)
@@ -615,6 +623,7 @@ registered_2d_t_xy_memmap, details_2d_t_xy_memmap = register_stack(
     transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
     filter_slices=False,  # median-filter Z slices before projection
     filter_projections=False,  # median-filter projections before shift estimation
+    n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
     return_details=True)

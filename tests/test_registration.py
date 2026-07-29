@@ -150,6 +150,41 @@ def test_skimage_transform_backend_runs_with_nearest_neighbor_order():
     np.testing.assert_allclose(shifts[1], [-2.0, 3.0], atol=0.08)
 
 
+def test_standard_time_registration_n_jobs_matches_serial():
+    stack, _ = create_3d_time_zyx_motion_distorted_stack(
+        time_count=5,
+        z_count=10,
+        noise_sigma=0.0,
+    )
+
+    serial_registered, serial_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="full_3d",
+        zreg=True,
+        n_jobs=1,
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+    parallel_registered, parallel_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="full_3d",
+        zreg=True,
+        n_jobs=2,
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    np.testing.assert_allclose(parallel_details["time_shifts_zyx"], serial_details["time_shifts_zyx"])
+    np.testing.assert_allclose(parallel_registered, serial_registered)
+    assert parallel_details["n_jobs"] == 2
+
+
 def test_register_stack_can_run_intra_stack_only():
     stack = _two_timepoint_3d_stack((0.0, 0.0, 0.0))
 
@@ -165,6 +200,39 @@ def test_register_stack_can_run_intra_stack_only():
 
     assert corrected.shape == stack.shape
     assert shifts.shape == (2, stack.shape[1], 2)
+
+
+def test_intra_stack_n_jobs_matches_serial():
+    stack, _ = create_3d_slice_motion_distorted_stack(
+        z_count=8,
+        noise_sigma=0.0,
+    )
+
+    serial_corrected, serial_shifts = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="none",
+        intra_stack=True,
+        intra_stack_reference_mode="first_slice",
+        n_jobs=1,
+        verbose=False,
+        return_shifts=True,
+    )
+    parallel_corrected, parallel_shifts = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="none",
+        intra_stack=True,
+        intra_stack_reference_mode="first_slice",
+        n_jobs=2,
+        verbose=False,
+        return_shifts=True,
+    )
+
+    np.testing.assert_allclose(parallel_shifts, serial_shifts)
+    np.testing.assert_allclose(parallel_corrected, serial_corrected)
 
 
 def test_full_3d_pystackreg_falls_back_to_projection_mode():
@@ -314,6 +382,42 @@ def test_synthetic_rotation_example_matches_rotation_gt():
         applied_rotations_deg[0] - applied_rotations_deg,
         atol=0.25,
     )
+
+
+def test_rotation_n_jobs_matches_serial():
+    stack, _, _ = create_2d_time_rotation_motion_distorted_stack(
+        time_count=5,
+        noise_sigma=0.0,
+    )
+
+    serial_registered, serial_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        rotreg=True,
+        max_xy_shifts=(0, 0),
+        max_rot_shifts=12,
+        n_jobs=1,
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+    parallel_registered, parallel_details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        rotreg=True,
+        max_xy_shifts=(0, 0),
+        max_rot_shifts=12,
+        n_jobs=2,
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    np.testing.assert_allclose(parallel_details["time_shifts_zyx"], serial_details["time_shifts_zyx"])
+    np.testing.assert_allclose(parallel_details["rotation_shifts_deg"], serial_details["rotation_shifts_deg"])
+    np.testing.assert_allclose(parallel_registered, serial_registered)
 
 
 def test_rotation_zero_clip_auto_uses_mask_bounds():

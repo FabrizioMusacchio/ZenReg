@@ -35,7 +35,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from zenreg import crop_stack, load_stack, register_stack, save_stack, z_project
+from zenreg import crop_stack, load_stack, print_available_compute, register_stack, save_stack, z_project
 from zenreg.synthetic import write_example_dataset
 
 # %% DEFINE INPUT AND OUTPUT PATHS
@@ -43,6 +43,7 @@ EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered_rigid3d"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OPEN_IN_NAPARI = False
+AVAILABLE_CPUS = print_available_compute()
 
 STACK_3D_RIGID_SIMPLEITK_PATH = EXAMPLE_DIR / "synthetic_3d_t_rigid_simpleitk.ome.tif"
 STACK_3D_RIGID_POINTS_PATH = EXAMPLE_DIR / "synthetic_3d_t_rigid_points.ome.tif"

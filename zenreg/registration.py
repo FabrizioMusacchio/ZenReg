@@ -7,8 +7,10 @@ Date: June 2026
 # %% IMPORTS
 from __future__ import annotations
 
+import os
 import warnings
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from scipy.ndimage import median_filter
@@ -154,6 +156,32 @@ def _normalize_rotreg_iter(rotreg_iter: int) -> int:
     if rotreg_iter < 1:
         raise ValueError(f"rotreg_iter must be >= 1. Got {rotreg_iter!r}.")
     return rotreg_iter
+
+
+def _normalize_n_jobs(n_jobs: int | None) -> int:
+    """Normalize worker-count arguments shared by CPU-parallel registration paths."""
+
+    if n_jobs is None:
+        return 1
+    n_jobs = int(n_jobs)
+    if n_jobs == 0:
+        raise ValueError("n_jobs must be a positive integer, None, or -1 for all available CPUs.")
+    if n_jobs < 0:
+        cpu_count = os.cpu_count() or 1
+        if n_jobs == -1:
+            return cpu_count
+        return max(cpu_count + 1 + n_jobs, 1)
+    return n_jobs
+
+
+def _parallel_map_ordered(function, items, *, n_jobs: int):
+    """Map ``function`` over ``items`` while preserving input order."""
+
+    items = list(items)
+    if int(n_jobs) <= 1 or len(items) <= 1:
+        return [function(item) for item in items]
+    with ThreadPoolExecutor(max_workers=int(n_jobs)) as executor:
+        return list(executor.map(function, items))
 
 
 def _normalize_zero_clip_mode(zero_clip_mode: str) -> str:
@@ -1137,6 +1165,7 @@ def _correct_intra_stack_z_drift_impl(
     phase_cross_correlation_normalization: str | None = None,
     transform_backend: str = "skimage",
     transform_order: int = 1,
+    n_jobs: int = 1,
     verbose: bool = True,
     return_shifts: bool = False,
     pre_median_filter: bool | None = None,
@@ -1205,6 +1234,9 @@ def _correct_intra_stack_z_drift_impl(
         ``0`` uses nearest-neighbor interpolation, which can preserve sparse
         puncta or label-like images more sharply, but subpixel corrections become
         more quantized.
+    n_jobs : int, optional
+        Number of CPU worker threads used for independent slice registrations.
+        ``1`` keeps serial execution. ``-1`` uses all available CPUs.
     verbose : bool, optional
         If True, print progress messages.
     return_shifts : bool, optional
@@ -1224,6 +1256,7 @@ def _correct_intra_stack_z_drift_impl(
     projection_method = _normalize_projection_method(projection_method)
     transform_backend = _normalize_transform_backend(transform_backend)
     transform_order = _normalize_transform_order(transform_order)
+    n_jobs = _normalize_n_jobs(n_jobs)
     filter_slices, filter_projections = _resolve_filter_aliases(
         filter_slices=filter_slices,
         filter_projections=filter_projections,
@@ -1252,49 +1285,57 @@ def _correct_intra_stack_z_drift_impl(
         _print_verbose(verbose, "Skipping intra-stack Z drift correction because Z <= 1.")
         return (stack.copy(), shifts) if return_shifts else stack.copy()
 
-    corrected = stack.copy()
+    working_volumes = []
     for t in range(stack.shape[0]):
         volume_zyx = np.asarray(stack[t, :, int(registration_channel), :, :], dtype=np.float32)
         working_volume = volume_zyx.copy()
-
         if filter_slices:
             working_volume = _apply_median_to_zyx(working_volume, int(median_kernel_size))
+        working_volumes.append(working_volume)
 
-        for z in range(stack.shape[1]):
-            moving_image = np.asarray(working_volume[z, :, :], dtype=np.float32)
-            reference_image = _build_intra_stack_reference_image(
-                working_volume,
-                z_index=z,
-                reference_mode=reference_mode,
-                neighbor_window_size=neighbor_window_size,
-                projection_method=projection_method,
-            ).astype(np.float32, copy=False)
+    def process_slice(index: tuple[int, int]) -> tuple[int, int, np.ndarray, np.ndarray]:
+        t, z = index
+        working_volume = working_volumes[t]
+        moving_image = np.asarray(working_volume[z, :, :], dtype=np.float32)
+        reference_image = _build_intra_stack_reference_image(
+            working_volume,
+            z_index=z,
+            reference_mode=reference_mode,
+            neighbor_window_size=neighbor_window_size,
+            projection_method=projection_method,
+        ).astype(np.float32, copy=False)
 
-            if filter_projections:
-                kernel = (int(median_kernel_size), int(median_kernel_size))
-                moving_image = median_filter(moving_image, size=kernel)
-                reference_image = median_filter(reference_image, size=kernel)
+        if filter_projections:
+            kernel = (int(median_kernel_size), int(median_kernel_size))
+            moving_image = median_filter(moving_image, size=kernel)
+            reference_image = median_filter(reference_image, size=kernel)
 
-            shift_yx = _estimate_shift(
-                reference_image,
-                moving_image,
-                method=method,
-                phase_cross_correlation_upsample_factor=int(
-                    phase_cross_correlation_upsample_factor
-                ),
-                phase_cross_correlation_normalization=phase_cross_correlation_normalization,
-            )
-            shifts[t, z, :] = shift_yx
-            _print_verbose(
-                verbose,
-                f"t={t} z={z} shift_y={float(shift_yx[0]):.3f} shift_x={float(shift_yx[1]):.3f}",
-            )
-            corrected[t, z, :, :, :] = _apply_translation_to_cyx(
-                stack[t, z, :, :, :],
-                shift_yx,
-                transform_backend=transform_backend,
-                transform_order=transform_order,
-            )
+        shift_yx = _estimate_shift(
+            reference_image,
+            moving_image,
+            method=method,
+            phase_cross_correlation_upsample_factor=int(
+                phase_cross_correlation_upsample_factor
+            ),
+            phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+        )
+        corrected_slice = _apply_translation_to_cyx(
+            stack[t, z, :, :, :],
+            shift_yx,
+            transform_backend=transform_backend,
+            transform_order=transform_order,
+        )
+        return t, z, shift_yx, corrected_slice
+
+    corrected = stack.copy()
+    tasks = [(t, z) for t in range(stack.shape[0]) for z in range(stack.shape[1])]
+    for t, z, shift_yx, corrected_slice in _parallel_map_ordered(process_slice, tasks, n_jobs=n_jobs):
+        shifts[t, z, :] = shift_yx
+        _print_verbose(
+            verbose,
+            f"t={t} z={z} shift_y={float(shift_yx[0]):.3f} shift_x={float(shift_yx[1]):.3f}",
+        )
+        corrected[t, z, :, :, :] = corrected_slice
 
     return (corrected, shifts) if return_shifts else corrected
 
@@ -1315,6 +1356,7 @@ def correct_intra_stack_z_drift(
     max_xy_shifts: tuple[float, float] | Sequence[float] | None = None,
     transform_backend: str = "skimage",
     transform_order: int = 1,
+    n_jobs: int = 1,
     verbose: bool = True,
     return_shifts: bool = False,
     pre_median_filter: bool | None = None,
@@ -1331,6 +1373,7 @@ def correct_intra_stack_z_drift(
     max_xy_shifts = _normalize_max_xy_shifts(max_xy_shifts)
     transform_backend = _normalize_transform_backend(transform_backend)
     transform_order = _normalize_transform_order(transform_order)
+    n_jobs = _normalize_n_jobs(n_jobs)
     corrected = _correct_intra_stack_z_drift_impl(
         stack,
         registration_channel=registration_channel,
@@ -1345,6 +1388,7 @@ def correct_intra_stack_z_drift(
         phase_cross_correlation_normalization=phase_cross_correlation_normalization,
         transform_backend=transform_backend,
         transform_order=transform_order,
+        n_jobs=n_jobs,
         verbose=verbose,
         return_shifts=True,
         pre_median_filter=pre_median_filter,
@@ -1357,14 +1401,20 @@ def correct_intra_stack_z_drift(
             dtype=np.float32,
         )
         corrected_stack = _as_float32_stack_copy(stack)
-        for t in range(corrected_stack.shape[0]):
-            for z in range(corrected_stack.shape[1]):
-                corrected_stack[t, z, :, :, :] = _apply_translation_to_cyx(
-                    ensure_tzcyx_stack(stack)[t, z, :, :, :],
-                    shifts[t, z, :],
-                    transform_backend=transform_backend,
-                    transform_order=transform_order,
-                )
+        canonical_stack = ensure_tzcyx_stack(stack)
+
+        def apply_clipped_slice(index: tuple[int, int]) -> tuple[int, int, np.ndarray]:
+            t, z = index
+            return t, z, _apply_translation_to_cyx(
+                canonical_stack[t, z, :, :, :],
+                shifts[t, z, :],
+                transform_backend=transform_backend,
+                transform_order=transform_order,
+            )
+
+        tasks = [(t, z) for t in range(corrected_stack.shape[0]) for z in range(corrected_stack.shape[1])]
+        for t, z, corrected_slice in _parallel_map_ordered(apply_clipped_slice, tasks, n_jobs=n_jobs):
+            corrected_stack[t, z, :, :, :] = corrected_slice
     return (corrected_stack, shifts) if return_shifts else corrected_stack
 
 
@@ -1517,6 +1567,7 @@ def _register_stack_across_time(
     phase_cross_correlation_normalization: str | None,
     transform_backend: str,
     transform_order: int,
+    n_jobs: int,
     verbose: bool,
 ) -> tuple[np.ndarray, np.ndarray, str]:
     """Register a ``TZCYX`` stack across time and return applied ``TZYX`` shifts."""
@@ -1557,13 +1608,11 @@ def _register_stack_across_time(
         ),
     )
 
-    for t in range(stack.shape[0]):
+    def estimate_pair_shift(t: int) -> tuple[int, int, np.ndarray]:
         if time_reference_mode == "template" and t == registration_stack:
-            _print_verbose(verbose, f"t={t} shift_z=0.000 shift_y=0.000 shift_x=0.000")
-            continue
+            return t, t, np.zeros(3, dtype=np.float32)
         if time_reference_mode == "previous" and t == 0:
-            _print_verbose(verbose, "t=0 shift_z=0.000 shift_y=0.000 shift_x=0.000")
-            continue
+            return t, t, np.zeros(3, dtype=np.float32)
 
         reference_t = _time_reference_index(
             t=t,
@@ -1595,13 +1644,28 @@ def _register_stack_across_time(
                 phase_cross_correlation_normalization=phase_cross_correlation_normalization,
             )
 
+        return t, reference_t, pair_shift_zyx
+
+    pair_results = _parallel_map_ordered(
+        estimate_pair_shift,
+        range(stack.shape[0]),
+        n_jobs=n_jobs,
+    )
+    pair_shifts = np.zeros_like(shifts_zyx)
+    reference_indices = np.zeros(stack.shape[0], dtype=np.int32)
+    for t, reference_t, pair_shift_zyx in pair_results:
+        pair_shifts[t, :] = pair_shift_zyx
+        reference_indices[t] = int(reference_t)
+
+    for t in range(stack.shape[0]):
+        reference_t = int(reference_indices[t])
         reference_shift_zyx = _reference_shift_for_time(
             shifts_zyx,
             reference_t=reference_t,
             time_reference_mode=time_reference_mode,
         )
         shifts_zyx[t, :] = _clip_shift_zyx(
-            reference_shift_zyx + pair_shift_zyx,
+            reference_shift_zyx + pair_shifts[t, :],
             max_z_shifts=max_z_shifts,
             max_xy_shifts=max_xy_shifts,
         )
@@ -1613,12 +1677,17 @@ def _register_stack_across_time(
                 f"shift_x={float(shifts_zyx[t, 2]):.3f}"
             ),
         )
-        registered[t, :, :, :, :] = _apply_translation_to_zcyx(
+
+    def apply_timepoint(t: int) -> tuple[int, np.ndarray]:
+        return t, _apply_translation_to_zcyx(
             stack[t, :, :, :, :],
             shifts_zyx[t, :],
             transform_backend=transform_backend,
             transform_order=transform_order,
         )
+
+    for t, registered_timepoint in _parallel_map_ordered(apply_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
+        registered[t, :, :, :, :] = registered_timepoint
 
     return registered, shifts_zyx, effective_mode
 
@@ -1638,6 +1707,7 @@ def _register_stack_rotations_across_time(
     phase_cross_correlation_upsample_factor: int,
     phase_cross_correlation_normalization: str | None,
     transform_order: int,
+    n_jobs: int,
     verbose: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Register in-plane XY rotations across time and return applied correction angles."""
@@ -1671,13 +1741,11 @@ def _register_stack_rotations_across_time(
         ),
     )
 
-    for t in range(stack.shape[0]):
+    def estimate_pair_rotation(t: int) -> tuple[int, int, float]:
         if time_reference_mode == "template" and t == registration_stack:
-            _print_verbose(verbose, f"t={t} rotation_correction_deg=0.000")
-            continue
+            return t, t, 0.0
         if time_reference_mode == "previous" and t == 0:
-            _print_verbose(verbose, "t=0 rotation_correction_deg=0.000")
-            continue
+            return t, t, 0.0
 
         reference_t = _time_reference_index(
             t=t,
@@ -1691,17 +1759,37 @@ def _register_stack_rotations_across_time(
             phase_cross_correlation_upsample_factor=phase_cross_correlation_upsample_factor,
             phase_cross_correlation_normalization=phase_cross_correlation_normalization,
         )
+        return t, reference_t, detected_rotation_deg
+
+    pair_results = _parallel_map_ordered(
+        estimate_pair_rotation,
+        range(stack.shape[0]),
+        n_jobs=n_jobs,
+    )
+    pair_rotations = np.zeros(stack.shape[0], dtype=np.float32)
+    reference_indices = np.zeros(stack.shape[0], dtype=np.int32)
+    for t, reference_t, detected_rotation_deg in pair_results:
+        pair_rotations[t] = float(detected_rotation_deg)
+        reference_indices[t] = int(reference_t)
+
+    for t in range(stack.shape[0]):
+        reference_t = int(reference_indices[t])
         reference_angle = float(angles_deg[reference_t]) if time_reference_mode == "previous" else 0.0
         angles_deg[t] = _clip_rotation_deg(
-            reference_angle - detected_rotation_deg,
+            reference_angle - float(pair_rotations[t]),
             max_rot_shifts,
         )
         _print_verbose(verbose, f"t={t} rotation_correction_deg={float(angles_deg[t]):.3f}")
-        registered[t, :, :, :, :] = _apply_rotation_to_zcyx(
+
+    def apply_timepoint(t: int) -> tuple[int, np.ndarray]:
+        return t, _apply_rotation_to_zcyx(
             stack[t, :, :, :, :],
             float(angles_deg[t]),
             transform_order=transform_order,
         )
+
+    for t, registered_timepoint in _parallel_map_ordered(apply_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
+        registered[t, :, :, :, :] = registered_timepoint
 
     return registered, angles_deg
 
@@ -2144,6 +2232,7 @@ def register_stack(
     nc_output_use_memmap: bool = False,
     nc_output_memmap_folder: str | None = None,
     nc_output_memmap_name: str | None = "zenreg_normcorre_registered",
+    n_jobs: int = 1,
     verbose: bool = True,
     return_shifts: bool = False,
     return_details: bool = False,
@@ -2299,6 +2388,15 @@ def register_stack(
     phase_cross_correlation_normalization : {None, "phase"}, optional
         Normalization mode forwarded to scikit-image's phase cross-correlation.
         ``None`` is more robust for the smooth synthetic examples.
+    n_jobs : int, optional
+        Number of CPU worker threads for the standard registration paths. The
+        template-based time registration, intra-stack slice registration,
+        rotation estimation/application, and zero-clip mask updates are
+        parallelized where time points or slices are independent. ``1`` keeps
+        serial execution; ``-1`` uses all available CPUs. With ``method="normcorre"``
+        this value is used as ``nc_n_jobs`` unless ``nc_n_jobs`` is set
+        explicitly. With full 3D rigid backends it is used as ``rot_n_jobs``
+        unless ``rot_n_jobs`` is set explicitly.
     verbose : bool, optional
         If True, print the estimated shifts.
     return_shifts : bool, optional
@@ -2346,6 +2444,9 @@ def register_stack(
     if rot_iterations < 1:
         raise ValueError(f"rot_iterations must be >= 1. Got {rot_iterations!r}.")
     rot_n_jobs = max(int(rot_n_jobs), 1)
+    n_jobs = _normalize_n_jobs(n_jobs)
+    effective_rot_n_jobs = int(rot_n_jobs if int(rot_n_jobs) != 1 else n_jobs)
+    effective_nc_n_jobs = int(nc_n_jobs if int(nc_n_jobs) != 1 else n_jobs)
     transform_backend = _normalize_transform_backend(transform_backend)
     transform_order = _normalize_transform_order(transform_order)
     filter_slices, filter_projections = _resolve_filter_aliases(
@@ -2402,6 +2503,7 @@ def register_stack(
         "zero_clip": bool(zero_clip),
         "zero_clip_mask_strategy": effective_zero_clip_mask_strategy,
         "zero_clip_mask_min_fraction": float(zero_clip_mask_min_fraction),
+        "n_jobs": int(n_jobs),
         "rotreg": bool(rotreg),
         "rotreg_iter": int(rotreg_iter),
         "rigid_3d_backend": rigid_3d_backend,
@@ -2415,7 +2517,7 @@ def register_stack(
         "rot_min_step": float(rot_min_step),
         "rot_sampling_percentage": rot_sampling_percentage,
         "rot_cval": float(rot_cval),
-        "rot_n_jobs": int(rot_n_jobs),
+        "rot_n_jobs": int(effective_rot_n_jobs),
         "rot_points_max_points": int(rot_points_max_points),
         "rot_points_min_distance": int(rot_points_min_distance),
         "rot_points_threshold_rel": float(rot_points_threshold_rel),
@@ -2470,7 +2572,7 @@ def register_stack(
             rot_min_step=float(rot_min_step),
             rot_sampling_percentage=rot_sampling_percentage,
             rot_cval=float(rot_cval),
-            rot_n_jobs=rot_n_jobs,
+            rot_n_jobs=effective_rot_n_jobs,
             rot_points_max_points=int(rot_points_max_points),
             rot_points_min_distance=int(rot_points_min_distance),
             rot_points_threshold_rel=float(rot_points_threshold_rel),
@@ -2515,7 +2617,7 @@ def register_stack(
             nc_add_to_movie=nc_add_to_movie,
             nc_nonneg_movie=bool(nc_nonneg_movie),
             nc_shift_interpolation=nc_shift_interpolation,
-            nc_n_jobs=int(nc_n_jobs),
+            nc_n_jobs=int(effective_nc_n_jobs),
             nc_transform_mode=nc_transform_mode,
             nc_transform_cval=float(nc_transform_cval),
             nc_border_nan=nc_border_nan,
@@ -2551,6 +2653,7 @@ def register_stack(
             phase_cross_correlation_normalization=phase_cross_correlation_normalization,
             transform_backend=transform_backend,
             transform_order=transform_order,
+            n_jobs=n_jobs,
             verbose=verbose,
             return_shifts=True,
         )
@@ -2564,23 +2667,32 @@ def register_stack(
             )
             if not np.allclose(clipped_intra_stack_shifts_yx, intra_stack_shifts_yx):
                 registered = stack.copy()
-                for t in range(stack.shape[0]):
-                    for z in range(stack.shape[1]):
-                        registered[t, z, :, :, :] = _apply_translation_to_cyx(
-                            stack[t, z, :, :, :],
-                            clipped_intra_stack_shifts_yx[t, z, :],
-                            transform_backend=transform_backend,
-                            transform_order=transform_order,
-                        )
+
+                def apply_clipped_intra_slice(index: tuple[int, int]) -> tuple[int, int, np.ndarray]:
+                    t, z = index
+                    return t, z, _apply_translation_to_cyx(
+                        stack[t, z, :, :, :],
+                        clipped_intra_stack_shifts_yx[t, z, :],
+                        transform_backend=transform_backend,
+                        transform_order=transform_order,
+                    )
+
+                tasks = [(t, z) for t in range(stack.shape[0]) for z in range(stack.shape[1])]
+                for t, z, corrected_slice in _parallel_map_ordered(apply_clipped_intra_slice, tasks, n_jobs=n_jobs):
+                    registered[t, z, :, :, :] = corrected_slice
                 intra_stack_shifts_yx = clipped_intra_stack_shifts_yx
         if effective_zero_clip_mode == "mask":
-            for t in range(stack.shape[0]):
-                for z in range(stack.shape[1]):
-                    zero_clip_mask_tzyx[t, z, :, :] = _apply_translation_to_mask_yx(
-                        zero_clip_mask_tzyx[t, z, :, :],
-                        intra_stack_shifts_yx[t, z, :],
-                        transform_backend=transform_backend,
-                    )
+            def apply_intra_mask(index: tuple[int, int]) -> tuple[int, int, np.ndarray]:
+                t, z = index
+                return t, z, _apply_translation_to_mask_yx(
+                    zero_clip_mask_tzyx[t, z, :, :],
+                    intra_stack_shifts_yx[t, z, :],
+                    transform_backend=transform_backend,
+                )
+
+            tasks = [(t, z) for t in range(stack.shape[0]) for z in range(stack.shape[1])]
+            for t, z, mask_plane in _parallel_map_ordered(apply_intra_mask, tasks, n_jobs=n_jobs):
+                zero_clip_mask_tzyx[t, z, :, :] = mask_plane
         elif effective_zero_clip_mode == "shift":
             zero_clip_stage_bounds.append(_crop_bounds_from_yx_shifts(intra_stack_shifts_yx))
 
@@ -2611,16 +2723,20 @@ def register_stack(
                 phase_cross_correlation_normalization=phase_cross_correlation_normalization,
                 transform_backend=transform_backend,
                 transform_order=transform_order,
+                n_jobs=n_jobs,
                 verbose=verbose,
             )
             translation_pass_shifts_zyx.append(pass_shifts_zyx)
             if effective_zero_clip_mode == "mask":
-                for t in range(stack.shape[0]):
-                    zero_clip_mask_tzyx[t, :, :, :] = _apply_translation_to_mask_zyx(
+                def apply_time_mask(t: int) -> tuple[int, np.ndarray]:
+                    return t, _apply_translation_to_mask_zyx(
                         zero_clip_mask_tzyx[t, :, :, :],
                         pass_shifts_zyx[t, :],
                         transform_backend=transform_backend,
                     )
+
+                for t, mask_volume in _parallel_map_ordered(apply_time_mask, range(stack.shape[0]), n_jobs=n_jobs):
+                    zero_clip_mask_tzyx[t, :, :, :] = mask_volume
             elif effective_zero_clip_mode == "shift":
                 zero_clip_stage_bounds.append(_crop_bounds_from_zyx_shifts(pass_shifts_zyx))
 
@@ -2639,15 +2755,23 @@ def register_stack(
                     phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
                     phase_cross_correlation_normalization=phase_cross_correlation_normalization,
                     transform_order=transform_order,
+                    n_jobs=n_jobs,
                     verbose=verbose,
                 )
                 rotation_pass_shifts_deg.append(pass_rotation_shifts_deg)
                 if effective_zero_clip_mode == "mask":
-                    for t in range(stack.shape[0]):
-                        zero_clip_mask_tzyx[t, :, :, :] = _apply_rotation_to_mask_zyx(
+                    def apply_rotation_mask(t: int) -> tuple[int, np.ndarray]:
+                        return t, _apply_rotation_to_mask_zyx(
                             zero_clip_mask_tzyx[t, :, :, :],
                             float(pass_rotation_shifts_deg[t]),
                         )
+
+                    for t, mask_volume in _parallel_map_ordered(
+                        apply_rotation_mask,
+                        range(stack.shape[0]),
+                        n_jobs=n_jobs,
+                    ):
+                        zero_clip_mask_tzyx[t, :, :, :] = mask_volume
 
         time_shifts_zyx = np.sum(np.stack(translation_pass_shifts_zyx, axis=0), axis=0).astype(np.float32)
         if rotation_pass_shifts_deg:
