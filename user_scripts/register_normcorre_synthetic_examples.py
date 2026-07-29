@@ -3,6 +3,9 @@ Interactive VS Code script for ZenReg NoRMCorre-style synthetic benchmarks.
 
 Run this script cell-by-cell in VS Code's interactive window. If synthetic data
 are missing, this script creates them under ``example_data/synthetic_data``.
+Optional CaImAn comparison blocks are commented out by default because CaImAn is
+not a ZenReg dependency. To run those cells, install CaImAn separately, e.g.
+``mamba install -y caiman``, then uncomment the marked CaImAn blocks.
 
 Author: Fabrizio Musacchio
 Date: July 2026
@@ -161,8 +164,14 @@ def run_caiman_normcorre_2d_t(
     if stack.shape[1] != 1:
         raise ValueError("This CaImAn comparison helper currently expects 2D+t data with Z=1.")
 
-    import caiman as cm
-    from caiman.motion_correction import MotionCorrect
+    # import caiman as cm
+    # from caiman.motion_correction import MotionCorrect
+    if "cm" not in locals() or "MotionCorrect" not in locals():
+        raise ImportError(
+            "CaImAn is optional and not installed with ZenReg. Install it with "
+            "`mamba install -y caiman`, uncomment the CaImAn imports in "
+            "run_caiman_normcorre_2d_t(), and uncomment the CaImAn example cells."
+        )
 
     movie_for_registration = np.asarray(stack[:, 0, registration_channel, :, :], dtype=np.float32)
     time_count = int(movie_for_registration.shape[0])
@@ -476,24 +485,25 @@ registered_2d_t_xy_normcorre, details_2d_t_xy_normcorre = register_stack(
     return_details=True,
 )
 
-registered_2d_t_xy_caiman, details_2d_t_xy_caiman = run_caiman_normcorre_2d_t(
-    stack_2d_t_xy,
-    registration_channel=0,  # channel used by CaImAn to estimate the motion field
-    pw_rigid=True,  # True = original CaImAn piecewise-rigid NoRMCorre
-    strides=(32, 32),  # patch-grid stride in YX
-    overlaps=(16, 16),  # patch overlap in YX
-    max_shifts=(6, 6),  # absolute correction shift limits in YX
-    max_deviation_rigid=3,  # local patch-shift deviation from rigid estimate
-    niter_rig=1,  # CaImAn rigid template initialization iterations
-    splits_rig=10,  # time chunks for rigid initialization
-    splits_els=10,  # time chunks for piecewise-rigid registration
-    upsample_factor_grid=4,  # CaImAn local-shift grid upsampling
-    shifts_opencv=True,  # CaImAn's default fast OpenCV transform backend
-    nonneg_movie=True,  # keep CaImAn's saved/intermediate movie non-negative
-    border_nan="copy",  # copy edge values instead of introducing NaNs
-    gSig_filt=None,  # optional spatial high-pass filter kernel, e.g. (3, 3)
-    shifts_interpolate=False,  # CaImAn default patch-field interpolation mode
-)
+# Optional CaImAn comparison; requires ``mamba install -y caiman`` and uncommented imports above.
+# registered_2d_t_xy_caiman, details_2d_t_xy_caiman = run_caiman_normcorre_2d_t(
+#     stack_2d_t_xy,
+#     registration_channel=0,  # channel used by CaImAn to estimate the motion field
+#     pw_rigid=True,  # True = original CaImAn piecewise-rigid NoRMCorre
+#     strides=(32, 32),  # patch-grid stride in YX
+#     overlaps=(16, 16),  # patch overlap in YX
+#     max_shifts=(6, 6),  # absolute correction shift limits in YX
+#     max_deviation_rigid=3,  # local patch-shift deviation from rigid estimate
+#     niter_rig=1,  # CaImAn rigid template initialization iterations
+#     splits_rig=10,  # time chunks for rigid initialization
+#     splits_els=10,  # time chunks for piecewise-rigid registration
+#     upsample_factor_grid=4,  # CaImAn local-shift grid upsampling
+#     shifts_opencv=True,  # CaImAn's default fast OpenCV transform backend
+#     nonneg_movie=True,  # keep CaImAn's saved/intermediate movie non-negative
+#     border_nan="copy",  # copy edge values instead of introducing NaNs
+#     gSig_filt=None,  # optional spatial high-pass filter kernel, e.g. (3, 3)
+#     shifts_interpolate=False,  # CaImAn default patch-field interpolation mode
+# )
 
 print_shift_comparison(
     "2D+t global XY phase-cross shifts",
@@ -505,17 +515,11 @@ print_shift_comparison(
     details_2d_t_xy_normcorre["time_shifts_yx"],
     expected_2d_t_xy,
 )
-print_shift_comparison(
-    "2D+t global XY CaImAn NoRMCorre rigid shifts",
-    details_2d_t_xy_caiman["time_shifts_yx"],
-    expected_2d_t_xy,
-)
 print_residual_mae_summary(
     stack_2d_t_xy,
     registered_2d_t_xy_phase,
     registered_2d_t_xy_normcorre,
-    registered_2d_t_xy_caiman,
-    labels=("raw", "phase cross", "ZenReg NoRMCorre", "CaImAn NoRMCorre"),
+    labels=("raw", "phase cross", "ZenReg NoRMCorre"),
     channel=0,
     reference_time=0,
 )
@@ -531,21 +535,20 @@ show_before_after(
     title="2D+t global XY translation (ZenReg NoRMCorre)",
     channel=0,
 )
-show_before_after(
-    stack_2d_t_xy,
-    registered_2d_t_xy_caiman,
-    title="2D+t global XY translation (CaImAn NoRMCorre)",
-    channel=0,
-)
+# show_before_after(
+#     stack_2d_t_xy,
+#     registered_2d_t_xy_caiman,
+#     title="2D+t global XY translation (CaImAn NoRMCorre)",
+#     channel=0,
+# )
 show_residual_comparison_multi(
     stack_2d_t_xy,
     (
         registered_2d_t_xy_phase,
         registered_2d_t_xy_normcorre,
-        registered_2d_t_xy_caiman,
     ),
     title="2D+t global XY residual comparison",
-    labels=("raw", "phase cross", "ZenReg NoRMCorre", "CaImAn NoRMCorre"),
+    labels=("raw", "phase cross", "ZenReg NoRMCorre"),
     channel=0,
     moving_time=1,
 )
@@ -561,16 +564,16 @@ save_stack(
     metadata=metadata_2d_t_xy,
     registration_details=details_2d_t_xy_normcorre,
 )
-save_stack(
-    OUTPUT_DIR / "2d_t_global_xy_caiman_normcorre_registered.ome.tif",
-    registered_2d_t_xy_caiman,
-    metadata=metadata_2d_t_xy,
-    registration_details=details_2d_t_xy_caiman,
-)
+# save_stack(
+#     OUTPUT_DIR / "2d_t_global_xy_caiman_normcorre_registered.ome.tif",
+#     registered_2d_t_xy_caiman,
+#     metadata=metadata_2d_t_xy,
+#     registration_details=details_2d_t_xy_caiman,
+# )
 
 maybe_open_in_napari(registered_2d_t_xy_phase, metadata_2d_t_xy, fname="2D+t global XY phase cross")
 maybe_open_in_napari(registered_2d_t_xy_normcorre, metadata_2d_t_xy, fname="2D+t global XY ZenReg NoRMCorre")
-maybe_open_in_napari(registered_2d_t_xy_caiman, metadata_2d_t_xy, fname="2D+t global XY CaImAn NoRMCorre")
+# maybe_open_in_napari(registered_2d_t_xy_caiman, metadata_2d_t_xy, fname="2D+t global XY CaImAn NoRMCorre")
 # %% 2) 2D+t: LOCAL IN-FRAME MOTION
 stack_2d_t_local, metadata_2d_t_local = load_stack(
     STACK_2D_T_LOCAL_PATH,
@@ -626,55 +629,56 @@ save_stack(
 maybe_open_in_napari(stack_2d_t_local, metadata_2d_t_local, fname="2D+t local")
 maybe_open_in_napari(registered_2d_t_local, metadata_2d_t_local, fname="2D+t local NoRMCorre")
 
-registered_2d_t_local_caiman, details_2d_t_local_caiman = run_caiman_normcorre_2d_t(
-    stack_2d_t_local,
-    registration_channel=0,  # channel used by CaImAn to estimate the motion field
-    pw_rigid=True,  # True = original CaImAn piecewise-rigid NoRMCorre
-    strides=(14, 14),  # patch-grid stride in YX
-    overlaps=(24, 24),  # patch overlap in YX
-    max_shifts=(5, 5),  # absolute correction shift limits in YX
-    max_deviation_rigid=3,  # local patch-shift deviation from rigid estimate
-    niter_rig=1,  # CaImAn rigid template initialization iterations
-    splits_rig=10,  # time chunks for rigid initialization
-    splits_els=10,  # time chunks for piecewise-rigid registration
-    upsample_factor_grid=4,  # CaImAn local-shift grid upsampling
-    shifts_opencv=True,  # CaImAn's default fast OpenCV transform backend
-    nonneg_movie=True,  # keep CaImAn's saved/intermediate movie non-negative
-    border_nan="copy",  # copy edge values instead of introducing NaNs
-    gSig_filt=None,  # optional spatial high-pass filter kernel, e.g. (3, 3)
-    shifts_interpolate=False,  # CaImAn default patch-field interpolation mode
-)
-print_caiman_patch_summary(
-    "2D+t local CaImAn NoRMCorre patch shifts",
-    details_2d_t_local_caiman,
-    t=local_motion_frame_2d_t,
-)
-show_before_after(
-    stack_2d_t_local,
-    registered_2d_t_local_caiman,
-    title="2D+t local in-frame motion (CaImAn NoRMCorre)",
-    channel=0,
-    moving_time=local_motion_frame_2d_t,
-)
-show_residual_comparison(
-    stack_2d_t_local,
-    registered_2d_t_local,
-    registered_2d_t_local_caiman,
-    title="2D+t local residual comparison",
-    channel=0,
-    moving_time=local_motion_frame_2d_t,
-)
-save_stack(
-    OUTPUT_DIR / "2d_t_local_caiman_normcorre_registered.ome.tif",
-    registered_2d_t_local_caiman,
-    metadata=metadata_2d_t_local,
-    registration_details=details_2d_t_local_caiman,
-)
-maybe_open_in_napari(
-    registered_2d_t_local_caiman,
-    metadata_2d_t_local,
-    fname="2D+t local CaImAn NoRMCorre",
-)
+# Optional CaImAn comparison; requires ``mamba install -y caiman`` and uncommented imports above.
+# registered_2d_t_local_caiman, details_2d_t_local_caiman = run_caiman_normcorre_2d_t(
+#     stack_2d_t_local,
+#     registration_channel=0,  # channel used by CaImAn to estimate the motion field
+#     pw_rigid=True,  # True = original CaImAn piecewise-rigid NoRMCorre
+#     strides=(14, 14),  # patch-grid stride in YX
+#     overlaps=(24, 24),  # patch overlap in YX
+#     max_shifts=(5, 5),  # absolute correction shift limits in YX
+#     max_deviation_rigid=3,  # local patch-shift deviation from rigid estimate
+#     niter_rig=1,  # CaImAn rigid template initialization iterations
+#     splits_rig=10,  # time chunks for rigid initialization
+#     splits_els=10,  # time chunks for piecewise-rigid registration
+#     upsample_factor_grid=4,  # CaImAn local-shift grid upsampling
+#     shifts_opencv=True,  # CaImAn's default fast OpenCV transform backend
+#     nonneg_movie=True,  # keep CaImAn's saved/intermediate movie non-negative
+#     border_nan="copy",  # copy edge values instead of introducing NaNs
+#     gSig_filt=None,  # optional spatial high-pass filter kernel, e.g. (3, 3)
+#     shifts_interpolate=False,  # CaImAn default patch-field interpolation mode
+# )
+# print_caiman_patch_summary(
+#     "2D+t local CaImAn NoRMCorre patch shifts",
+#     details_2d_t_local_caiman,
+#     t=local_motion_frame_2d_t,
+# )
+# show_before_after(
+#     stack_2d_t_local,
+#     registered_2d_t_local_caiman,
+#     title="2D+t local in-frame motion (CaImAn NoRMCorre)",
+#     channel=0,
+#     moving_time=local_motion_frame_2d_t,
+# )
+# show_residual_comparison(
+#     stack_2d_t_local,
+#     registered_2d_t_local,
+#     registered_2d_t_local_caiman,
+#     title="2D+t local residual comparison",
+#     channel=0,
+#     moving_time=local_motion_frame_2d_t,
+# )
+# save_stack(
+#     OUTPUT_DIR / "2d_t_local_caiman_normcorre_registered.ome.tif",
+#     registered_2d_t_local_caiman,
+#     metadata=metadata_2d_t_local,
+#     registration_details=details_2d_t_local_caiman,
+# )
+# maybe_open_in_napari(
+#     registered_2d_t_local_caiman,
+#     metadata_2d_t_local,
+#     fname="2D+t local CaImAn NoRMCorre",
+# )
 # %% 3) 2D+t: GLOBAL XY TRANSLATION PLUS LIGHT ROTATION
 stack_2d_t_trans_rot, metadata_2d_t_trans_rot = load_stack(
     STACK_2D_T_TRANS_ROT_PATH,
@@ -751,57 +755,61 @@ save_stack(
 
 maybe_open_in_napari(registered_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation NoRMCorre")
 
-registered_2d_t_trans_rot_caiman, details_2d_t_trans_rot_caiman = run_caiman_normcorre_2d_t(
-    stack_2d_t_trans_rot,
-    registration_channel=0,  # channel used by CaImAn to estimate the motion field
-    pw_rigid=True,  # True = original CaImAn piecewise-rigid NoRMCorre
-    strides=(12, 12),  # patch-grid stride in YX
-    overlaps=(24, 24),  # patch overlap in YX
-    max_shifts=(6, 6),  # absolute correction shift limits in YX
-    max_deviation_rigid=10,  # local patch-shift deviation from rigid estimate
-    niter_rig=3,  # CaImAn rigid template initialization iterations
-    splits_rig=10,  # time chunks for rigid initialization
-    splits_els=10,  # time chunks for piecewise-rigid registration
-    upsample_factor_grid=4,  # CaImAn local-shift grid upsampling
-    shifts_opencv=True,  # CaImAn's default fast OpenCV transform backend
-    nonneg_movie=True,  # keep CaImAn's saved/intermediate movie non-negative
-    border_nan="copy",  # copy edge values instead of introducing NaNs
-    gSig_filt=None,  # optional spatial high-pass filter kernel, e.g. (3, 3)
-    shifts_interpolate=False,  # CaImAn default patch-field interpolation mode
-)
-print_shift_comparison(
-    "2D+t translation+rotation CaImAn rigid shifts vs translation GT",
-    details_2d_t_trans_rot_caiman["time_shifts_yx"],
-    expected_2d_t_trans_rot,
-)
-print_caiman_patch_summary(
-    "2D+t translation+rotation CaImAn NoRMCorre patch shifts",
-    details_2d_t_trans_rot_caiman,
-    t=rotation_event_frame_2d_t,
-)
-show_before_after(
-    stack_2d_t_trans_rot,
-    registered_2d_t_trans_rot_caiman,
-    title="2D+t translation plus rotation (CaImAn NoRMCorre)",
-    channel=0,
-    moving_time=rotation_event_frame_2d_t,
-)
-show_residual_comparison(
-    stack_2d_t_trans_rot,
-    registered_2d_t_trans_rot,
-    registered_2d_t_trans_rot_caiman,
-    title="2D+t translation+rotation residual comparison",
-    channel=0,
-    moving_time=rotation_event_frame_2d_t,
-)
-save_stack(
-    OUTPUT_DIR / "2d_t_translation_rotation_caiman_normcorre_registered.ome.tif",
-    registered_2d_t_trans_rot_caiman,
-    metadata=metadata_2d_t_trans_rot,
-    registration_details=details_2d_t_trans_rot_caiman,
-)
-maybe_open_in_napari(registered_2d_t_trans_rot_caiman, metadata_2d_t_trans_rot,
-                     fname="2D+t translation+rotation CaImAn NoRMCorre")
+# Optional CaImAn comparison; requires ``mamba install -y caiman`` and uncommented imports above.
+# registered_2d_t_trans_rot_caiman, details_2d_t_trans_rot_caiman = run_caiman_normcorre_2d_t(
+#     stack_2d_t_trans_rot,
+#     registration_channel=0,  # channel used by CaImAn to estimate the motion field
+#     pw_rigid=True,  # True = original CaImAn piecewise-rigid NoRMCorre
+#     strides=(12, 12),  # patch-grid stride in YX
+#     overlaps=(24, 24),  # patch overlap in YX
+#     max_shifts=(6, 6),  # absolute correction shift limits in YX
+#     max_deviation_rigid=10,  # local patch-shift deviation from rigid estimate
+#     niter_rig=3,  # CaImAn rigid template initialization iterations
+#     splits_rig=10,  # time chunks for rigid initialization
+#     splits_els=10,  # time chunks for piecewise-rigid registration
+#     upsample_factor_grid=4,  # CaImAn local-shift grid upsampling
+#     shifts_opencv=True,  # CaImAn's default fast OpenCV transform backend
+#     nonneg_movie=True,  # keep CaImAn's saved/intermediate movie non-negative
+#     border_nan="copy",  # copy edge values instead of introducing NaNs
+#     gSig_filt=None,  # optional spatial high-pass filter kernel, e.g. (3, 3)
+#     shifts_interpolate=False,  # CaImAn default patch-field interpolation mode
+# )
+# print_shift_comparison(
+#     "2D+t translation+rotation CaImAn rigid shifts vs translation GT",
+#     details_2d_t_trans_rot_caiman["time_shifts_yx"],
+#     expected_2d_t_trans_rot,
+# )
+# print_caiman_patch_summary(
+#     "2D+t translation+rotation CaImAn NoRMCorre patch shifts",
+#     details_2d_t_trans_rot_caiman,
+#     t=rotation_event_frame_2d_t,
+# )
+# show_before_after(
+#     stack_2d_t_trans_rot,
+#     registered_2d_t_trans_rot_caiman,
+#     title="2D+t translation plus rotation (CaImAn NoRMCorre)",
+#     channel=0,
+#     moving_time=rotation_event_frame_2d_t,
+# )
+# show_residual_comparison(
+#     stack_2d_t_trans_rot,
+#     registered_2d_t_trans_rot,
+#     registered_2d_t_trans_rot_caiman,
+#     title="2D+t translation+rotation residual comparison",
+#     channel=0,
+#     moving_time=rotation_event_frame_2d_t,
+# )
+# save_stack(
+#     OUTPUT_DIR / "2d_t_translation_rotation_caiman_normcorre_registered.ome.tif",
+#     registered_2d_t_trans_rot_caiman,
+#     metadata=metadata_2d_t_trans_rot,
+#     registration_details=details_2d_t_trans_rot_caiman,
+# )
+# maybe_open_in_napari(
+#     registered_2d_t_trans_rot_caiman,
+#     metadata_2d_t_trans_rot,
+#     fname="2D+t translation+rotation CaImAn NoRMCorre",
+# )
 # %% 4) 2D+t: PIECEWISE XY TRANSLATION, PHASE CROSS VS NoRMCorre
 stack_2d_t_piecewise_xy, metadata_2d_t_piecewise_xy = load_stack(
     STACK_2D_T_PIECEWISE_XY_PATH,
@@ -875,41 +883,41 @@ registered_2d_t_piecewise_normcorre, details_2d_t_piecewise_normcorre = register
     return_details=True,
 )
 
-registered_2d_t_piecewise_caiman, details_2d_t_piecewise_caiman = run_caiman_normcorre_2d_t(
-    stack_2d_t_piecewise_xy,
-    registration_channel=0,  # channel used by CaImAn to estimate the motion field
-    pw_rigid=True,  # True = original CaImAn piecewise-rigid NoRMCorre
-    strides=(24, 24),  # patch-grid stride in YX
-    overlaps=(24, 24),  # patch overlap in YX
-    max_shifts=(6, 6),  # absolute correction shift limits in YX
-    max_deviation_rigid=5,  # local patch-shift deviation from rigid estimate
-    niter_rig=1,  # CaImAn rigid template initialization iterations
-    splits_rig=10,  # time chunks for rigid initialization
-    splits_els=10,  # time chunks for piecewise-rigid registration
-    upsample_factor_grid=4,  # CaImAn local-shift grid upsampling
-    shifts_opencv=True,  # CaImAn's default fast OpenCV transform backend
-    nonneg_movie=True,  # keep CaImAn's saved/intermediate movie non-negative
-    border_nan="copy",  # copy edge values instead of introducing NaNs
-    gSig_filt=None,  # optional spatial high-pass filter kernel, e.g. (3, 3)
-    shifts_interpolate=False,  # CaImAn default patch-field interpolation mode
-)
+# Optional CaImAn comparison; requires ``mamba install -y caiman`` and uncommented imports above.
+# registered_2d_t_piecewise_caiman, details_2d_t_piecewise_caiman = run_caiman_normcorre_2d_t(
+#     stack_2d_t_piecewise_xy,
+#     registration_channel=0,  # channel used by CaImAn to estimate the motion field
+#     pw_rigid=True,  # True = original CaImAn piecewise-rigid NoRMCorre
+#     strides=(24, 24),  # patch-grid stride in YX
+#     overlaps=(24, 24),  # patch overlap in YX
+#     max_shifts=(6, 6),  # absolute correction shift limits in YX
+#     max_deviation_rigid=5,  # local patch-shift deviation from rigid estimate
+#     niter_rig=1,  # CaImAn rigid template initialization iterations
+#     splits_rig=10,  # time chunks for rigid initialization
+#     splits_els=10,  # time chunks for piecewise-rigid registration
+#     upsample_factor_grid=4,  # CaImAn local-shift grid upsampling
+#     shifts_opencv=True,  # CaImAn's default fast OpenCV transform backend
+#     nonneg_movie=True,  # keep CaImAn's saved/intermediate movie non-negative
+#     border_nan="copy",  # copy edge values instead of introducing NaNs
+#     gSig_filt=None,  # optional spatial high-pass filter kernel, e.g. (3, 3)
+#     shifts_interpolate=False,  # CaImAn default patch-field interpolation mode
+# )
 
 print_local_patch_summary(
     "2D+t piecewise XY NoRMCorre patch shifts",
     details_2d_t_piecewise_normcorre,
     t=piecewise_event_frame_2d_t,
 )
-print_caiman_patch_summary(
-    "2D+t piecewise XY CaImAn NoRMCorre patch shifts",
-    details_2d_t_piecewise_caiman,
-    t=piecewise_event_frame_2d_t,
-)
+# print_caiman_patch_summary(
+#     "2D+t piecewise XY CaImAn NoRMCorre patch shifts",
+#     details_2d_t_piecewise_caiman,
+#     t=piecewise_event_frame_2d_t,
+# )
 print_residual_mae_summary(
     stack_2d_t_piecewise_xy,
     registered_2d_t_piecewise_phase,
     registered_2d_t_piecewise_normcorre,
-    registered_2d_t_piecewise_caiman,
-    labels=("raw", "phase_cross_correlation", "ZenReg NoRMCorre", "CaImAn NoRMCorre"),
+    labels=("raw", "phase_cross_correlation", "ZenReg NoRMCorre"),
     channel=0,
 )
 show_before_after(
@@ -926,24 +934,23 @@ show_before_after(
     channel=0,
     moving_time=piecewise_event_frame_2d_t,
 )
-show_before_after(
-    stack_2d_t_piecewise_xy,
-    registered_2d_t_piecewise_caiman,
-    title="2D+t piecewise XY translation (CaImAn NoRMCorre)",
-    channel=0,
-    moving_time=piecewise_event_frame_2d_t,
-)
+# show_before_after(
+#     stack_2d_t_piecewise_xy,
+#     registered_2d_t_piecewise_caiman,
+#     title="2D+t piecewise XY translation (CaImAn NoRMCorre)",
+#     channel=0,
+#     moving_time=piecewise_event_frame_2d_t,
+# )
 show_residual_comparison_multi(
     stack_2d_t_piecewise_xy,
     (
         registered_2d_t_piecewise_phase,
         registered_2d_t_piecewise_normcorre,
-        registered_2d_t_piecewise_caiman,
     ),
     title="2D+t piecewise XY residual comparison",
     channel=0,
     moving_time=piecewise_event_frame_2d_t,
-    labels=("raw", "phase_cross_correlation", "ZenReg NoRMCorre", "CaImAn NoRMCorre"),
+    labels=("raw", "phase_cross_correlation", "ZenReg NoRMCorre"),
 )
 save_stack(
     OUTPUT_DIR / "2d_t_piecewise_xy_phase_cross_registered.ome.tif",
@@ -957,12 +964,12 @@ save_stack(
     metadata=metadata_2d_t_piecewise_xy,
     registration_details=details_2d_t_piecewise_normcorre,
 )
-save_stack(
-    OUTPUT_DIR / "2d_t_piecewise_xy_caiman_normcorre_registered.ome.tif",
-    registered_2d_t_piecewise_caiman,
-    metadata=metadata_2d_t_piecewise_xy,
-    registration_details=details_2d_t_piecewise_caiman,
-)
+# save_stack(
+#     OUTPUT_DIR / "2d_t_piecewise_xy_caiman_normcorre_registered.ome.tif",
+#     registered_2d_t_piecewise_caiman,
+#     metadata=metadata_2d_t_piecewise_xy,
+#     registration_details=details_2d_t_piecewise_caiman,
+# )
 maybe_open_in_napari(stack_2d_t_piecewise_xy, metadata_2d_t_piecewise_xy, fname="2D+t piecewise XY")
 maybe_open_in_napari(
     registered_2d_t_piecewise_phase,
@@ -974,11 +981,11 @@ maybe_open_in_napari(
     metadata_2d_t_piecewise_xy,
     fname="2D+t piecewise XY NoRMCorre",
 )
-maybe_open_in_napari(
-    registered_2d_t_piecewise_caiman,
-    metadata_2d_t_piecewise_xy,
-    fname="2D+t piecewise XY CaImAn NoRMCorre",
-)
+# maybe_open_in_napari(
+#     registered_2d_t_piecewise_caiman,
+#     metadata_2d_t_piecewise_xy,
+#     fname="2D+t piecewise XY CaImAn NoRMCorre",
+# )
 # %% 5) 3D+t: GLOBAL ZYX TRANSLATION
 stack_3d_t_zyx, metadata_3d_t_zyx = load_stack(
     STACK_3D_T_ZYX_PATH,
