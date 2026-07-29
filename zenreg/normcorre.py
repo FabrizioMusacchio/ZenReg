@@ -14,6 +14,7 @@ Date: July 2026
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
@@ -24,7 +25,7 @@ from scipy.ndimage import convolve, map_coordinates
 from skimage.registration import phase_cross_correlation
 from skimage.transform import resize as resize_image
 
-from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack
+from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack, normalize_zrange
 from .filters import _normalize_projection_method, z_project
 
 
@@ -462,11 +463,15 @@ def _registration_image(
     *,
     channel: int,
     is3d: bool,
+    projection_range: tuple[int, int] | None,
     projection_method: str,
 ) -> np.ndarray:
     """Extract the image used for NoRMCorre shift estimation."""
 
     volume = np.asarray(frame_tzcyx[:, channel, :, :], dtype=np.float32)
+    if projection_range is not None:
+        z_start, z_stop = projection_range
+        volume = volume[int(z_start) : int(z_stop), :, :]
     if is3d:
         return volume
     if volume.shape[0] == 1:
@@ -480,6 +485,7 @@ def _registration_image_for_estimation(
     *,
     channel: int,
     is3d: bool,
+    projection_range: tuple[int, int] | None,
     projection_method: str,
     gSig_filt: tuple[float, float] | None,
 ) -> np.ndarray:
@@ -490,6 +496,7 @@ def _registration_image_for_estimation(
             frame_tzcyx,
             channel=channel,
             is3d=is3d,
+            projection_range=projection_range,
             projection_method=projection_method,
         ),
         gSig_filt,
@@ -501,6 +508,7 @@ def _registration_images(
     *,
     channel: int,
     is3d: bool,
+    projection_range: tuple[int, int] | None,
     projection_method: str,
     gSig_filt: tuple[float, float] | None = None,
     indices: np.ndarray | None = None,
@@ -514,6 +522,7 @@ def _registration_images(
             stack[int(t)],
             channel=channel,
             is3d=is3d,
+            projection_range=projection_range,
             projection_method=projection_method,
             gSig_filt=gSig_filt,
         )
@@ -533,6 +542,7 @@ def _update_template_from_registered(
     *,
     registration_channel: int,
     is3d: bool,
+    projection_range: tuple[int, int] | None,
     projection_method: str,
     gSig_filt: tuple[float, float] | None,
     template_update_method: str,
@@ -547,6 +557,7 @@ def _update_template_from_registered(
             registered,
             channel=registration_channel,
             is3d=is3d,
+            projection_range=projection_range,
             projection_method=projection_method,
             indices=indices,
         )
@@ -557,6 +568,7 @@ def _update_template_from_registered(
             registered,
             channel=registration_channel,
             is3d=is3d,
+            projection_range=projection_range,
             projection_method=projection_method,
             indices=indices,
         )
@@ -572,6 +584,7 @@ def _update_template_from_registered(
             registered,
             channel=registration_channel,
             is3d=is3d,
+            projection_range=projection_range,
             projection_method=projection_method,
             indices=chunk_indices,
         )
@@ -587,6 +600,7 @@ def _estimate_min_mov(
     *,
     registration_channel: int,
     is3d: bool,
+    projection_range: tuple[int, int] | None,
     projection_method: str,
     gSig_filt: tuple[float, float] | None,
     max_frames: int = 400,
@@ -600,6 +614,7 @@ def _estimate_min_mov(
             stack[t],
             channel=registration_channel,
             is3d=is3d,
+            projection_range=projection_range,
             projection_method=projection_method,
             gSig_filt=gSig_filt,
         )
@@ -613,6 +628,7 @@ def _initial_template(
     registration_channel: int,
     registration_stack: int,
     is3d: bool,
+    projection_range: tuple[int, int] | None,
     projection_method: str,
     template_init_mode: str,
     niter_rig: int,
@@ -634,6 +650,7 @@ def _initial_template(
             stack[int(registration_stack)],
             channel=registration_channel,
             is3d=is3d,
+            projection_range=projection_range,
             projection_method=projection_method,
         )
         return _high_pass_filter_space(template, gSig_filt).astype(np.float32, copy=True)
@@ -643,6 +660,7 @@ def _initial_template(
         stack,
         channel=registration_channel,
         is3d=is3d,
+        projection_range=projection_range,
         projection_method=projection_method,
         indices=sample_indices,
     )
@@ -740,6 +758,7 @@ def _process_frame(
     template: np.ndarray,
     registration_channel: int,
     is3d: bool,
+    projection_range: tuple[int, int] | None,
     projection_method: str,
     patch_grid: _PatchGrid,
     pw_rigid: bool,
@@ -762,6 +781,7 @@ def _process_frame(
         stack[t],
         channel=registration_channel,
         is3d=is3d,
+        projection_range=projection_range,
         projection_method=projection_method,
     )
     moving_for_estimation = _high_pass_filter_space(moving, gSig_filt)
@@ -812,6 +832,7 @@ def register_stack_normcorre(
     registration_channel: int = 0,
     registration_stack: int = 0,
     is3d: bool | None = None,
+    projection_range: tuple[int, int] | Sequence[int] | None = None,
     projection_method: str = "max",
     pw_rigid: bool = True,
     strides: tuple[int, ...] | int | None = None,
@@ -858,6 +879,10 @@ def register_stack_normcorre(
         If True, estimate local shifts on full ``ZYX`` volumes and return Z/Y/X
         correction fields. If False, estimate shifts on 2D ``YX`` frames. If
         None, ZenReg uses 3D mode when ``SizeZ > 1`` and 2D mode otherwise.
+    projection_range : tuple[int, int] or None, optional
+        Optional half-open Z range ``(start, stop)`` used for the NoRMCorre
+        registration template/shift estimation. The detected correction is still
+        applied to the full stack.
     projection_method : {"max", "mean", "median", "var", "std"}, optional
         Z-projection method used only when ``is3d=False`` and the input has more
         than one Z slice. ``"max"`` is a good default for sparse spots or
@@ -987,6 +1012,7 @@ def register_stack_normcorre(
     ndim = 3 if is3d else 2
     if is3d and z_count < 2:
         raise ValueError("is3d=True requires SizeZ >= 2.")
+    projection_range = None if projection_range is None else normalize_zrange(projection_range, z_count, strict=True)
     projection_method = _normalize_projection_method(projection_method)
 
     default_strides = (6, 48, 48) if is3d else (48, 48)
@@ -1034,6 +1060,7 @@ def register_stack_normcorre(
         stack,
         registration_channel=registration_channel,
         is3d=is3d,
+        projection_range=projection_range,
         projection_method=projection_method,
         gSig_filt=gSig_filt,
     )
@@ -1083,6 +1110,7 @@ def register_stack_normcorre(
             registration_channel=registration_channel,
             registration_stack=registration_stack,
             is3d=is3d,
+            projection_range=projection_range,
             projection_method=projection_method,
             template_init_mode=template_init_mode if correction_index == 0 else "registration_stack",
             niter_rig=niter_rig,
@@ -1113,6 +1141,7 @@ def register_stack_normcorre(
                 "template": template,
                 "registration_channel": registration_channel,
                 "is3d": is3d,
+                "projection_range": projection_range,
                 "projection_method": projection_method,
                 "patch_grid": patch_grid,
                 "pw_rigid": bool(pw_rigid),
@@ -1152,6 +1181,7 @@ def register_stack_normcorre(
                     registered,
                     registration_channel=registration_channel,
                     is3d=is3d,
+                    projection_range=projection_range,
                     projection_method=projection_method,
                     gSig_filt=gSig_filt,
                     template_update_method=template_update_method,
@@ -1186,7 +1216,7 @@ def register_stack_normcorre(
         "intra_stack": False,
         "zreg": bool(is3d),
         "rotreg": False,
-        "projection_range": None,
+        "projection_range": projection_range,
         "projection_method": projection_method,
         "filter_slices": False,
         "filter_projections": False,

@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.ndimage import map_coordinates, shift as ndi_shift
 
-from zenreg import register_stack_normcorre
+from zenreg import register_stack, register_stack_normcorre
 
 
 def _gaussian_image(shape_yx=(80, 80)):
@@ -85,6 +85,31 @@ def test_normcorre_2d_translation_estimates_correction_shift():
     assert np.mean(np.abs(registered[1, 0, 0] - registered[0, 0, 0])) < np.mean(
         np.abs(stack[1, 0, 0] - stack[0, 0, 0])
     )
+
+
+def test_register_stack_dispatches_to_normcorre_backend():
+    applied = np.asarray([[0.0, 0.0], [2.0, -3.0], [-1.5, 2.5]], dtype=np.float32)
+    stack = _two_channel_2d_stack(applied)
+
+    registered, details = register_stack(
+        stack,
+        registration_channel=0,
+        registration_stack=0,
+        method="normcorre",
+        time_registration_mode="projection",
+        projection_method="max",
+        max_xy_shifts=(5, 5),
+        phase_cross_correlation_upsample_factor=10,
+        phase_cross_correlation_normalization=None,
+        nc_pw_rigid=False,
+        verbose=False,
+        return_details=True,
+    )
+
+    assert registered.shape == stack.shape
+    assert details["method"] == "normcorre"
+    assert details["nc_pw_rigid"] is False
+    np.testing.assert_allclose(details["time_shifts_yx"], applied[0] - applied, atol=0.12)
 
 
 def test_normcorre_correction_iterations_accumulate_residual_shifts():

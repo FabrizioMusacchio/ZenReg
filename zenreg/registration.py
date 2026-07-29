@@ -19,7 +19,7 @@ from skimage.transform import rotate, warp_polar
 
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack, normalize_zrange
 # %% CONSTANTS
-SUPPORTED_REGISTRATION_METHODS = {"phase_cross_correlation", "pystackreg"}
+SUPPORTED_REGISTRATION_METHODS = {"phase_cross_correlation", "pystackreg", "normcorre"}
 SUPPORTED_INTRA_STACK_REFERENCE_MODES = {"neighbor", "full_projection", "first_slice"}
 SUPPORTED_PROJECTION_METHODS = {"max", "mean", "median", "var", "std"}
 SUPPORTED_TIME_REGISTRATION_MODES = {"projection", "full_3d", "none"}
@@ -642,7 +642,9 @@ def _estimate_shift(
             upsample_factor=phase_cross_correlation_upsample_factor,
             normalization=phase_cross_correlation_normalization,
         )
-    return _pystackreg_shift(reference_projection, moving_projection)
+    if method == "pystackreg":
+        return _pystackreg_shift(reference_projection, moving_projection)
+    raise ValueError("method='normcorre' is available only through register_stack(), not pairwise shift helpers.")
 
 
 def _estimate_full_3d_shift(
@@ -985,8 +987,11 @@ def _correct_intra_stack_z_drift_impl(
     registration_channel : int, optional
         Channel used to estimate slice-wise XY shifts. Shifts are applied to all
         channels of the affected Z slice.
-    method : {"phase_cross_correlation", "pystackreg"}, optional
-        Backend used for shift estimation.
+    method : {"phase_cross_correlation", "pystackreg", "normcorre"}, optional
+        Backend used for shift estimation. ``"normcorre"`` dispatches to
+        ZenReg's standalone CaImAn-compatible NoRMCorre port while reusing this
+        wrapper's shared registration, projection, shift-limit, and transform
+        settings where possible.
     reference_mode : {"neighbor", "full_projection", "first_slice"}, optional
         Strategy for constructing each per-slice reference image.
     neighbor_window_size : int, optional
@@ -1012,6 +1017,19 @@ def _correct_intra_stack_z_drift_impl(
     phase_cross_correlation_normalization : {None, "phase"}, optional
         Normalization mode forwarded to scikit-image's phase cross-correlation.
         ``None`` is more robust for the smooth synthetic examples.
+    nc_* : optional
+        NoRMCorre-specific settings used only with ``method="normcorre"``.
+        Important options are ``nc_pw_rigid``, ``nc_strides``, ``nc_overlaps``,
+        ``nc_max_deviation_rigid``, ``nc_n_iterations``,
+        ``nc_correction_iterations``, ``nc_template_init_mode``,
+        ``nc_template_update_method``, ``nc_gSig_filt``,
+        ``nc_shift_interpolation``, ``nc_border_nan``, ``nc_n_jobs``, and the
+        ``nc_output_*`` memory-mapped output controls. Shared settings such as
+        ``registration_channel``, ``registration_stack``, ``projection_range``,
+        ``projection_method``, ``max_xy_shifts``, ``max_z_shifts``,
+        ``phase_cross_correlation_upsample_factor``,
+        ``phase_cross_correlation_normalization``, and ``transform_order`` are
+        reused directly and are not duplicated with an ``nc_`` prefix.
     transform_backend : {"skimage", "scipy"}, optional
         Backend used to apply correction shifts. ``"skimage"`` is the default
         for XY transforms and matches the rotation-correction path. ``"scipy"``
@@ -1581,6 +1599,167 @@ def _return_registration_result(
         return registered, intra_stack_shifts_yx
     return registered, details
 
+
+def _normcorre_max_shifts_from_common_limits(
+    *,
+    is3d: bool,
+    max_xy_shifts,
+    max_z_shifts,
+):
+    """Map register_stack shift-limit arguments to NoRMCorre spatial order."""
+
+    if is3d:
+        if max_xy_shifts is None and max_z_shifts is None:
+            return None
+        max_z = np.inf if max_z_shifts is None else float(max_z_shifts)
+        if max_xy_shifts is None:
+            max_y, max_x = np.inf, np.inf
+        else:
+            max_y, max_x = [float(v) for v in max_xy_shifts]
+        return (max_z, max_y, max_x)
+    return None if max_xy_shifts is None else tuple(float(v) for v in max_xy_shifts)
+
+
+def _register_stack_normcorre_from_main_wrapper(
+    stack: np.ndarray,
+    *,
+    registration_channel: int,
+    registration_stack: int,
+    time_registration_mode: str,
+    time_reference_mode: str,
+    intra_stack: bool,
+    projection_range,
+    projection_method: str,
+    zreg: bool,
+    zero_clip: bool,
+    rotreg: bool,
+    filter_slices: bool,
+    filter_projections: bool,
+    max_xy_shifts,
+    max_z_shifts,
+    phase_cross_correlation_upsample_factor: int,
+    phase_cross_correlation_normalization: str | None,
+    transform_order: int,
+    nc_pw_rigid: bool,
+    nc_strides,
+    nc_overlaps,
+    nc_max_deviation_rigid,
+    nc_n_iterations: int,
+    nc_correction_iterations: int,
+    nc_niter_rig: int,
+    nc_template_init_mode: str,
+    nc_template_update_method: str,
+    nc_splits: int,
+    nc_gSig_filt,
+    nc_add_to_movie,
+    nc_nonneg_movie: bool,
+    nc_shift_interpolation: str,
+    nc_n_jobs: int,
+    nc_transform_mode: str,
+    nc_transform_cval: float,
+    nc_border_nan,
+    nc_block_size: int,
+    nc_output_use_memmap: bool,
+    nc_output_memmap_folder: str | None,
+    nc_output_memmap_name: str | None,
+    verbose: bool,
+    return_shifts: bool,
+    return_details: bool,
+):
+    """Dispatch ``register_stack(method='normcorre')`` to the NoRMCorre module."""
+
+    if intra_stack:
+        raise ValueError("method='normcorre' does not support intra_stack=True yet.")
+    if time_reference_mode != "template":
+        raise ValueError("method='normcorre' currently supports only time_reference_mode='template'.")
+    if time_registration_mode == "none":
+        raise ValueError("method='normcorre' requires time_registration_mode='projection' or 'full_3d'.")
+    if rotreg:
+        raise ValueError("method='normcorre' does not support rotreg=True; use register_stack rotation correction instead.")
+    if zero_clip:
+        raise ValueError("method='normcorre' does not support zero_clip=True yet.")
+    if filter_slices or filter_projections:
+        raise ValueError(
+            "method='normcorre' does not use filter_slices/filter_projections. "
+            "Use nc_gSig_filt for CaImAn-style high-pass filtering."
+        )
+
+    is3d = bool(time_registration_mode == "full_3d" or zreg)
+    if is3d and stack.shape[1] < 2:
+        raise ValueError("NoRMCorre full-3D/zreg mode requires SizeZ >= 2.")
+
+    from .normcorre import register_stack_normcorre
+
+    registered, details = register_stack_normcorre(
+        stack,
+        registration_channel=registration_channel,
+        registration_stack=registration_stack,
+        is3d=is3d,
+        projection_range=projection_range,
+        projection_method=projection_method,
+        pw_rigid=nc_pw_rigid,
+        strides=nc_strides,
+        overlaps=nc_overlaps,
+        max_shifts=_normcorre_max_shifts_from_common_limits(
+            is3d=is3d,
+            max_xy_shifts=max_xy_shifts,
+            max_z_shifts=max_z_shifts,
+        ),
+        max_deviation_rigid=nc_max_deviation_rigid,
+        n_iterations=nc_n_iterations,
+        correction_iterations=nc_correction_iterations,
+        niter_rig=nc_niter_rig,
+        template_init_mode=nc_template_init_mode,
+        template_update_method=nc_template_update_method,
+        splits=nc_splits,
+        upsample_factor=phase_cross_correlation_upsample_factor,
+        normalization=phase_cross_correlation_normalization,
+        gSig_filt=nc_gSig_filt,
+        add_to_movie=nc_add_to_movie,
+        nonneg_movie=nc_nonneg_movie,
+        shift_interpolation=nc_shift_interpolation,
+        n_jobs=nc_n_jobs,
+        transform_order=transform_order,
+        transform_mode=nc_transform_mode,
+        transform_cval=nc_transform_cval,
+        border_nan=nc_border_nan,
+        block_size=nc_block_size,
+        output_use_memmap=nc_output_use_memmap,
+        output_memmap_folder=nc_output_memmap_folder,
+        output_memmap_name=nc_output_memmap_name,
+        verbose=verbose,
+        return_details=True,
+    )
+    details["method"] = "normcorre"
+    details["time_registration_mode"] = "full_3d" if is3d else "projection"
+    details["effective_time_registration_mode"] = "full_3d" if is3d else "projection"
+    details["zreg"] = bool(is3d)
+    details["max_xy_shifts"] = None if max_xy_shifts is None else tuple(float(v) for v in max_xy_shifts)
+    details["max_z_shifts"] = None if max_z_shifts is None else float(max_z_shifts)
+    details["phase_cross_correlation_upsample_factor"] = int(phase_cross_correlation_upsample_factor)
+    details["nc_pw_rigid"] = bool(nc_pw_rigid)
+    details["nc_strides"] = details.get("strides")
+    details["nc_overlaps"] = details.get("overlaps")
+    details["nc_max_deviation_rigid"] = details.get("max_deviation_rigid")
+    details["nc_n_iterations"] = int(nc_n_iterations)
+    details["nc_correction_iterations"] = int(nc_correction_iterations)
+    details["nc_niter_rig"] = int(nc_niter_rig)
+    details["nc_template_init_mode"] = nc_template_init_mode
+    details["nc_template_update_method"] = nc_template_update_method
+    details["nc_splits"] = int(nc_splits)
+    details["nc_gSig_filt"] = details.get("gSig_filt")
+    details["nc_shift_interpolation"] = nc_shift_interpolation
+    details["nc_border_nan"] = nc_border_nan
+    details["nc_n_jobs"] = int(nc_n_jobs)
+
+    if return_details:
+        return registered, details
+    if return_shifts:
+        if not is3d:
+            return registered, details["time_shifts_yx"]
+        return registered, details
+    return registered
+
 # %% MAIN REGISTRATION WRAPPER
 def register_stack(
     stack,
@@ -1613,6 +1792,28 @@ def register_stack(
     median_kernel_size: int = 3,
     phase_cross_correlation_upsample_factor: int = 20,
     phase_cross_correlation_normalization: str | None = None,
+    nc_pw_rigid: bool = True,
+    nc_strides: tuple[int, ...] | int | None = None,
+    nc_overlaps: tuple[int, ...] | int | None = None,
+    nc_max_deviation_rigid: tuple[float, ...] | float | None = None,
+    nc_n_iterations: int = 1,
+    nc_correction_iterations: int = 1,
+    nc_niter_rig: int = 1,
+    nc_template_init_mode: str = "registration_stack",
+    nc_template_update_method: str = "caiman",
+    nc_splits: int = 56,
+    nc_gSig_filt=None,
+    nc_add_to_movie: float | None = None,
+    nc_nonneg_movie: bool = True,
+    nc_shift_interpolation: str = "resize",
+    nc_n_jobs: int = 1,
+    nc_transform_mode: str = "constant",
+    nc_transform_cval: float = 0.0,
+    nc_border_nan=None,
+    nc_block_size: int = 32,
+    nc_output_use_memmap: bool = False,
+    nc_output_memmap_folder: str | None = None,
+    nc_output_memmap_name: str | None = "zenreg_normcorre_registered",
     verbose: bool = True,
     return_shifts: bool = False,
     return_details: bool = False,
@@ -1835,6 +2036,52 @@ def register_stack(
         "phase_cross_correlation_normalization": phase_cross_correlation_normalization,
         "stack_shape_tzcyx": tuple(int(v) for v in stack.shape),
     }
+    if method == "normcorre":
+        return _register_stack_normcorre_from_main_wrapper(
+            stack,
+            registration_channel=int(registration_channel),
+            registration_stack=int(registration_stack),
+            time_registration_mode=time_registration_mode,
+            time_reference_mode=time_reference_mode,
+            intra_stack=bool(intra_stack),
+            projection_range=projection_range_setting,
+            projection_method=projection_method,
+            zreg=bool(zreg),
+            zero_clip=bool(zero_clip),
+            rotreg=bool(rotreg),
+            filter_slices=bool(filter_slices),
+            filter_projections=bool(filter_projections),
+            max_xy_shifts=max_xy_shifts,
+            max_z_shifts=max_z_shifts,
+            phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
+            phase_cross_correlation_normalization=phase_cross_correlation_normalization,
+            transform_order=transform_order,
+            nc_pw_rigid=bool(nc_pw_rigid),
+            nc_strides=nc_strides,
+            nc_overlaps=nc_overlaps,
+            nc_max_deviation_rigid=nc_max_deviation_rigid,
+            nc_n_iterations=int(nc_n_iterations),
+            nc_correction_iterations=int(nc_correction_iterations),
+            nc_niter_rig=int(nc_niter_rig),
+            nc_template_init_mode=nc_template_init_mode,
+            nc_template_update_method=nc_template_update_method,
+            nc_splits=int(nc_splits),
+            nc_gSig_filt=nc_gSig_filt,
+            nc_add_to_movie=nc_add_to_movie,
+            nc_nonneg_movie=bool(nc_nonneg_movie),
+            nc_shift_interpolation=nc_shift_interpolation,
+            nc_n_jobs=int(nc_n_jobs),
+            nc_transform_mode=nc_transform_mode,
+            nc_transform_cval=float(nc_transform_cval),
+            nc_border_nan=nc_border_nan,
+            nc_block_size=int(nc_block_size),
+            nc_output_use_memmap=bool(nc_output_use_memmap),
+            nc_output_memmap_folder=nc_output_memmap_folder,
+            nc_output_memmap_name=nc_output_memmap_name,
+            verbose=verbose,
+            return_shifts=return_shifts,
+            return_details=return_details,
+        )
 
     registered = stack
     intra_stack_shifts_yx = None

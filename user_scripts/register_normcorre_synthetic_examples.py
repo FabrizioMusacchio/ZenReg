@@ -41,7 +41,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from zenreg import load_stack, register_stack, register_stack_normcorre, save_stack, z_project
+from zenreg import load_stack, register_stack, save_stack, z_project
 from zenreg.synthetic import write_example_dataset
 
 # %% PATHS
@@ -447,27 +447,29 @@ registered_2d_t_xy_phase, details_2d_t_xy_phase = register_stack(
     return_details=True,
 )
 
-registered_2d_t_xy_normcorre, details_2d_t_xy_normcorre = register_stack_normcorre(
+registered_2d_t_xy_normcorre, details_2d_t_xy_normcorre = register_stack(
     stack_2d_t_xy,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
     registration_stack=0,  # reference time point/template
-    is3d=False,  # False for 2D/projection mode, True for full 3D+t local shift fields
-    projection_method="max",  # used only when is3d=False and Z>1; "max", "mean", "median", "var", or "std"
-    pw_rigid=True,  # True = patch-wise NoRMCorre, False = rigid-only baseline
-    strides=(32, 32),  # patch-grid stride in YX
-    overlaps=(16, 16),  # patch overlap in YX
-    max_shifts=(6, 6),  # absolute correction shift limits in YX
-    max_deviation_rigid=3,  # local patch-shift deviation from rigid estimate
-    n_iterations=1,  # template-refinement passes
-    correction_iterations=1,  # re-run NoRMCorre on the already corrected result
-    upsample_factor=10,  # subpixel phase-correlation precision
-    normalization=None,  # None or "phase"
-    n_jobs=2,  # parallelize over time frames
+    method="normcorre",  # dispatches to ZenReg's CaImAn-compatible NoRMCorre port
+    time_registration_mode="projection",  # "projection" for 2D/projection mode, "full_3d" for ZYX NoRMCorre
+    projection_method="max",  # "max", "mean", "median", "var", or "std"
+    zreg=False,  # full 3D/Z registration is disabled for this 2D+t example
+    max_xy_shifts=(6, 6),  # absolute correction shift limits in YX
+    phase_cross_correlation_upsample_factor=10,  # subpixel phase-correlation precision
+    phase_cross_correlation_normalization=None,  # None or "phase"
     transform_order=3,  # 3 matches CaImAn's cubic remap; use 1 for gentler intensity interpolation
-    block_size=32,  # Y rows warped per block
-    output_use_memmap=False,  # True writes registered output into OMIO/Zarr
-    output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
-    output_memmap_name="2d_t_xy_normcorre_registered_zarr",  # output Zarr store name
+    nc_pw_rigid=True,  # True = patch-wise NoRMCorre, False = rigid-only baseline
+    nc_strides=(32, 32),  # patch-grid stride in YX
+    nc_overlaps=(16, 16),  # patch overlap in YX
+    nc_max_deviation_rigid=3,  # local patch-shift deviation from rigid estimate
+    nc_n_iterations=1,  # template-refinement passes
+    nc_correction_iterations=1,  # re-run NoRMCorre on the already corrected result
+    nc_n_jobs=2,  # parallelize over time frames
+    nc_block_size=32,  # Y rows warped per block
+    nc_output_use_memmap=False,  # True writes registered output into OMIO/Zarr
+    nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
+    nc_output_memmap_name="2d_t_xy_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
     return_details=True,
 )
@@ -578,27 +580,29 @@ print(f"2D+t local-motion stack shape: {stack_2d_t_local.shape} (TZCYX)")
 print("Local GT columns:", local_motion_gt_2d_t.dtype.names)
 print(f"Strongest local-motion frame: t={local_motion_frame_2d_t}")
 
-registered_2d_t_local, details_2d_t_local = register_stack_normcorre(
+registered_2d_t_local, details_2d_t_local = register_stack(
     stack_2d_t_local,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
     registration_stack=0,  # reference time point/template
-    is3d=False,  # full 2D+t/projection local shift fields
-    projection_method="max",  # used only when is3d=False and Z>1; "max", "mean", "median", "var", or "std"
-    pw_rigid=True,  # patch-wise NoRMCorre local correction
-    strides=(14, 14),  # patch-grid stride in YX
-    overlaps=(24, 24),  # overlap smooths local patch transitions
-    max_shifts=(5, 5),  # absolute correction shift limits in YX
-    max_deviation_rigid=3,  # local patch-shift deviation from rigid estimate
-    n_iterations=3,  # template-refinement passes
-    correction_iterations=1,  # re-run NoRMCorre on the already corrected result
-    upsample_factor=10,  # subpixel phase-correlation precision
-    normalization=None,  # None or "phase"
-    n_jobs=2,  # parallelize over time frames
+    method="normcorre",  # dispatches to ZenReg's CaImAn-compatible NoRMCorre port
+    time_registration_mode="projection",  # 2D+t/projection local shift fields
+    projection_method="max",  # "max", "mean", "median", "var", or "std"
+    zreg=False,  # full 3D/Z registration is disabled for this 2D+t example
+    max_xy_shifts=(5, 5),  # absolute correction shift limits in YX
+    phase_cross_correlation_upsample_factor=10,  # subpixel phase-correlation precision
+    phase_cross_correlation_normalization=None,  # None or "phase"
     transform_order=3,  # 3 matches CaImAn's cubic remap; use 1 for gentler intensity interpolation
-    block_size=32,  # Y rows warped per block
-    output_use_memmap=False,  # True writes registered output into OMIO/Zarr
-    output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
-    output_memmap_name="2d_t_local_normcorre_registered_zarr",  # output Zarr store name
+    nc_pw_rigid=True,  # patch-wise NoRMCorre local correction
+    nc_strides=(14, 14),  # patch-grid stride in YX
+    nc_overlaps=(24, 24),  # overlap smooths local patch transitions
+    nc_max_deviation_rigid=3,  # local patch-shift deviation from rigid estimate
+    nc_n_iterations=3,  # template-refinement passes
+    nc_correction_iterations=1,  # re-run NoRMCorre on the already corrected result
+    nc_n_jobs=2,  # parallelize over time frames
+    nc_block_size=32,  # Y rows warped per block
+    nc_output_use_memmap=False,  # True writes registered output into OMIO/Zarr
+    nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
+    nc_output_memmap_name="2d_t_local_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
     return_details=True,
 )
@@ -693,27 +697,29 @@ print(
 )
 maybe_open_in_napari(stack_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation")
 
-registered_2d_t_trans_rot, details_2d_t_trans_rot = register_stack_normcorre(
+registered_2d_t_trans_rot, details_2d_t_trans_rot = register_stack(
     stack_2d_t_trans_rot,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
     registration_stack=0,  # reference time point/template
-    is3d=False,  # 2D+t/projection local shift fields
-    projection_method="max",  # used only when is3d=False and Z>1; "max", "mean", "median", "var", or "std"
-    pw_rigid=True,  # approximate small rotations via local translations
-    strides=(16, 16),  # patch-grid stride in YX
-    overlaps=(24, 24),  # patch overlap in YX
-    max_shifts=(6, 6),  # absolute correction shift limits in YX
-    max_deviation_rigid=5,  # local patch-shift deviation from rigid estimate
-    n_iterations=2,  # template-refinement passes
-    correction_iterations=1,  # re-run NoRMCorre on the already corrected result
-    upsample_factor=10,  # subpixel phase-correlation precision
-    normalization=None,  # None or "phase"
-    n_jobs=2,  # parallelize over time frames
+    method="normcorre",  # dispatches to ZenReg's CaImAn-compatible NoRMCorre port
+    time_registration_mode="projection",  # 2D+t/projection local shift fields
+    projection_method="max",  # "max", "mean", "median", "var", or "std"
+    zreg=False,  # full 3D/Z registration is disabled for this 2D+t example
+    max_xy_shifts=(6, 6),  # absolute correction shift limits in YX
+    phase_cross_correlation_upsample_factor=10,  # subpixel phase-correlation precision
+    phase_cross_correlation_normalization=None,  # None or "phase"
     transform_order=3,  # 3 matches CaImAn's cubic remap; use 1 for gentler intensity interpolation
-    block_size=32,  # Y rows warped per block
-    output_use_memmap=False,  # True writes registered output into OMIO/Zarr
-    output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
-    output_memmap_name="2d_t_trans_rot_normcorre_registered_zarr",  # output Zarr store name
+    nc_pw_rigid=True,  # approximate small rotations via local translations
+    nc_strides=(16, 16),  # patch-grid stride in YX
+    nc_overlaps=(24, 24),  # patch overlap in YX
+    nc_max_deviation_rigid=5,  # local patch-shift deviation from rigid estimate
+    nc_n_iterations=2,  # template-refinement passes
+    nc_correction_iterations=1,  # re-run NoRMCorre on the already corrected result
+    nc_n_jobs=2,  # parallelize over time frames
+    nc_block_size=32,  # Y rows warped per block
+    nc_output_use_memmap=False,  # True writes registered output into OMIO/Zarr
+    nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
+    nc_output_memmap_name="2d_t_trans_rot_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
     return_details=True,
 )
@@ -839,27 +845,29 @@ registered_2d_t_piecewise_phase, details_2d_t_piecewise_phase = register_stack(
     return_details=True,
 )
 
-registered_2d_t_piecewise_normcorre, details_2d_t_piecewise_normcorre = register_stack_normcorre(
+registered_2d_t_piecewise_normcorre, details_2d_t_piecewise_normcorre = register_stack(
     stack_2d_t_piecewise_xy,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
     registration_stack=0,  # reference time point/template
-    is3d=False,  # 2D+t/projection local shift fields
-    projection_method="max",  # used only when is3d=False and Z>1; "max", "mean", "median", "var", or "std"
-    pw_rigid=True,  # patch-wise local translations
-    strides=(24, 24),  # patch-grid stride in YX
-    overlaps=(24, 24),  # patch overlap in YX
-    max_shifts=(6, 6),  # absolute correction shift limits in YX
-    max_deviation_rigid=5,  # local patch-shift deviation from rigid estimate
-    n_iterations=2,  # template-refinement passes
-    correction_iterations=1,  # re-run NoRMCorre on the already corrected result
-    upsample_factor=10,  # subpixel phase-correlation precision
-    normalization=None,  # None or "phase"
-    n_jobs=2,  # parallelize over time frames
+    method="normcorre",  # dispatches to ZenReg's CaImAn-compatible NoRMCorre port
+    time_registration_mode="projection",  # 2D+t/projection local shift fields
+    projection_method="max",  # "max", "mean", "median", "var", or "std"
+    zreg=False,  # full 3D/Z registration is disabled for this 2D+t example
+    max_xy_shifts=(6, 6),  # absolute correction shift limits in YX
+    phase_cross_correlation_upsample_factor=10,  # subpixel phase-correlation precision
+    phase_cross_correlation_normalization=None,  # None or "phase"
     transform_order=3,  # 3 matches CaImAn's cubic remap; use 1 for gentler intensity interpolation
-    block_size=32,  # Y rows warped per block
-    output_use_memmap=False,  # True writes registered output into OMIO/Zarr
-    output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
-    output_memmap_name="2d_t_piecewise_xy_normcorre_registered_zarr",  # output Zarr store name
+    nc_pw_rigid=True,  # patch-wise local translations
+    nc_strides=(24, 24),  # patch-grid stride in YX
+    nc_overlaps=(24, 24),  # patch overlap in YX
+    nc_max_deviation_rigid=5,  # local patch-shift deviation from rigid estimate
+    nc_n_iterations=2,  # template-refinement passes
+    nc_correction_iterations=1,  # re-run NoRMCorre on the already corrected result
+    nc_n_jobs=2,  # parallelize over time frames
+    nc_block_size=32,  # Y rows warped per block
+    nc_output_use_memmap=False,  # True writes registered output into OMIO/Zarr
+    nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
+    nc_output_memmap_name="2d_t_piecewise_xy_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
     return_details=True,
 )
@@ -977,26 +985,29 @@ stack_3d_t_zyx, metadata_3d_t_zyx = load_stack(
 expected_3d_t_zyx = load_expected_time_registration_shifts(GT_3D_T_ZYX_PATH, registration_stack=0, axes="zyx")
 print(f"3D+t global ZYX stack shape: {stack_3d_t_zyx.shape} (TZCYX)")
 
-registered_3d_t_zyx, details_3d_t_zyx = register_stack_normcorre(
+registered_3d_t_zyx, details_3d_t_zyx = register_stack(
     stack_3d_t_zyx,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
     registration_stack=0,  # reference time point/template
-    is3d=True,  # full 3D+t local shift fields in ZYX
-    pw_rigid=True,  # patch-wise NoRMCorre local correction
-    strides=(6, 48, 48),  # patch-grid stride in ZYX
-    overlaps=(3, 24, 24),  # patch overlap in ZYX
-    max_shifts=(3, 6, 6),  # absolute correction shift limits in ZYX
-    max_deviation_rigid=(1.5, 3, 3),  # local deviation from rigid estimate in ZYX
-    n_iterations=1,  # template-refinement passes
-    correction_iterations=1,  # re-run NoRMCorre on the already corrected result
-    upsample_factor=10,  # subpixel phase-correlation precision
-    normalization=None,  # None or "phase"
-    n_jobs=2,  # parallelize over time frames
+    method="normcorre",  # dispatches to ZenReg's CaImAn-compatible NoRMCorre port
+    time_registration_mode="full_3d",  # full 3D+t local shift fields in ZYX
+    zreg=True,  # estimate and apply Z shifts via full 3D NoRMCorre
+    max_z_shifts=3,  # absolute correction shift limit in Z
+    max_xy_shifts=(6, 6),  # absolute correction shift limits in YX
+    phase_cross_correlation_upsample_factor=10,  # subpixel phase-correlation precision
+    phase_cross_correlation_normalization=None,  # None or "phase"
     transform_order=3,  # 3 matches CaImAn's cubic remap; use 1 for gentler intensity interpolation
-    block_size=4,  # Z slices warped per block
-    output_use_memmap=False,  # True writes registered output into OMIO/Zarr
-    output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
-    output_memmap_name="3d_t_zyx_normcorre_registered_zarr",  # output Zarr store name
+    nc_pw_rigid=True,  # patch-wise NoRMCorre local correction
+    nc_strides=(6, 48, 48),  # patch-grid stride in ZYX
+    nc_overlaps=(3, 24, 24),  # patch overlap in ZYX
+    nc_max_deviation_rigid=(1.5, 3, 3),  # local deviation from rigid estimate in ZYX
+    nc_n_iterations=1,  # template-refinement passes
+    nc_correction_iterations=1,  # re-run NoRMCorre on the already corrected result
+    nc_n_jobs=2,  # parallelize over time frames
+    nc_block_size=4,  # Z slices warped per block
+    nc_output_use_memmap=False,  # True writes registered output into OMIO/Zarr
+    nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
+    nc_output_memmap_name="3d_t_zyx_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
     return_details=True,
 )
@@ -1035,26 +1046,29 @@ print(
     )[:5]
 )
 
-registered_3d_t_trans_rot_z, details_3d_t_trans_rot_z = register_stack_normcorre(
+registered_3d_t_trans_rot_z, details_3d_t_trans_rot_z = register_stack(
     stack_3d_t_trans_rot_z,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
     registration_stack=0,  # reference time point/template
-    is3d=True,  # full 3D+t local shift fields in ZYX
-    pw_rigid=True,  # approximate small rotations via local translations
-    strides=(6, 48, 48),  # patch-grid stride in ZYX
-    overlaps=(3, 24, 24),  # patch overlap in ZYX
-    max_shifts=(3, 6, 6),  # absolute correction shift limits in ZYX
-    max_deviation_rigid=(1.5, 4, 4),  # local deviation from rigid estimate in ZYX
-    n_iterations=1,  # template-refinement passes
-    correction_iterations=1,  # re-run NoRMCorre on the already corrected result
-    upsample_factor=10,  # subpixel phase-correlation precision
-    normalization=None,  # None or "phase"
-    n_jobs=2,  # parallelize over time frames
+    method="normcorre",  # dispatches to ZenReg's CaImAn-compatible NoRMCorre port
+    time_registration_mode="full_3d",  # full 3D+t local shift fields in ZYX
+    zreg=True,  # estimate and apply Z shifts via full 3D NoRMCorre
+    max_z_shifts=3,  # absolute correction shift limit in Z
+    max_xy_shifts=(6, 6),  # absolute correction shift limits in YX
+    phase_cross_correlation_upsample_factor=10,  # subpixel phase-correlation precision
+    phase_cross_correlation_normalization=None,  # None or "phase"
     transform_order=3,  # 3 matches CaImAn's cubic remap; use 1 for gentler intensity interpolation
-    block_size=4,  # Z slices warped per block
-    output_use_memmap=False,  # True writes registered output into OMIO/Zarr
-    output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
-    output_memmap_name="3d_t_trans_rot_z_normcorre_registered_zarr",  # output Zarr store name
+    nc_pw_rigid=True,  # approximate small rotations via local translations
+    nc_strides=(6, 48, 48),  # patch-grid stride in ZYX
+    nc_overlaps=(3, 24, 24),  # patch overlap in ZYX
+    nc_max_deviation_rigid=(1.5, 4, 4),  # local deviation from rigid estimate in ZYX
+    nc_n_iterations=1,  # template-refinement passes
+    nc_correction_iterations=1,  # re-run NoRMCorre on the already corrected result
+    nc_n_jobs=2,  # parallelize over time frames
+    nc_block_size=4,  # Z slices warped per block
+    nc_output_use_memmap=False,  # True writes registered output into OMIO/Zarr
+    nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
+    nc_output_memmap_name="3d_t_trans_rot_z_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
     return_details=True,
 )
@@ -1097,26 +1111,29 @@ print(
     )[:5]
 )
 
-registered_3d_t_trans_rot_x, details_3d_t_trans_rot_x = register_stack_normcorre(
+registered_3d_t_trans_rot_x, details_3d_t_trans_rot_x = register_stack(
     stack_3d_t_trans_rot_x,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
     registration_stack=0,  # reference time point/template
-    is3d=True,  # full 3D+t local shift fields in ZYX
-    pw_rigid=True,  # approximate small rotations via local translations
-    strides=(6, 48, 48),  # patch-grid stride in ZYX
-    overlaps=(3, 24, 24),  # patch overlap in ZYX
-    max_shifts=(3, 6, 6),  # absolute correction shift limits in ZYX
-    max_deviation_rigid=(1.5, 4, 4),  # local deviation from rigid estimate in ZYX
-    n_iterations=1,  # template-refinement passes
-    correction_iterations=1,  # re-run NoRMCorre on the already corrected result
-    upsample_factor=10,  # subpixel phase-correlation precision
-    normalization=None,  # None or "phase"
-    n_jobs=2,  # parallelize over time frames
+    method="normcorre",  # dispatches to ZenReg's CaImAn-compatible NoRMCorre port
+    time_registration_mode="full_3d",  # full 3D+t local shift fields in ZYX
+    zreg=True,  # estimate and apply Z shifts via full 3D NoRMCorre
+    max_z_shifts=3,  # absolute correction shift limit in Z
+    max_xy_shifts=(6, 6),  # absolute correction shift limits in YX
+    phase_cross_correlation_upsample_factor=10,  # subpixel phase-correlation precision
+    phase_cross_correlation_normalization=None,  # None or "phase"
     transform_order=3,  # 3 matches CaImAn's cubic remap; use 1 for gentler intensity interpolation
-    block_size=4,  # Z slices warped per block
-    output_use_memmap=False,  # True writes registered output into OMIO/Zarr
-    output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
-    output_memmap_name="3d_t_trans_rot_x_normcorre_registered_zarr",  # output Zarr store name
+    nc_pw_rigid=True,  # approximate small rotations via local translations
+    nc_strides=(6, 48, 48),  # patch-grid stride in ZYX
+    nc_overlaps=(3, 24, 24),  # patch overlap in ZYX
+    nc_max_deviation_rigid=(1.5, 4, 4),  # local deviation from rigid estimate in ZYX
+    nc_n_iterations=1,  # template-refinement passes
+    nc_correction_iterations=1,  # re-run NoRMCorre on the already corrected result
+    nc_n_jobs=2,  # parallelize over time frames
+    nc_block_size=4,  # Z slices warped per block
+    nc_output_use_memmap=False,  # True writes registered output into OMIO/Zarr
+    nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
+    nc_output_memmap_name="3d_t_trans_rot_x_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
     return_details=True,
 )
@@ -1158,26 +1175,29 @@ print(
     )[:5]
 )
 
-registered_3d_t_trans_rot_all_center, details_3d_t_trans_rot_all_center = register_stack_normcorre(
+registered_3d_t_trans_rot_all_center, details_3d_t_trans_rot_all_center = register_stack(
     stack_3d_t_trans_rot_all_center,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
     registration_stack=0,  # reference time point/template
-    is3d=True,  # full 3D+t local shift fields in ZYX
-    pw_rigid=True,  # approximate small rotations via local translations
-    strides=(6, 48, 48),  # patch-grid stride in ZYX
-    overlaps=(3, 24, 24),  # patch overlap in ZYX
-    max_shifts=(3, 6, 6),  # absolute correction shift limits in ZYX
-    max_deviation_rigid=(1.5, 4, 4),  # local deviation from rigid estimate in ZYX
-    n_iterations=1,  # template-refinement passes
-    correction_iterations=1,  # re-run NoRMCorre on the already corrected result
-    upsample_factor=10,  # subpixel phase-correlation precision
-    normalization=None,  # None or "phase"
-    n_jobs=2,  # parallelize over time frames
+    method="normcorre",  # dispatches to ZenReg's CaImAn-compatible NoRMCorre port
+    time_registration_mode="full_3d",  # full 3D+t local shift fields in ZYX
+    zreg=True,  # estimate and apply Z shifts via full 3D NoRMCorre
+    max_z_shifts=3,  # absolute correction shift limit in Z
+    max_xy_shifts=(6, 6),  # absolute correction shift limits in YX
+    phase_cross_correlation_upsample_factor=10,  # subpixel phase-correlation precision
+    phase_cross_correlation_normalization=None,  # None or "phase"
     transform_order=3,  # 3 matches CaImAn's cubic remap; use 1 for gentler intensity interpolation
-    block_size=4,  # Z slices warped per block
-    output_use_memmap=False,  # True writes registered output into OMIO/Zarr
-    output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
-    output_memmap_name="3d_t_trans_rot_all_center_normcorre_registered_zarr",  # output Zarr store name
+    nc_pw_rigid=True,  # approximate small rotations via local translations
+    nc_strides=(6, 48, 48),  # patch-grid stride in ZYX
+    nc_overlaps=(3, 24, 24),  # patch overlap in ZYX
+    nc_max_deviation_rigid=(1.5, 4, 4),  # local deviation from rigid estimate in ZYX
+    nc_n_iterations=1,  # template-refinement passes
+    nc_correction_iterations=1,  # re-run NoRMCorre on the already corrected result
+    nc_n_jobs=2,  # parallelize over time frames
+    nc_block_size=4,  # Z slices warped per block
+    nc_output_use_memmap=False,  # True writes registered output into OMIO/Zarr
+    nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
+    nc_output_memmap_name="3d_t_trans_rot_all_center_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
     return_details=True,
 )
@@ -1228,26 +1248,29 @@ print(
     )[:5]
 )
 
-registered_3d_t_trans_rot_all_offcenter, details_3d_t_trans_rot_all_offcenter = register_stack_normcorre(
+registered_3d_t_trans_rot_all_offcenter, details_3d_t_trans_rot_all_offcenter = register_stack(
     stack_3d_t_trans_rot_all_offcenter,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
     registration_stack=0,  # reference time point/template
-    is3d=True,  # full 3D+t local shift fields in ZYX
-    pw_rigid=True,  # approximate small rotations via local translations
-    strides=(6, 48, 48),  # patch-grid stride in ZYX
-    overlaps=(3, 24, 24),  # patch overlap in ZYX
-    max_shifts=(4, 8, 8),  # outside/offset centers can induce larger apparent shifts
-    max_deviation_rigid=(2, 5, 5),  # local deviation from rigid estimate in ZYX
-    n_iterations=1,  # template-refinement passes
-    correction_iterations=1,  # re-run NoRMCorre on the already corrected result
-    upsample_factor=10,  # subpixel phase-correlation precision
-    normalization=None,  # None or "phase"
-    n_jobs=2,  # parallelize over time frames
+    method="normcorre",  # dispatches to ZenReg's CaImAn-compatible NoRMCorre port
+    time_registration_mode="full_3d",  # full 3D+t local shift fields in ZYX
+    zreg=True,  # estimate and apply Z shifts via full 3D NoRMCorre
+    max_z_shifts=4,  # absolute correction shift limit in Z
+    max_xy_shifts=(8, 8),  # outside/offset centers can induce larger apparent shifts
+    phase_cross_correlation_upsample_factor=10,  # subpixel phase-correlation precision
+    phase_cross_correlation_normalization=None,  # None or "phase"
     transform_order=3,  # 3 matches CaImAn's cubic remap; use 1 for gentler intensity interpolation
-    block_size=4,  # Z slices warped per block
-    output_use_memmap=False,  # True writes registered output into OMIO/Zarr
-    output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
-    output_memmap_name="3d_t_trans_rot_all_offcenter_normcorre_registered_zarr",  # output Zarr store name
+    nc_pw_rigid=True,  # approximate small rotations via local translations
+    nc_strides=(6, 48, 48),  # patch-grid stride in ZYX
+    nc_overlaps=(3, 24, 24),  # patch overlap in ZYX
+    nc_max_deviation_rigid=(2, 5, 5),  # local deviation from rigid estimate in ZYX
+    nc_n_iterations=1,  # template-refinement passes
+    nc_correction_iterations=1,  # re-run NoRMCorre on the already corrected result
+    nc_n_jobs=2,  # parallelize over time frames
+    nc_block_size=4,  # Z slices warped per block
+    nc_output_use_memmap=False,  # True writes registered output into OMIO/Zarr
+    nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
+    nc_output_memmap_name="3d_t_trans_rot_all_offcenter_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
     return_details=True,
 )
@@ -1298,26 +1321,29 @@ print(
     )[:5]
 )
 
-registered_3d_t_trans_rot_all_outside, details_3d_t_trans_rot_all_outside = register_stack_normcorre(
+registered_3d_t_trans_rot_all_outside, details_3d_t_trans_rot_all_outside = register_stack(
     stack_3d_t_trans_rot_all_outside,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
     registration_stack=0,  # reference time point/template
-    is3d=True,  # full 3D+t local shift fields in ZYX
-    pw_rigid=True,  # approximate small rotations via local translations
-    strides=(6, 48, 48),  # patch-grid stride in ZYX
-    overlaps=(3, 24, 24),  # patch overlap in ZYX
-    max_shifts=(5, 10, 10),  # outside centers can induce larger apparent shifts
-    max_deviation_rigid=(2, 6, 6),  # local deviation from rigid estimate in ZYX
-    n_iterations=1,  # template-refinement passes
-    correction_iterations=1,  # re-run NoRMCorre on the already corrected result
-    upsample_factor=10,  # subpixel phase-correlation precision
-    normalization=None,  # None or "phase"
-    n_jobs=2,  # parallelize over time frames
+    method="normcorre",  # dispatches to ZenReg's CaImAn-compatible NoRMCorre port
+    time_registration_mode="full_3d",  # full 3D+t local shift fields in ZYX
+    zreg=True,  # estimate and apply Z shifts via full 3D NoRMCorre
+    max_z_shifts=5,  # absolute correction shift limit in Z
+    max_xy_shifts=(10, 10),  # outside centers can induce larger apparent shifts
+    phase_cross_correlation_upsample_factor=10,  # subpixel phase-correlation precision
+    phase_cross_correlation_normalization=None,  # None or "phase"
     transform_order=3,  # 3 matches CaImAn's cubic remap; use 1 for gentler intensity interpolation
-    block_size=4,  # Z slices warped per block
-    output_use_memmap=False,  # True writes registered output into OMIO/Zarr
-    output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
-    output_memmap_name="3d_t_trans_rot_all_outside_normcorre_registered_zarr",  # output Zarr store name
+    nc_pw_rigid=True,  # approximate small rotations via local translations
+    nc_strides=(6, 48, 48),  # patch-grid stride in ZYX
+    nc_overlaps=(3, 24, 24),  # patch overlap in ZYX
+    nc_max_deviation_rigid=(2, 6, 6),  # local deviation from rigid estimate in ZYX
+    nc_n_iterations=1,  # template-refinement passes
+    nc_correction_iterations=1,  # re-run NoRMCorre on the already corrected result
+    nc_n_jobs=2,  # parallelize over time frames
+    nc_block_size=4,  # Z slices warped per block
+    nc_output_use_memmap=False,  # True writes registered output into OMIO/Zarr
+    nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
+    nc_output_memmap_name="3d_t_trans_rot_all_outside_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
     return_details=True,
 )
