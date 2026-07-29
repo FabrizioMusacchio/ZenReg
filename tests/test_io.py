@@ -183,6 +183,9 @@ def test_save_stack_writes_registration_report_sidecars(tmp_path):
     assert csv_path.exists()
     assert yaml_path.exists()
     assert plot_path.exists()
-    assert "pearson_correlation" in csv_path.read_text(encoding="utf-8")
+    csv_text = csv_path.read_text(encoding="utf-8")
+    assert "pearson_correlation_before" in csv_text
+    assert "pearson_correlation_after" in csv_text
+    assert "pearson_correlation" in csv_text
     assert "registration_settings:" in yaml_path.read_text(encoding="utf-8")
     assert plot_path.stat().st_size > 0

@@ -769,6 +769,72 @@ def _project_zyx_to_yx(volume_zyx: np.ndarray, *, projection_method: str) -> np.
     return np.std(volume_zyx, axis=0)
 
 
+def _pearson_correlation_flat(template: np.ndarray, image: np.ndarray) -> float:
+    """Compute Pearson correlation for two registration-image vectors."""
+
+    template = np.asarray(template, dtype=np.float64).ravel()
+    image = np.asarray(image, dtype=np.float64).ravel()
+    template = template - np.mean(template)
+    image = image - np.mean(image)
+    denominator = float(np.linalg.norm(template) * np.linalg.norm(image))
+    if denominator == 0.0:
+        return float("nan")
+    return float(np.dot(template, image) / denominator)
+
+
+def _registration_correlation_image_for_frame(
+    stack,
+    *,
+    t: int,
+    registration_channel: int,
+    projection_range,
+    projection_method: str,
+    effective_time_registration_mode: str,
+) -> np.ndarray:
+    """Return one flattened frame image used for registration-correlation reporting."""
+
+    z_start, z_stop = normalize_zrange(projection_range, stack.shape[1], strict=True)
+    volume = np.asarray(stack[int(t), z_start:z_stop, int(registration_channel), :, :], dtype=np.float32)
+    if effective_time_registration_mode == "full_3d":
+        return volume.ravel()
+    projection = _project_zyx_to_yx(volume, projection_method=projection_method)
+    return np.asarray(projection, dtype=np.float32).ravel()
+
+
+def _compute_registration_frame_correlations(
+    stack,
+    *,
+    registration_channel: int,
+    registration_stack: int,
+    projection_range,
+    projection_method: str,
+    effective_time_registration_mode: str,
+) -> np.ndarray:
+    """Compute framewise template correlations without materializing all frames."""
+
+    registration_stack = int(np.clip(int(registration_stack), 0, stack.shape[0] - 1))
+    template = _registration_correlation_image_for_frame(
+        stack,
+        t=registration_stack,
+        registration_channel=registration_channel,
+        projection_range=projection_range,
+        projection_method=projection_method,
+        effective_time_registration_mode=effective_time_registration_mode,
+    )
+    correlations = np.empty(stack.shape[0], dtype=np.float32)
+    for t in range(stack.shape[0]):
+        image = _registration_correlation_image_for_frame(
+            stack,
+            t=t,
+            registration_channel=registration_channel,
+            projection_range=projection_range,
+            projection_method=projection_method,
+            effective_time_registration_mode=effective_time_registration_mode,
+        )
+        correlations[t] = _pearson_correlation_flat(template, image)
+    return correlations
+
+
 def _project_zyx_along_axis(
     volume_zyx: np.ndarray,
     *,
@@ -2037,6 +2103,7 @@ def _return_registration_result(
     time_reference_mode: str,
     transform_backend: str,
     transform_order: int,
+    pearson_correlations_before: np.ndarray | None,
     registration_settings: dict,
 ):
     """Return a backwards-compatible shift object for simple cases."""
@@ -2062,6 +2129,7 @@ def _return_registration_result(
         "time_reference_mode": time_reference_mode,
         "transform_backend": transform_backend,
         "transform_order": transform_order,
+        "pearson_correlations_before": pearson_correlations_before,
         **registration_settings,
     }
     if return_details:
@@ -2233,6 +2301,15 @@ def _register_stack_normcorre_from_main_wrapper(
     details["nc_shift_interpolation"] = nc_shift_interpolation
     details["nc_border_nan"] = nc_border_nan
     details["nc_n_jobs"] = int(nc_n_jobs)
+    if return_shifts or return_details:
+        details["pearson_correlations_before"] = _compute_registration_frame_correlations(
+            stack,
+            registration_channel=int(registration_channel),
+            registration_stack=int(registration_stack),
+            projection_range=projection_range,
+            projection_method=projection_method,
+            effective_time_registration_mode="full_3d" if is3d else "projection",
+        )
 
     if return_details:
         return registered, details
@@ -2399,6 +2476,15 @@ def _register_stack_rigid_3d_from_main_wrapper(
         "transform_backend": "rigid_3d",
         "transform_order": transform_order,
     }
+    if return_shifts or return_details:
+        details["pearson_correlations_before"] = _compute_registration_frame_correlations(
+            stack,
+            registration_channel=int(registration_channel),
+            registration_stack=int(registration_stack),
+            projection_range=projection_range,
+            projection_method=projection_method,
+            effective_time_registration_mode="full_3d",
+        )
     if return_details:
         return registered, details
     if return_shifts:
@@ -3153,6 +3239,18 @@ def register_stack(
         and not rotreg
         and not zero_clip
     )
+    pearson_correlations_before = None
+    if return_shifts or return_details:
+        _memory_mark(memory_tracker, "correlation_before:start")
+        pearson_correlations_before = _compute_registration_frame_correlations(
+            stack,
+            registration_channel=int(registration_channel),
+            registration_stack=int(registration_stack),
+            projection_range=zrange,
+            projection_method=projection_method,
+            effective_time_registration_mode=effective_time_registration_mode,
+        )
+        _memory_mark(memory_tracker, "correlation_before:end")
     result = _return_registration_result(
         registered,
         return_shifts=return_shifts,
@@ -3175,6 +3273,7 @@ def register_stack(
         time_reference_mode=time_reference_mode,
         transform_backend=transform_backend,
         transform_order=transform_order,
+        pearson_correlations_before=pearson_correlations_before,
         registration_settings=registration_settings,
     )
     _memory_mark(memory_tracker, "register_stack:end")

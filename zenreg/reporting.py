@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack, normalize_zrange
-from .registration import _project_zyx_to_yx
+from .registration import _compute_registration_frame_correlations
 
 SETTING_KEYS = (
     "registration_channel",
@@ -236,52 +236,28 @@ def _rotation_shifts_deg(details: dict[str, Any], time_count: int) -> np.ndarray
     return rotations
 
 
-def _pearson_correlation(template: np.ndarray, image: np.ndarray) -> float:
-    """Compute Pearson correlation robustly for flattened image data."""
-
-    template = np.asarray(template, dtype=np.float64).ravel()
-    image = np.asarray(image, dtype=np.float64).ravel()
-    template = template - np.mean(template)
-    image = image - np.mean(image)
-    denominator = float(np.linalg.norm(template) * np.linalg.norm(image))
-    if denominator == 0.0:
-        return float("nan")
-    return float(np.dot(template, image) / denominator)
-
-
-def _registration_image_for_correlation_frame(
-    registered_stack: np.ndarray,
-    details: dict[str, Any],
-    t: int,
-) -> tuple[np.ndarray, str]:
-    """Extract one registration image used for Pearson reporting."""
-
-    channel = int(details.get("registration_channel", 0))
-    projection_range = details.get("projection_range")
-    z_start, z_stop = normalize_zrange(projection_range, registered_stack.shape[1], strict=True)
-    volume = np.asarray(registered_stack[int(t), z_start:z_stop, channel, :, :], dtype=np.float32)
-
-    if details.get("effective_time_registration_mode") == "full_3d":
-        return volume.ravel(), f"full_3d z={z_start}:{z_stop}"
-
-    projection_method = str(details.get("projection_method", "max"))
-    projection = _project_zyx_to_yx(
-        volume,
-        projection_method=projection_method,
-    )
-    return np.asarray(projection, dtype=np.float32).ravel(), f"{projection_method} projection z={z_start}:{z_stop}"
-
-
 def _frame_correlations(registered_stack: np.ndarray, details: dict[str, Any]) -> np.ndarray:
     """Compute template-vs-registered Pearson correlations per time frame."""
 
-    registration_stack = int(details.get("registration_stack", 0))
-    registration_stack = int(np.clip(registration_stack, 0, registered_stack.shape[0] - 1))
-    template, _ = _registration_image_for_correlation_frame(registered_stack, details, registration_stack)
-    correlations = np.empty(registered_stack.shape[0], dtype=np.float32)
-    for t in range(registered_stack.shape[0]):
-        image, _ = _registration_image_for_correlation_frame(registered_stack, details, t)
-        correlations[t] = _pearson_correlation(template, image)
+    return _compute_registration_frame_correlations(
+        registered_stack,
+        registration_channel=int(details.get("registration_channel", 0)),
+        registration_stack=int(details.get("registration_stack", 0)),
+        projection_range=details.get("projection_range"),
+        projection_method=str(details.get("projection_method", "max")),
+        effective_time_registration_mode=str(details.get("effective_time_registration_mode", "projection")),
+    )
+
+
+def _pre_frame_correlations(details: dict[str, Any], time_count: int) -> np.ndarray:
+    """Return pre-registration correlations when stored in registration details."""
+
+    correlations = details.get("pearson_correlations_before")
+    if correlations is None:
+        return np.full(time_count, np.nan, dtype=np.float32)
+    correlations = np.asarray(correlations, dtype=np.float32)
+    if correlations.shape != (time_count,):
+        return np.full(time_count, np.nan, dtype=np.float32)
     return correlations
 
 
@@ -298,10 +274,20 @@ def _csv_value(value) -> str:
     return str(value)
 
 
+def _nan_stat(values: np.ndarray, reducer) -> float:
+    """Return a finite NaN-aware statistic or NaN for empty/all-NaN inputs."""
+
+    values = np.asarray(values, dtype=np.float32)
+    if values.size == 0 or not np.any(np.isfinite(values)):
+        return float("nan")
+    return float(reducer(values))
+
+
 def _write_shift_csv(
     path: Path,
     details: dict[str, Any],
-    correlations: np.ndarray,
+    correlations_after: np.ndarray,
+    correlations_before: np.ndarray,
     *,
     time_count: int,
 ) -> None:
@@ -319,6 +305,8 @@ def _write_shift_csv(
         "intra_shift_y",
         "intra_shift_x",
         "rotation_deg",
+        "pearson_correlation_before",
+        "pearson_correlation_after",
         "pearson_correlation",
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -336,7 +324,9 @@ def _write_shift_csv(
                     "intra_shift_y": "",
                     "intra_shift_x": "",
                     "rotation_deg": _csv_value(rotations[t]),
-                    "pearson_correlation": _csv_value(correlations[t]),
+                    "pearson_correlation_before": _csv_value(correlations_before[t]),
+                    "pearson_correlation_after": _csv_value(correlations_after[t]),
+                    "pearson_correlation": _csv_value(correlations_after[t]),
                 }
             )
 
@@ -359,7 +349,9 @@ def _write_shift_csv(
                         "intra_shift_y": _csv_value(intra_shifts[t, z, 0]),
                         "intra_shift_x": _csv_value(intra_shifts[t, z, 1]),
                         "rotation_deg": "",
-                        "pearson_correlation": _csv_value(correlations[t]),
+                        "pearson_correlation_before": _csv_value(correlations_before[t]),
+                        "pearson_correlation_after": _csv_value(correlations_after[t]),
+                        "pearson_correlation": _csv_value(correlations_after[t]),
                     }
                 )
 
@@ -436,7 +428,8 @@ def _write_summary_plot(
     path: Path,
     registered_stack: np.ndarray,
     details: dict[str, Any],
-    correlations: np.ndarray,
+    correlations_after: np.ndarray,
+    correlations_before: np.ndarray,
 ) -> None:
     """Write the shift/correlation summary plot."""
 
@@ -475,11 +468,21 @@ def _write_summary_plot(
         ax_rot.tick_params(axis="y", labelcolor="tab:red")
         ax_rot.legend(loc="upper right", fontsize=8)
 
-    ax_corr.plot(frames, correlations, marker="o", color="tab:purple")
+    if np.any(np.isfinite(correlations_before)):
+        ax_corr.plot(
+            frames,
+            correlations_before,
+            marker="o",
+            color="0.45",
+            alpha=0.75,
+            label="before",
+        )
+    ax_corr.plot(frames, correlations_after, marker="o", color="tab:purple", label="after")
     ax_corr.set_ylabel("Pearson r")
     ax_corr.set_xlabel("Frame")
     ax_corr.set_ylim(-1.05, 1.05)
     ax_corr.grid(True, alpha=0.25)
+    ax_corr.legend(loc="lower right", fontsize=8)
 
     annotation = _settings_annotation(details, registered_stack)
     fig.text(
@@ -502,7 +505,8 @@ def _settings_payload(
     output_image_path: Path,
     registered_stack: np.ndarray,
     details: dict[str, Any],
-    correlations: np.ndarray,
+    correlations_after: np.ndarray,
+    correlations_before: np.ndarray,
     report_paths: dict[str, Path],
 ) -> dict[str, Any]:
     """Build the YAML settings payload."""
@@ -514,8 +518,12 @@ def _settings_payload(
             "axes": CANONICAL_AXIS_ORDER,
             "registered_shape_tzcyx": tuple(int(v) for v in registered_stack.shape),
             "correlation_reference_frame": int(details.get("registration_stack", 0)),
-            "correlation_mean": float(np.nanmean(correlations)),
-            "correlation_min": float(np.nanmin(correlations)),
+            "correlation_mean": _nan_stat(correlations_after, np.nanmean),
+            "correlation_min": _nan_stat(correlations_after, np.nanmin),
+            "correlation_after_mean": _nan_stat(correlations_after, np.nanmean),
+            "correlation_after_min": _nan_stat(correlations_after, np.nanmin),
+            "correlation_before_mean": _nan_stat(correlations_before, np.nanmean),
+            "correlation_before_min": _nan_stat(correlations_before, np.nanmin),
             "csv": str(report_paths["csv"]),
             "plot": str(report_paths["plot"]),
         },
@@ -566,21 +574,24 @@ def write_registration_outputs(
         "plot": prefix.with_name(prefix.name + "_registration_summary.png"),
     }
 
-    correlations = _frame_correlations(registered_stack, details)
+    correlations_after = _frame_correlations(registered_stack, details)
+    correlations_before = _pre_frame_correlations(details, registered_stack.shape[0])
     _write_shift_csv(
         report_paths["csv"],
         details,
-        correlations,
+        correlations_after,
+        correlations_before,
         time_count=registered_stack.shape[0],
     )
-    _write_summary_plot(report_paths["plot"], registered_stack, details, correlations)
+    _write_summary_plot(report_paths["plot"], registered_stack, details, correlations_after, correlations_before)
     _write_yaml(
         report_paths["yaml"],
         _settings_payload(
             output_image_path=output_image_path,
             registered_stack=registered_stack,
             details=details,
-            correlations=correlations,
+            correlations_after=correlations_after,
+            correlations_before=correlations_before,
             report_paths=report_paths,
         ),
     )

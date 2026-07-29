@@ -26,7 +26,7 @@ from zenreg import (
 )
 from zenreg.synthetic import (
     create_2d_motion_distorted_stack,
-    create_2d_time_rotation_motion_distorted_stack,
+    create_2d_time_translation_rotation_motion_distorted_stack,
 )
 # %% SETUP
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -67,16 +67,16 @@ def prepare_translation_input(*, time_count: int, shape_yx: tuple[int, int], reu
 
 
 def prepare_rotation_input(*, time_count: int, shape_yx: tuple[int, int], reuse: bool) -> Path:
-    """Create or reuse a synthetic 2D+t translation+rotation input OME-TIFF."""
+    """Create or reuse a feature-rich synthetic 2D+t translation+rotation input OME-TIFF."""
 
-    path = INPUT_DIR / f"synthetic_2d_t_rotation_T{time_count}_Y{shape_yx[0]}_X{shape_yx[1]}.ome.tif"
+    path = INPUT_DIR / f"synthetic_2d_t_puncta_translation_rotation_T{time_count}_Y{shape_yx[0]}_X{shape_yx[1]}.ome.tif"
     if reuse and path.exists():
         return path
-    stack, _, _ = create_2d_time_rotation_motion_distorted_stack(
+    stack, _, _ = create_2d_time_translation_rotation_motion_distorted_stack(
         time_count=time_count,
         channel_count=2,
         shape_yx=shape_yx,
-        noise_sigma=0.02,
+        noise_sigma=0.006,
         random_state=2702,
     )
     print(f"Created rotation input: shape={stack.shape}, dtype={stack.dtype}, size={stack_size_mb(stack):.1f} MB")
@@ -142,6 +142,8 @@ def run_profiled_case(
             zero_clip_mode="auto",
             zero_clip_mask_strategy="relaxed" if rotreg else "auto",
             zero_clip_mask_min_fraction=0.5,
+            max_xy_shifts=(16, 16) if rotreg else None,
+            max_rot_shifts=12 if rotreg else None,
             transform_backend="skimage",
             transform_order=1,
             n_jobs=n_jobs,
@@ -233,7 +235,7 @@ def main() -> None:
         cases.append(("standard_translation_memmap", input_path, False, False))
     if args.case in {"rotation", "all"}:
         input_path = prepare_rotation_input(
-            time_count=max(8, int(args.time_count) // 2),
+            time_count=int(args.time_count),
             shape_yx=shape_yx,
             reuse=bool(args.reuse_input),
         )
