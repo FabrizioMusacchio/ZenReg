@@ -140,6 +140,8 @@ def run_profiled_case(
             rotreg=rotreg,
             zero_clip=zero_clip,
             zero_clip_mode="auto",
+            zero_clip_mask_strategy="relaxed" if rotreg else "auto",
+            zero_clip_mask_min_fraction=0.5,
             transform_backend="skimage",
             transform_order=1,
             n_jobs=n_jobs,
