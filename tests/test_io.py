@@ -166,6 +166,10 @@ def test_save_stack_writes_registration_report_sidecars(tmp_path):
         return_shifts=True,
         return_details=True,
     )
+    details["rotation_shifts_zyx_deg"] = np.asarray(
+        [[0.0, 0.0, 0.0], [1.0, -2.0, 3.0]],
+        dtype=np.float32,
+    )
 
     output_path = save_stack(
         tmp_path / "registered.ome.tif",
@@ -187,5 +191,8 @@ def test_save_stack_writes_registration_report_sidecars(tmp_path):
     assert "pearson_correlation_before" in csv_text
     assert "pearson_correlation_after" in csv_text
     assert "pearson_correlation" in csv_text
+    assert "rotation_z_deg" in csv_text
+    assert "rotation_y_deg" in csv_text
+    assert "rotation_x_deg" in csv_text
     assert "registration_settings:" in yaml_path.read_text(encoding="utf-8")
     assert plot_path.stat().st_size > 0

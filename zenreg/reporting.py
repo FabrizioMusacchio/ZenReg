@@ -224,16 +224,22 @@ def _time_shifts_zyx(details: dict[str, Any], time_count: int) -> np.ndarray:
     return shifts
 
 
-def _rotation_shifts_deg(details: dict[str, Any], time_count: int) -> np.ndarray:
-    """Return per-frame rotation corrections with missing values as NaN."""
+def _rotation_shift_series_deg(details: dict[str, Any], time_count: int) -> tuple[np.ndarray, list[str]]:
+    """Return per-frame rotation corrections and axis labels."""
+
+    rotations_zyx = details.get("rotation_shifts_zyx_deg")
+    if rotations_zyx is not None:
+        rotations_zyx = np.asarray(rotations_zyx, dtype=np.float32)
+        if rotations_zyx.shape == (time_count, 3):
+            return rotations_zyx, ["rotation_z", "rotation_y", "rotation_x"]
 
     rotations = details.get("rotation_shifts_deg")
     if rotations is None:
-        return np.full(time_count, np.nan, dtype=np.float32)
+        return np.empty((time_count, 0), dtype=np.float32), []
     rotations = np.asarray(rotations, dtype=np.float32)
     if rotations.shape != (time_count,):
-        return np.full(time_count, np.nan, dtype=np.float32)
-    return rotations
+        return np.empty((time_count, 0), dtype=np.float32), []
+    return rotations[:, None], ["rotation_z"]
 
 
 def _frame_correlations(registered_stack: np.ndarray, details: dict[str, Any]) -> np.ndarray:
@@ -294,7 +300,7 @@ def _write_shift_csv(
     """Write frame-wise and optional intra-stack shifts to CSV."""
 
     shifts_zyx = _time_shifts_zyx(details, time_count)
-    rotations = _rotation_shifts_deg(details, time_count)
+    rotations, _ = _rotation_shift_series_deg(details, time_count)
     fieldnames = [
         "scope",
         "frame",
@@ -304,6 +310,9 @@ def _write_shift_csv(
         "shift_x",
         "intra_shift_y",
         "intra_shift_x",
+        "rotation_z_deg",
+        "rotation_y_deg",
+        "rotation_x_deg",
         "rotation_deg",
         "pearson_correlation_before",
         "pearson_correlation_after",
@@ -323,7 +332,10 @@ def _write_shift_csv(
                     "shift_x": _csv_value(shifts_zyx[t, 2]),
                     "intra_shift_y": "",
                     "intra_shift_x": "",
-                    "rotation_deg": _csv_value(rotations[t]),
+                    "rotation_z_deg": _csv_value(rotations[t, 0]) if rotations.shape[1] >= 1 else "",
+                    "rotation_y_deg": _csv_value(rotations[t, 1]) if rotations.shape[1] >= 2 else "",
+                    "rotation_x_deg": _csv_value(rotations[t, 2]) if rotations.shape[1] >= 3 else "",
+                    "rotation_deg": _csv_value(rotations[t, 0]) if rotations.shape[1] >= 1 else "",
                     "pearson_correlation_before": _csv_value(correlations_before[t]),
                     "pearson_correlation_after": _csv_value(correlations_after[t]),
                     "pearson_correlation": _csv_value(correlations_after[t]),
@@ -348,6 +360,9 @@ def _write_shift_csv(
                         "shift_x": "",
                         "intra_shift_y": _csv_value(intra_shifts[t, z, 0]),
                         "intra_shift_x": _csv_value(intra_shifts[t, z, 1]),
+                        "rotation_z_deg": "",
+                        "rotation_y_deg": "",
+                        "rotation_x_deg": "",
                         "rotation_deg": "",
                         "pearson_correlation_before": _csv_value(correlations_before[t]),
                         "pearson_correlation_after": _csv_value(correlations_after[t]),
@@ -438,7 +453,7 @@ def _write_summary_plot(
     time_count = registered_stack.shape[0]
     frames = np.arange(time_count)
     shifts_zyx = _time_shifts_zyx(details, time_count)
-    rotations = _rotation_shifts_deg(details, time_count)
+    rotations, rotation_labels = _rotation_shift_series_deg(details, time_count)
 
     fig, (ax_shift, ax_corr) = plt.subplots(
         2,
@@ -456,9 +471,18 @@ def _write_summary_plot(
     ax_shift.grid(True, alpha=0.25)
     ax_shift.legend(loc="upper left", ncols=3, fontsize=8)
 
-    if np.any(np.isfinite(rotations)):
+    if rotations.shape[1] > 0 and np.any(np.isfinite(rotations)):
         ax_rot = ax_shift.twinx()
-        ax_rot.plot(frames, rotations, marker="s", label="rotation", color="tab:red", alpha=0.85)
+        rotation_colors = ("tab:red", "tab:pink", "tab:brown")
+        for axis_index, label in enumerate(rotation_labels):
+            ax_rot.plot(
+                frames,
+                rotations[:, axis_index],
+                marker="s",
+                label=label,
+                color=rotation_colors[axis_index % len(rotation_colors)],
+                alpha=0.75,
+            )
         max_rot = details.get("max_rot_shifts")
         if max_rot is not None:
             max_rot = float(max_rot)
