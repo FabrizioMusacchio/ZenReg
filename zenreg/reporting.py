@@ -36,10 +36,34 @@ SETTING_KEYS = (
     "max_xy_shifts",
     "max_z_shifts",
     "max_rot_shifts",
+    "max_shifts",
+    "max_deviation_rigid",
+    "strides",
+    "overlaps",
+    "patch_grid_shape",
+    "upsample_factor",
+    "gSig_filt",
+    "min_mov",
+    "add_to_movie",
+    "nonneg_movie",
+    "n_iterations",
+    "correction_iterations",
+    "niter_rig",
+    "template_init_mode",
+    "template_update_method",
+    "splits",
+    "shift_interpolation",
+    "n_jobs",
+    "output_use_memmap",
+    "output_memmap_folder",
+    "output_memmap_name",
     "phase_cross_correlation_upsample_factor",
     "phase_cross_correlation_normalization",
     "transform_backend",
     "transform_order",
+    "transform_mode",
+    "transform_cval",
+    "border_nan",
     "zero_clip",
     "zero_clip_mode",
     "zero_clip_mask_threshold",
@@ -319,6 +343,12 @@ def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) 
 
     max_xy = details.get("max_xy_shifts")
     max_z = details.get("max_z_shifts")
+    max_shifts = details.get("max_shifts")
+    if max_xy is None and max_shifts is not None:
+        max_shifts_list = list(max_shifts)
+        max_xy = max_shifts_list[-2:] if len(max_shifts_list) >= 2 else None
+    if max_z is None and max_shifts is not None and len(list(max_shifts)) == 3:
+        max_z = list(max_shifts)[0]
     max_rot = details.get("max_rot_shifts")
     return "\n".join(
         [
@@ -346,6 +376,10 @@ def _add_shift_limits(ax_shift, details: dict[str, Any]) -> None:
     """Draw configured shift-limit guide lines."""
 
     max_xy = details.get("max_xy_shifts")
+    max_shifts = details.get("max_shifts")
+    if max_xy is None and max_shifts is not None:
+        max_shifts_list = list(max_shifts)
+        max_xy = max_shifts_list[-2:] if len(max_shifts_list) >= 2 else None
     if max_xy is not None:
         max_y, max_x = [float(v) for v in max_xy]
         ax_shift.axhline(max_y, color="tab:blue", linestyle="--", linewidth=0.8, alpha=0.45)
@@ -354,6 +388,8 @@ def _add_shift_limits(ax_shift, details: dict[str, Any]) -> None:
         ax_shift.axhline(-max_x, color="tab:orange", linestyle="--", linewidth=0.8, alpha=0.45)
 
     max_z = details.get("max_z_shifts")
+    if max_z is None and max_shifts is not None and len(list(max_shifts)) == 3:
+        max_z = list(max_shifts)[0]
     if max_z is not None:
         max_z = float(max_z)
         ax_shift.axhline(max_z, color="tab:green", linestyle="--", linewidth=0.8, alpha=0.45)

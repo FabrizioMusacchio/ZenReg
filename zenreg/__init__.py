@@ -17,6 +17,7 @@ from .io import (
     save_stack,
     update_stack_metadata,
 )
+from .normcorre import register_stack_normcorre
 from .registration import correct_intra_stack_z_drift, register_stack
 from .reporting import write_registration_outputs
 
@@ -28,6 +29,7 @@ __all__ = [
     "create_stack_metadata",
     "load_stack",
     "max_z_project",
+    "register_stack_normcorre",
     "register_stack",
     "save_stack",
     "update_stack_metadata",
