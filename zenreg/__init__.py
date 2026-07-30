@@ -8,6 +8,7 @@ Author: Fabrizio Musacchio
 Date: June 2026
 """
 
+from .batch import BatchImageRecord, DEFAULT_IMAGE_EXTENSIONS, iter_bids_like_image_files
 from .compute import available_cpu_count, print_available_compute
 from .filters import apply_filters, max_z_project, z_project
 from .io import (
@@ -47,12 +48,15 @@ from .tutorial import (
 __all__ = [
     "apply_filters",
     "available_cpu_count",
+    "BatchImageRecord",
     "cleanup_omio_cache",
     "correct_intra_stack_z_drift",
     "create_empty_stack",
     "create_stack_metadata",
+    "DEFAULT_IMAGE_EXTENSIONS",
     "crop_stack",
     "load_stack",
+    "iter_bids_like_image_files",
     "load_csv_table",
     "load_expected_rigid_corrections",
     "load_expected_rigid_z_rotation",

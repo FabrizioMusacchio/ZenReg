@@ -1432,6 +1432,82 @@ def _write_3d_slice_shift_table(
     return path
 
 
+def write_batch_example_project(
+    project_root: str | Path,
+    *,
+    subject_ids: tuple[str, ...] = ("ID000001", "ID000002"),
+    experiment_tags: tuple[str, ...] = ("TP000", "TP001"),
+    overwrite: bool = True,
+) -> dict[str, str]:
+    """
+    Write a small BIDS-like synthetic project for batch-processing tutorials.
+
+    The generated folder tree follows the simple pattern used in the ZenReg
+    batch tutorial::
+
+        project_root/
+          ID000001/
+            TP000/
+              image_01.ome.tif
+              image_01_time_shifts_gt.csv
+
+    Every image is a two-channel ``TZCYX`` 2D+t OME-TIFF with global XY motion.
+    The corresponding GT table is written next to the image.
+
+    Parameters
+    ----------
+    project_root : str or pathlib.Path
+        Destination root folder.
+    subject_ids, experiment_tags : tuple[str, ...], optional
+        Subject and experiment folder names to create.
+    overwrite : bool, optional
+        If True, existing output images are overwritten by OMIO.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping from written image/GT labels to file paths.
+    """
+
+    root = Path(project_root)
+    root.mkdir(parents=True, exist_ok=True)
+    paths: dict[str, str] = {}
+    random_state = 101
+    for subject_index, subject_id in enumerate(subject_ids):
+        for experiment_index, experiment_tag in enumerate(experiment_tags):
+            experiment_dir = root / subject_id / experiment_tag
+            experiment_dir.mkdir(parents=True, exist_ok=True)
+            stack, shifts_yx = create_2d_motion_distorted_stack(
+                time_count=8,
+                channel_count=2,
+                shape_yx=(96, 96),
+                noise_sigma=0.025,
+                random_state=random_state + subject_index * 17 + experiment_index * 5,
+            )
+            annotations = {
+                "ZenReg_SyntheticDataset": "batch_2d_t_xy",
+                "ZenReg_RegistrationTarget": "Batch tutorial 2D+t global XY time registration",
+                "ZenReg_SubjectID": subject_id,
+                "ZenReg_ExperimentTag": experiment_tag,
+                "ZenReg_TimeShiftGT": "image_01_time_shifts_gt.csv",
+            }
+            metadata = create_stack_metadata(stack, annotations=annotations, verbose=False)
+            image_path = save_stack(
+                experiment_dir / "image_01.ome.tif",
+                stack,
+                metadata=metadata,
+                overwrite=overwrite,
+            )
+            gt_path = _write_time_shift_table(
+                experiment_dir / "image_01_time_shifts_gt.csv",
+                shifts_yx,
+            )
+            key = f"{subject_id}_{experiment_tag}"
+            paths[f"{key}_image"] = str(image_path)
+            paths[f"{key}_time_gt_csv"] = str(gt_path)
+    return paths
+
+
 def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
     """
     Write the default ZenReg synthetic example datasets.
