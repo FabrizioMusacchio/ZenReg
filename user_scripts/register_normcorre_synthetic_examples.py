@@ -241,7 +241,6 @@ expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, regis
 print(f"2D+t global XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
 maybe_open_in_napari(stack_2d_t_xy, metadata_2d_t_xy, fname="2D+t global XY", open_in_napari=OPEN_IN_NAPARI)
 
-
 registered_2d_t_xy_phase, details_2d_t_xy_phase = register_stack(
     stack_2d_t_xy,
     registration_channel=0,  # channel used for global phase-cross shift estimation

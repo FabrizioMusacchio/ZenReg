@@ -410,6 +410,7 @@ def plot_normcorre_patch_overlay(
         )
     output_path = output_dir / output_name
 
+    import matplotlib.lines as mlines
     import matplotlib.patches as patches
     import matplotlib.pyplot as plt
 
@@ -423,6 +424,42 @@ def plot_normcorre_patch_overlay(
 
     fig, ax = plt.subplots(figsize=(8, 8), constrained_layout=True)
     ax.imshow(projection, cmap="gray", vmin=vmin, vmax=vmax)
+
+    y_intervals = sorted({(y_slice.start, y_slice.stop) for y_slice, _ in patch_grid.slices})
+    x_intervals = sorted({(x_slice.start, x_slice.stop) for _, x_slice in patch_grid.slices})
+
+    def _adjacent_overlaps(intervals):
+        for previous, current in zip(intervals[:-1], intervals[1:]):
+            start = max(previous[0], current[0])
+            stop = min(previous[1], current[1])
+            if stop > start:
+                yield start, stop
+
+    for overlap_start, overlap_stop in _adjacent_overlaps(x_intervals):
+        ax.add_patch(
+            patches.Rectangle(
+                (overlap_start, -0.5),
+                overlap_stop - overlap_start,
+                y_count,
+                facecolor="white",
+                edgecolor="none",
+                alpha=0.22,
+                zorder=1,
+            )
+        )
+    for overlap_start, overlap_stop in _adjacent_overlaps(y_intervals):
+        ax.add_patch(
+            patches.Rectangle(
+                (-0.5, overlap_start),
+                x_count,
+                overlap_stop - overlap_start,
+                facecolor="white",
+                edgecolor="none",
+                alpha=0.22,
+                zorder=1,
+            )
+        )
+
     for y_slice, x_slice in patch_grid.slices:
         rect = patches.Rectangle(
             (x_slice.start, y_slice.start),
@@ -430,21 +467,23 @@ def plot_normcorre_patch_overlay(
             y_slice.stop - y_slice.start,
             fill=False,
             edgecolor="tab:orange",
-            linewidth=1.0,
-            alpha=0.75,
+            linewidth=1.35,
+            alpha=0.9,
+            zorder=3,
         )
         ax.add_patch(rect)
     for center_y in patch_grid.centers_by_axis[0]:
-        ax.axhline(float(center_y), color="tab:cyan", linewidth=0.6, alpha=0.45)
+        ax.axhline(float(center_y), color="tab:cyan", linewidth=1.1, alpha=0.65, zorder=2)
     for center_x in patch_grid.centers_by_axis[1]:
-        ax.axvline(float(center_x), color="tab:cyan", linewidth=0.6, alpha=0.45)
+        ax.axvline(float(center_x), color="tab:cyan", linewidth=1.1, alpha=0.65, zorder=2)
     ax.scatter(
         np.repeat(patch_grid.centers_by_axis[1], len(patch_grid.centers_by_axis[0])),
         np.tile(patch_grid.centers_by_axis[0], len(patch_grid.centers_by_axis[1])),
-        s=10,
+        s=18,
         color="tab:cyan",
-        alpha=0.75,
+        alpha=0.85,
         linewidths=0,
+        zorder=4,
     )
     annotation = [
         f"strides_yx={strides_yx} overlaps_yx={overlaps_yx}",
@@ -473,6 +512,30 @@ def plot_normcorre_patch_overlay(
     ax.set_ylim(y_count - 0.5, -0.5)
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
+    legend_handles = [
+        patches.Patch(facecolor="white", edgecolor="none", alpha=0.22, label="overlap region"),
+        patches.Patch(facecolor="none", edgecolor="tab:orange", linewidth=1.35, label="patch footprint"),
+        mlines.Line2D(
+            [],
+            [],
+            color="tab:cyan",
+            marker="o",
+            linestyle="-",
+            linewidth=1.1,
+            markersize=4,
+            alpha=0.85,
+            label="patch centers",
+        ),
+    ]
+    ax.legend(
+        handles=legend_handles,
+        loc="lower right",
+        fontsize=8,
+        framealpha=0.72,
+        facecolor="black",
+        edgecolor="none",
+        labelcolor="white",
+    )
     fig.savefig(output_path, dpi=int(dpi))
     if show:
         plt.show()
