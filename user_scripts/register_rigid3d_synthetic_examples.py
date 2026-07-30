@@ -28,14 +28,21 @@ os.environ.setdefault("MPLCONFIGDIR", str(SCRIPT_CACHE_DIR / "matplotlib"))
 os.environ.setdefault("NUMBA_CACHE_DIR", str(SCRIPT_CACHE_DIR / "numba"))
 os.environ.setdefault("XDG_CACHE_HOME", str(SCRIPT_CACHE_DIR / "xdg-cache"))
 
-import matplotlib.pyplot as plt
-import numpy as np
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from zenreg import crop_stack, load_stack, print_available_compute, register_stack, save_stack, z_project
+from zenreg import (
+    crop_stack,
+    load_expected_rigid_corrections,
+    load_stack,
+    maybe_open_in_napari,
+    print_available_compute,
+    print_rigid_comparison,
+    register_stack,
+    save_stack,
+    show_before_after,
+)
 from zenreg.synthetic import write_example_dataset
 
 # %% DEFINE INPUT AND OUTPUT PATHS
@@ -54,125 +61,6 @@ GT_3D_RIGID_POINTS_PATH = EXAMPLE_DIR / "synthetic_3d_t_rigid_points_rigid_trans
 if not STACK_3D_RIGID_SIMPLEITK_PATH.exists() or not STACK_3D_RIGID_POINTS_PATH.exists():
     write_example_dataset(EXAMPLE_DIR)
 
-# %% SMALL HELPERS FOR GT COMPARISON AND VISUAL CHECKS
-def _load_csv(path: Path) -> np.ndarray:
-    """Load a GT CSV as a structured numpy table."""
-
-    return np.genfromtxt(path, delimiter=",", names=True)
-
-
-def load_expected_rigid_corrections(path: Path, *, registration_stack: int = 0) -> tuple[np.ndarray, np.ndarray]:
-    """Load expected correction translations and rotations from a 3D rigid GT table."""
-
-    table = _load_csv(path)
-    expected_shifts_zyx = np.column_stack(
-        [
-            table[f"expected_registration_shift_z_ref_t{registration_stack}"],
-            table[f"expected_registration_shift_y_ref_t{registration_stack}"],
-            table[f"expected_registration_shift_x_ref_t{registration_stack}"],
-        ]
-    ).astype(np.float32)
-    expected_rotations_zyx_deg = np.column_stack(
-        [
-            table[f"expected_registration_rotation_z_deg_ref_t{registration_stack}"],
-            table[f"expected_registration_rotation_y_deg_ref_t{registration_stack}"],
-            table[f"expected_registration_rotation_x_deg_ref_t{registration_stack}"],
-        ]
-    ).astype(np.float32)
-    return expected_shifts_zyx, expected_rotations_zyx_deg
-
-
-def print_rigid_comparison(
-    title: str,
-    details: dict,
-    expected_shifts_zyx: np.ndarray,
-    expected_rotations_zyx_deg: np.ndarray,
-) -> None:
-    """Print detected-vs-GT rigid registration summaries."""
-
-    detected_shifts = np.asarray(details["time_shifts_zyx"], dtype=np.float32)
-    detected_rotations = np.asarray(details["rotation_shifts_zyx_deg"], dtype=np.float32)
-    shift_delta = detected_shifts - expected_shifts_zyx
-    rotation_delta = detected_rotations - expected_rotations_zyx_deg
-
-    print(title)
-    print(f"  backend: {details['rigid_3d_backend']}")
-    print(f"  shift mean abs error [z, y, x]: {np.mean(np.abs(shift_delta), axis=0)}")
-    print(f"  shift max abs error  [z, y, x]: {np.max(np.abs(shift_delta), axis=0)}")
-    print(f"  rot mean abs error   [z, y, x] deg: {np.mean(np.abs(rotation_delta), axis=0)}")
-    print(f"  rot max abs error    [z, y, x] deg: {np.max(np.abs(rotation_delta), axis=0)}")
-    print("  first rows [detected shifts..., expected shifts..., detected rotations..., expected rotations...]:")
-    print(
-        np.column_stack(
-            [
-                detected_shifts[:5],
-                expected_shifts_zyx[:5],
-                detected_rotations[:5],
-                expected_rotations_zyx_deg[:5],
-            ]
-        )
-    )
-
-
-def show_before_after(
-    raw_stack,
-    registered_stack,
-    *,
-    title: str,
-    channel: int = 0,
-    moving_time: int = 1,
-    projection_method: str = "max",
-) -> None:
-    """Show raw and registered projection residuals."""
-
-    raw_t0 = z_project(raw_stack[0:1, :, channel : channel + 1, :, :], projection_method=projection_method)[0, 0, 0]
-    raw_ti = z_project(
-        raw_stack[moving_time : moving_time + 1, :, channel : channel + 1, :, :],
-        projection_method=projection_method,
-    )[0, 0, 0]
-    reg_t0 = z_project(
-        registered_stack[0:1, :, channel : channel + 1, :, :],
-        projection_method=projection_method,
-    )[0, 0, 0]
-    reg_ti = z_project(
-        registered_stack[moving_time : moving_time + 1, :, channel : channel + 1, :, :],
-        projection_method=projection_method,
-    )[0, 0, 0]
-
-    raw_diff = raw_ti - raw_t0
-    reg_diff = reg_ti - reg_t0
-    max_abs = max(float(np.max(np.abs(raw_diff))), float(np.max(np.abs(reg_diff))), 1e-6)
-
-    fig, axes = plt.subplots(2, 3, figsize=(10, 6), constrained_layout=True)
-    for ax, image, label, cmap in [
-        (axes[0, 0], raw_t0, "raw t=0", "gray"),
-        (axes[0, 1], raw_ti, f"raw t={moving_time}", "gray"),
-        (axes[0, 2], raw_diff, f"raw t{moving_time} - t0", "bwr"),
-        (axes[1, 0], reg_t0, "registered t=0", "gray"),
-        (axes[1, 1], reg_ti, f"registered t={moving_time}", "gray"),
-        (axes[1, 2], reg_diff, f"registered t{moving_time} - t0", "bwr"),
-    ]:
-        if cmap == "bwr":
-            ax.imshow(image, cmap=cmap, vmin=-max_abs, vmax=max_abs)
-        else:
-            ax.imshow(image, cmap=cmap)
-        ax.set_title(label)
-        ax.axis("off")
-    fig.suptitle(title)
-    if plt.get_backend().lower() == "agg":
-        plt.close(fig)
-    else:
-        plt.show()
-
-
-def maybe_open_in_napari(stack, metadata, *, fname: str) -> None:
-    """Optionally open a stack in Napari for manual inspection."""
-
-    if OPEN_IN_NAPARI:
-        import omio as om
-
-        om.open_in_napari(stack, metadata, fname=fname)
-
 
 # %% 1) DENSE 3D+t: SIMPLEITK FULL 6-DOF RIGID REGISTRATION
 stack_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk = load_stack(
@@ -184,7 +72,7 @@ expected_shifts_3d_rigid_simpleitk, expected_rotations_3d_rigid_simpleitk = load
     registration_stack=0,
 )
 print(f"Dense SimpleITK stack shape: {stack_3d_rigid_simpleitk.shape} (TZCYX)")
-maybe_open_in_napari(stack_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk, fname="Dense 3D rigid raw")
+maybe_open_in_napari(stack_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk, fname="Dense 3D rigid raw", open_in_napari=OPEN_IN_NAPARI)
 
 registered_3d_rigid_simpleitk, details_3d_rigid_simpleitk = register_stack(
     stack_3d_rigid_simpleitk,
@@ -243,6 +131,7 @@ maybe_open_in_napari(
     registered_3d_rigid_simpleitk,
     metadata_3d_rigid_simpleitk,
     fname="Dense 3D rigid registered SimpleITK",
+    open_in_napari=OPEN_IN_NAPARI,
 )
 
 print(f"Shape of raw dense stack:        {stack_3d_rigid_simpleitk.shape} (TZCYX)")
@@ -257,7 +146,7 @@ expected_shifts_3d_rigid_points, expected_rotations_3d_rigid_points = load_expec
     registration_stack=0,
 )
 print(f"Sparse points stack shape: {stack_3d_rigid_points.shape} (TZCYX)")
-maybe_open_in_napari(stack_3d_rigid_points, metadata_3d_rigid_points, fname="Sparse 3D puncta raw")
+maybe_open_in_napari(stack_3d_rigid_points, metadata_3d_rigid_points, fname="Sparse 3D puncta raw", open_in_napari=OPEN_IN_NAPARI)
 
 registered_3d_rigid_points, details_3d_rigid_points = register_stack(
     stack_3d_rigid_points,
@@ -313,6 +202,7 @@ maybe_open_in_napari(
     registered_3d_rigid_points,
     metadata_3d_rigid_points,
     fname="Sparse 3D puncta registered points",
+    open_in_napari=OPEN_IN_NAPARI,
 )
 # %% 3) SPARSE 3D+t PUNCTA: SIMPLEITK FULL 6-DOF RIGID REGISTRATION
 stack_3d_rigid_points_simpleitk, metadata_3d_rigid_points_simpleitk = load_stack(
@@ -328,6 +218,7 @@ maybe_open_in_napari(
     stack_3d_rigid_points_simpleitk,
     metadata_3d_rigid_points_simpleitk,
     fname="Sparse 3D puncta raw",
+    open_in_napari=OPEN_IN_NAPARI,
 )
 
 registered_3d_rigid_points_simpleitk, details_3d_rigid_points_simpleitk = register_stack(
@@ -387,5 +278,6 @@ maybe_open_in_napari(
     registered_3d_rigid_points_simpleitk,
     metadata_3d_rigid_points_simpleitk,
     fname="Sparse 3D puncta registered SimpleITK",
+    open_in_napari=OPEN_IN_NAPARI,
 )
 # %% END

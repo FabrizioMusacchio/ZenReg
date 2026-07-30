@@ -37,7 +37,6 @@ if not os.access(Path.home(), os.W_OK):
     script_home.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("HOME", str(script_home))
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -45,12 +44,22 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from zenreg import (
+    load_csv_table,
+    load_expected_time_registration_rotations,
+    load_expected_time_registration_shifts,
     load_stack,
+    maybe_open_in_napari,
     plot_normcorre_patch_overlay,
+    print_caiman_patch_summary,
     print_available_compute,
+    print_local_patch_summary,
+    print_residual_mae_summary,
+    print_shift_comparison,
     register_stack,
     save_stack,
-    z_project,
+    show_before_after,
+    show_residual_comparison,
+    show_residual_comparison_multi,
 )
 from zenreg.synthetic import write_example_dataset
 
@@ -84,61 +93,13 @@ GT_3D_T_TRANS_ROT_ALL_OFFCENTER_PATH = EXAMPLE_DIR / "synthetic_3d_t_trans_rot_a
 GT_3D_T_TRANS_ROT_ALL_OUTSIDE_PATH = EXAMPLE_DIR / "synthetic_3d_t_trans_rot_all_outside_rigid_transform_gt.csv"
 
 OPEN_IN_NAPARI = False
+# OPEN_IN_NAPARI = True
 
 if not STACK_2D_T_LOCAL_PATH.exists() or not STACK_2D_T_PIECEWISE_XY_PATH.exists():
     print("Synthetic benchmark data missing; creating them now.")
     write_example_dataset(EXAMPLE_DIR)
 
-# %% HELPERS
-def _load_csv(path: Path) -> np.ndarray:
-    """Load a GT CSV as a structured numpy table."""
-
-    return np.genfromtxt(path, delimiter=",", names=True)
-
-def load_expected_time_registration_shifts(
-    path: Path,
-    *,
-    registration_stack: int = 0,
-    axes: str = "yx",
-) -> np.ndarray:
-    """Load expected correction shifts from a synthetic GT time-shift table."""
-
-    table = _load_csv(path)
-    columns = [f"expected_registration_shift_{axis}_ref_t{registration_stack}" for axis in axes]
-    return np.column_stack([table[column] for column in columns]).astype(np.float32)
-
-def load_expected_time_registration_rotations(path: Path, *, registration_stack: int = 0) -> np.ndarray:
-    """Load expected rotation corrections from a synthetic GT table."""
-
-    table = _load_csv(path)
-    column = f"expected_registration_rotation_deg_ref_t{registration_stack}"
-    return np.asarray(table[column], dtype=np.float32)
-
-def print_shift_comparison(name: str, estimated_shifts: np.ndarray, expected_shifts: np.ndarray) -> None:
-    """Print a compact comparison between estimated correction shifts and GT."""
-
-    estimated_shifts = np.asarray(estimated_shifts, dtype=np.float32)
-    expected_shifts = np.asarray(expected_shifts, dtype=np.float32)
-    delta = estimated_shifts - expected_shifts
-    flat_estimated = estimated_shifts.reshape(-1, estimated_shifts.shape[-1])
-    flat_expected = expected_shifts.reshape(-1, expected_shifts.shape[-1])
-    flat_delta = delta.reshape(-1, delta.shape[-1])
-    print(f"{name}:")
-    print(f"  mean abs error: {np.mean(np.abs(flat_delta), axis=0)}")
-    print(f"  max abs error:  {np.max(np.abs(flat_delta), axis=0)}")
-    print("  first rows [estimated..., expected..., delta...]:")
-    print(np.column_stack([flat_estimated, flat_expected, flat_delta])[:5])
-
-def print_local_patch_summary(name: str, details: dict, *, t: int = 1) -> None:
-    """Print patch-shift statistics for local NoRMCorre examples."""
-
-    patch_shifts = np.asarray(details["patch_shifts"][int(t)], dtype=np.float32).reshape(-1, 2)
-    print(f"{name}:")
-    print(f"  rigid shift yx: {details['time_shifts_yx'][int(t)]}")
-    print(f"  patch mean yx:  {patch_shifts.mean(axis=0)}")
-    print(f"  patch std yx:   {patch_shifts.std(axis=0)}")
-    print(f"  patch min yx:   {patch_shifts.min(axis=0)}")
-    print(f"  patch max yx:   {patch_shifts.max(axis=0)}")
+# %% OPTIONAL CAIMAN COMPARISON HELPER
 
 def run_caiman_normcorre_2d_t(
     stack,
@@ -270,166 +231,6 @@ def run_caiman_normcorre_2d_t(
     }
     return registered, details
 
-def print_caiman_patch_summary(name: str, details: dict, *, t: int = 1) -> None:
-    """Print CaImAn patch-shift statistics for one time frame."""
-
-    x_shifts = np.asarray(details["x_shifts_els"][int(t)], dtype=np.float32).reshape(-1)
-    y_shifts = np.asarray(details["y_shifts_els"][int(t)], dtype=np.float32).reshape(-1)
-    patch_shifts_xy = np.column_stack([x_shifts, y_shifts])
-    print(f"{name}:")
-    print(f"  raw CaImAn rigid shift: {np.asarray(details['time_shifts_raw_caiman'])[int(t)]}")
-    print(f"  patch mean xy:          {patch_shifts_xy.mean(axis=0)}")
-    print(f"  patch std xy:           {patch_shifts_xy.std(axis=0)}")
-    print(f"  patch min xy:           {patch_shifts_xy.min(axis=0)}")
-    print(f"  patch max xy:           {patch_shifts_xy.max(axis=0)}")
-
-def show_before_after(
-    raw,
-    registered,
-    *,
-    title: str,
-    channel: int = 0,
-    moving_time: int = 1,
-    reference_time: int = 0,
-    projection_method: str = "max",
-) -> None:
-    """Show two time points and their difference before/after registration."""
-
-    raw_proj = z_project(raw[:, :, channel : channel + 1, :, :], projection_method=projection_method)[:, 0, 0]
-    reg_proj = z_project(registered[:, :, channel : channel + 1, :, :], projection_method=projection_method)[:, 0, 0]
-    reference_time = int(np.clip(reference_time, 0, raw_proj.shape[0] - 1))
-    moving_time = int(np.clip(moving_time, 0, raw_proj.shape[0] - 1))
-    raw_diff = raw_proj[moving_time] - raw_proj[reference_time]
-    reg_diff = reg_proj[moving_time] - reg_proj[reference_time]
-    vmax = max(float(np.max(np.abs(raw_diff))), float(np.max(np.abs(reg_diff))), 1e-6)
-
-    fig, axes = plt.subplots(2, 3, figsize=(10, 6), constrained_layout=True)
-    axes[0, 0].imshow(raw_proj[reference_time], cmap="gray")
-    axes[0, 0].set_title(f"raw t={reference_time}")
-    axes[0, 1].imshow(raw_proj[moving_time], cmap="gray")
-    axes[0, 1].set_title(f"raw t={moving_time}")
-    axes[0, 2].imshow(raw_diff, cmap="bwr", vmin=-vmax, vmax=vmax)
-    axes[0, 2].set_title(f"raw t{moving_time} - t{reference_time}")
-    axes[1, 0].imshow(reg_proj[reference_time], cmap="gray")
-    axes[1, 0].set_title(f"registered t={reference_time}")
-    axes[1, 1].imshow(reg_proj[moving_time], cmap="gray")
-    axes[1, 1].set_title(f"registered t={moving_time}")
-    axes[1, 2].imshow(reg_diff, cmap="bwr", vmin=-vmax, vmax=vmax)
-    axes[1, 2].set_title(f"registered t{moving_time} - t{reference_time}")
-    for ax in axes.ravel():
-        ax.axis("off")
-    fig.suptitle(title)
-    plt.show()
-
-def show_residual_comparison(
-    raw,
-    registered_zenreg,
-    registered_caiman,
-    *,
-    title: str,
-    channel: int = 0,
-    moving_time: int = 1,
-    reference_time: int = 0,
-    projection_method: str = "max",
-    labels: tuple[str, str, str] = ("raw", "ZenReg NoRMCorre", "CaImAn NoRMCorre"),
-) -> None:
-    """Compare residual difference images for raw, ZenReg, and CaImAn outputs."""
-
-    def _project(stack):
-        return z_project(stack[:, :, channel : channel + 1, :, :], projection_method=projection_method)[:, 0, 0]
-
-    raw_proj = _project(raw)
-    zenreg_proj = _project(registered_zenreg)
-    caiman_proj = _project(registered_caiman)
-    reference_time = int(np.clip(reference_time, 0, raw_proj.shape[0] - 1))
-    moving_time = int(np.clip(moving_time, 0, raw_proj.shape[0] - 1))
-    residuals = [
-        raw_proj[moving_time] - raw_proj[reference_time],
-        zenreg_proj[moving_time] - zenreg_proj[reference_time],
-        caiman_proj[moving_time] - caiman_proj[reference_time],
-    ]
-    labels = list(labels)
-    vmax = max(float(np.max(np.abs(diff))) for diff in residuals)
-    vmax = max(vmax, 1e-6)
-
-    print(f"{title} residual MAE at t={moving_time} vs t={reference_time}:")
-    for label, diff in zip(labels, residuals):
-        print(f"  {label}: {float(np.mean(np.abs(diff))):.6f}")
-
-    fig, axes = plt.subplots(1, 3, figsize=(11, 3.5), constrained_layout=True)
-    for ax, label, diff in zip(axes, labels, residuals):
-        ax.imshow(diff, cmap="bwr", vmin=-vmax, vmax=vmax)
-        ax.set_title(label)
-        ax.axis("off")
-    fig.suptitle(title)
-    plt.show()
-
-def show_residual_comparison_multi(
-    raw,
-    registered_stacks,
-    *,
-    title: str,
-    labels: tuple[str, ...],
-    channel: int = 0,
-    moving_time: int = 1,
-    reference_time: int = 0,
-    projection_method: str = "max",
-) -> None:
-    """Compare residual difference images for raw and multiple registered outputs."""
-
-    stacks = (raw, *tuple(registered_stacks))
-    if len(labels) != len(stacks):
-        raise ValueError("labels must contain one entry for raw and each registered stack.")
-
-    residuals = []
-    for stack in stacks:
-        proj = z_project(stack[:, :, channel : channel + 1, :, :], projection_method=projection_method)[:, 0, 0]
-        reference_time_clipped = int(np.clip(reference_time, 0, proj.shape[0] - 1))
-        moving_time_clipped = int(np.clip(moving_time, 0, proj.shape[0] - 1))
-        residuals.append(proj[moving_time_clipped] - proj[reference_time_clipped])
-
-    vmax = max(float(np.max(np.abs(diff))) for diff in residuals)
-    vmax = max(vmax, 1e-6)
-    fig, axes = plt.subplots(1, len(stacks), figsize=(3.4 * len(stacks), 3.5), constrained_layout=True)
-    axes = np.atleast_1d(axes)
-    for ax, label, diff in zip(axes, labels, residuals):
-        ax.imshow(diff, cmap="bwr", vmin=-vmax, vmax=vmax)
-        ax.set_title(label)
-        ax.axis("off")
-    fig.suptitle(title)
-    plt.show()
-
-def print_residual_mae_summary(
-    raw,
-    *registered_stacks,
-    labels: tuple[str, ...],
-    channel: int = 0,
-    reference_time: int = 0,
-    projection_method: str = "max",
-) -> None:
-    """Print mean residual error to the reference frame for several stacks."""
-
-    stacks = (raw, *registered_stacks)
-    if len(labels) != len(stacks):
-        raise ValueError("labels must contain one entry for raw and each registered stack.")
-    print(f"Residual MAE to t={reference_time}:")
-    for label, stack in zip(labels, stacks):
-        proj = z_project(stack[:, :, channel : channel + 1, :, :], projection_method=projection_method)[:, 0, 0]
-        reference = proj[int(reference_time)]
-        residuals = np.mean(np.abs(proj - reference[None, :, :]), axis=(1, 2))
-        print(
-            f"  {label}: mean={float(np.mean(residuals)):.6f}, "
-            f"max={float(np.max(residuals)):.6f}"
-        )
-
-def maybe_open_in_napari(stack, metadata, *, fname: str) -> None:
-    """Open a stack in Napari when the interactive flag is enabled."""
-
-    if OPEN_IN_NAPARI:
-        import omio as om
-
-        om.open_in_napari(stack, metadata, fname=fname)
-
 # %% 1) 2D+t: GLOBAL XY TRANSLATION
 stack_2d_t_xy, metadata_2d_t_xy = load_stack(
     STACK_2D_T_XY_PATH,
@@ -438,7 +239,7 @@ stack_2d_t_xy, metadata_2d_t_xy = load_stack(
 )
 expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")
 print(f"2D+t global XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
-maybe_open_in_napari(stack_2d_t_xy, metadata_2d_t_xy, fname="2D+t global XY")
+maybe_open_in_napari(stack_2d_t_xy, metadata_2d_t_xy, fname="2D+t global XY", open_in_napari=OPEN_IN_NAPARI)
 
 
 registered_2d_t_xy_phase, details_2d_t_xy_phase = register_stack(
@@ -588,15 +389,15 @@ save_stack(
 #     registration_details=details_2d_t_xy_caiman,
 # )
 
-maybe_open_in_napari(registered_2d_t_xy_phase, metadata_2d_t_xy, fname="2D+t global XY phase cross")
-maybe_open_in_napari(registered_2d_t_xy_normcorre, metadata_2d_t_xy, fname="2D+t global XY ZenReg NoRMCorre")
-# maybe_open_in_napari(registered_2d_t_xy_caiman, metadata_2d_t_xy, fname="2D+t global XY CaImAn NoRMCorre")
+maybe_open_in_napari(registered_2d_t_xy_phase, metadata_2d_t_xy, fname="2D+t global XY phase cross", open_in_napari=OPEN_IN_NAPARI)
+maybe_open_in_napari(registered_2d_t_xy_normcorre, metadata_2d_t_xy, fname="2D+t global XY ZenReg NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
+# maybe_open_in_napari(registered_2d_t_xy_caiman, metadata_2d_t_xy, fname="2D+t global XY CaImAn NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
 # %% 2) 2D+t: LOCAL IN-FRAME MOTION
 stack_2d_t_local, metadata_2d_t_local = load_stack(
     STACK_2D_T_LOCAL_PATH,
     return_metadata=True,
     verbose=False)
-local_motion_gt_2d_t = _load_csv(GT_2D_T_LOCAL_PATH)
+local_motion_gt_2d_t = load_csv_table(GT_2D_T_LOCAL_PATH)
 local_motion_frame_2d_t = int(local_motion_gt_2d_t["t"][np.argmax(local_motion_gt_2d_t["motion_magnitude"])])
 print(f"2D+t local-motion stack shape: {stack_2d_t_local.shape} (TZCYX)")
 print("Local GT columns:", local_motion_gt_2d_t.dtype.names)
@@ -655,8 +456,8 @@ save_stack(
     registration_details=details_2d_t_local,
 )
 
-maybe_open_in_napari(stack_2d_t_local, metadata_2d_t_local, fname="2D+t local")
-maybe_open_in_napari(registered_2d_t_local, metadata_2d_t_local, fname="2D+t local NoRMCorre")
+maybe_open_in_napari(stack_2d_t_local, metadata_2d_t_local, fname="2D+t local", open_in_napari=OPEN_IN_NAPARI)
+maybe_open_in_napari(registered_2d_t_local, metadata_2d_t_local, fname="2D+t local NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
 
 # Optional CaImAn comparison; requires ``mamba install -y caiman`` and uncommented imports above.
 # registered_2d_t_local_caiman, details_2d_t_local_caiman = run_caiman_normcorre_2d_t(
@@ -707,6 +508,7 @@ maybe_open_in_napari(registered_2d_t_local, metadata_2d_t_local, fname="2D+t loc
 #     registered_2d_t_local_caiman,
 #     metadata_2d_t_local,
 #     fname="2D+t local CaImAn NoRMCorre",
+#     open_in_napari=OPEN_IN_NAPARI,
 # )
 # %% 3) 2D+t: GLOBAL XY TRANSLATION PLUS LIGHT ROTATION
 stack_2d_t_trans_rot, metadata_2d_t_trans_rot = load_stack(
@@ -730,7 +532,7 @@ print(
     f"Strongest rotation-correction frame: t={rotation_event_frame_2d_t}, "
     f"expected correction={expected_2d_t_trans_rot_deg[rotation_event_frame_2d_t]:.3f} deg"
 )
-maybe_open_in_napari(stack_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation")
+maybe_open_in_napari(stack_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation", open_in_napari=OPEN_IN_NAPARI)
 
 plot_normcorre_patch_overlay(
     stack_2d_t_trans_rot,
@@ -794,7 +596,7 @@ save_stack(
     registration_details=details_2d_t_trans_rot,
 )
 
-maybe_open_in_napari(registered_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation NoRMCorre")
+maybe_open_in_napari(registered_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
 
 # Optional CaImAn comparison; requires ``mamba install -y caiman`` and uncommented imports above.
 # registered_2d_t_trans_rot_caiman, details_2d_t_trans_rot_caiman = run_caiman_normcorre_2d_t(
@@ -850,6 +652,7 @@ maybe_open_in_napari(registered_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="
 #     registered_2d_t_trans_rot_caiman,
 #     metadata_2d_t_trans_rot,
 #     fname="2D+t translation+rotation CaImAn NoRMCorre",
+#     open_in_napari=OPEN_IN_NAPARI,
 # )
 # %% 4) 2D+t: PIECEWISE XY TRANSLATION, PHASE CROSS VS NoRMCorre
 stack_2d_t_piecewise_xy, metadata_2d_t_piecewise_xy = load_stack(
@@ -857,7 +660,7 @@ stack_2d_t_piecewise_xy, metadata_2d_t_piecewise_xy = load_stack(
     return_metadata=True,
     verbose=False,
 )
-piecewise_gt_2d_t = _load_csv(GT_2D_T_PIECEWISE_XY_PATH)
+piecewise_gt_2d_t = load_csv_table(GT_2D_T_PIECEWISE_XY_PATH)
 piecewise_motion_by_t = np.zeros(stack_2d_t_piecewise_xy.shape[0], dtype=np.float32)
 for t in range(stack_2d_t_piecewise_xy.shape[0]):
     rows_t = piecewise_gt_2d_t[piecewise_gt_2d_t["t"] == t]
@@ -1023,21 +826,24 @@ save_stack(
 #     metadata=metadata_2d_t_piecewise_xy,
 #     registration_details=details_2d_t_piecewise_caiman,
 # )
-maybe_open_in_napari(stack_2d_t_piecewise_xy, metadata_2d_t_piecewise_xy, fname="2D+t piecewise XY")
+maybe_open_in_napari(stack_2d_t_piecewise_xy, metadata_2d_t_piecewise_xy, fname="2D+t piecewise XY", open_in_napari=OPEN_IN_NAPARI)
 maybe_open_in_napari(
     registered_2d_t_piecewise_phase,
     metadata_2d_t_piecewise_xy,
     fname="2D+t piecewise XY phase cross",
+    open_in_napari=OPEN_IN_NAPARI,
 )
 maybe_open_in_napari(
     registered_2d_t_piecewise_normcorre,
     metadata_2d_t_piecewise_xy,
     fname="2D+t piecewise XY NoRMCorre",
+    open_in_napari=OPEN_IN_NAPARI,
 )
 # maybe_open_in_napari(
 #     registered_2d_t_piecewise_caiman,
 #     metadata_2d_t_piecewise_xy,
 #     fname="2D+t piecewise XY CaImAn NoRMCorre",
+#     open_in_napari=OPEN_IN_NAPARI,
 # )
 # %% 5) 3D+t: GLOBAL ZYX TRANSLATION
 stack_3d_t_zyx, metadata_3d_t_zyx = load_stack(
@@ -1095,8 +901,8 @@ save_stack(
     registration_details=details_3d_t_zyx,
 )
 
-maybe_open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t global ZYX NoRMCorre")
-maybe_open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t global ZYX NoRMCorre")
+maybe_open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t global ZYX NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
+maybe_open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t global ZYX NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
 # %% 6) 3D+t: TRANSLATION PLUS ROTATION AROUND Z
 stack_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z = load_stack(
     STACK_3D_T_TRANS_ROT_Z_PATH,
@@ -1108,7 +914,7 @@ expected_3d_t_trans_rot_z = load_expected_time_registration_shifts(
     registration_stack=0,
     axes="zyx",
 )
-rigid_gt_3d_t_trans_rot_z = _load_csv(GT_3D_T_TRANS_ROT_Z_PATH)
+rigid_gt_3d_t_trans_rot_z = load_csv_table(GT_3D_T_TRANS_ROT_Z_PATH)
 print(f"3D+t translation+Z-rotation stack shape: {stack_3d_t_trans_rot_z.shape} (TZCYX)")
 print("Applied rotations [z, y, x] deg, first rows:")
 print(
@@ -1172,8 +978,8 @@ save_stack(
     registration_details=details_3d_t_trans_rot_z,
 )
 
-maybe_open_in_napari(stack_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z, fname="3D+t Z-rotation")
-maybe_open_in_napari(registered_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z, fname="3D+t Z-rotation NoRMCorre")
+maybe_open_in_napari(stack_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z, fname="3D+t Z-rotation", open_in_napari=OPEN_IN_NAPARI)
+maybe_open_in_napari(registered_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z, fname="3D+t Z-rotation NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
 # %% 7) 3D+t: TRANSLATION PLUS ROTATION AROUND X
 stack_3d_t_trans_rot_x, metadata_3d_t_trans_rot_x = load_stack(
     STACK_3D_T_TRANS_ROT_X_PATH,
@@ -1185,7 +991,7 @@ expected_3d_t_trans_rot_x = load_expected_time_registration_shifts(
     registration_stack=0,
     axes="zyx",
 )
-rigid_gt_3d_t_trans_rot_x = _load_csv(GT_3D_T_TRANS_ROT_X_PATH)
+rigid_gt_3d_t_trans_rot_x = load_csv_table(GT_3D_T_TRANS_ROT_X_PATH)
 print(f"3D+t translation+X-rotation stack shape: {stack_3d_t_trans_rot_x.shape} (TZCYX)")
 print("Applied rotations [z, y, x] deg, first rows:")
 print(
@@ -1248,7 +1054,7 @@ save_stack(
     metadata=metadata_3d_t_trans_rot_x,
     registration_details=details_3d_t_trans_rot_x,
 )
-maybe_open_in_napari(registered_3d_t_trans_rot_x, metadata_3d_t_trans_rot_x, fname="3D+t X-rotation NoRMCorre")
+maybe_open_in_napari(registered_3d_t_trans_rot_x, metadata_3d_t_trans_rot_x, fname="3D+t X-rotation NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
 
 # %% 8) 3D+t: ALL-AXIS ROTATION AROUND STACK CENTER
 stack_3d_t_trans_rot_all_center, metadata_3d_t_trans_rot_all_center = load_stack(
@@ -1261,7 +1067,7 @@ expected_3d_t_trans_rot_all_center = load_expected_time_registration_shifts(
     registration_stack=0,
     axes="zyx",
 )
-rigid_gt_3d_t_trans_rot_all_center = _load_csv(GT_3D_T_TRANS_ROT_ALL_CENTER_PATH)
+rigid_gt_3d_t_trans_rot_all_center = load_csv_table(GT_3D_T_TRANS_ROT_ALL_CENTER_PATH)
 print(f"3D+t all-axis center-rotation stack shape: {stack_3d_t_trans_rot_all_center.shape} (TZCYX)")
 print("Rotation centers [z, y, x], first rows:")
 print(
@@ -1333,6 +1139,7 @@ maybe_open_in_napari(
     registered_3d_t_trans_rot_all_center,
     metadata_3d_t_trans_rot_all_center,
     fname="3D+t all-axis center NoRMCorre",
+    open_in_napari=OPEN_IN_NAPARI,
 )
 
 # %% 9) 3D+t: ALL-AXIS ROTATION AROUND OFF-CENTER POINT
@@ -1346,7 +1153,7 @@ expected_3d_t_trans_rot_all_offcenter = load_expected_time_registration_shifts(
     registration_stack=0,
     axes="zyx",
 )
-rigid_gt_3d_t_trans_rot_all_offcenter = _load_csv(GT_3D_T_TRANS_ROT_ALL_OFFCENTER_PATH)
+rigid_gt_3d_t_trans_rot_all_offcenter = load_csv_table(GT_3D_T_TRANS_ROT_ALL_OFFCENTER_PATH)
 print(f"3D+t all-axis off-center-rotation stack shape: {stack_3d_t_trans_rot_all_offcenter.shape} (TZCYX)")
 print("Rotation centers [z, y, x], first rows:")
 print(
@@ -1418,6 +1225,7 @@ maybe_open_in_napari(
     registered_3d_t_trans_rot_all_offcenter,
     metadata_3d_t_trans_rot_all_offcenter,
     fname="3D+t all-axis off-center NoRMCorre",
+    open_in_napari=OPEN_IN_NAPARI,
 )
 
 # %% 10) 3D+t: ALL-AXIS ROTATION AROUND OUTSIDE POINT
@@ -1431,7 +1239,7 @@ expected_3d_t_trans_rot_all_outside = load_expected_time_registration_shifts(
     registration_stack=0,
     axes="zyx",
 )
-rigid_gt_3d_t_trans_rot_all_outside = _load_csv(GT_3D_T_TRANS_ROT_ALL_OUTSIDE_PATH)
+rigid_gt_3d_t_trans_rot_all_outside = load_csv_table(GT_3D_T_TRANS_ROT_ALL_OUTSIDE_PATH)
 print(f"3D+t all-axis outside-rotation stack shape: {stack_3d_t_trans_rot_all_outside.shape} (TZCYX)")
 print("Rotation centers [z, y, x], first rows:")
 print(
@@ -1503,6 +1311,7 @@ maybe_open_in_napari(
     registered_3d_t_trans_rot_all_outside,
     metadata_3d_t_trans_rot_all_outside,
     fname="3D+t all-axis outside NoRMCorre",
+    open_in_napari=OPEN_IN_NAPARI,
 )
 
 # %% END

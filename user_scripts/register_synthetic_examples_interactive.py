@@ -29,7 +29,6 @@ if not os.access(Path.home(), os.W_OK):
     script_home.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("HOME", str(script_home))
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 # path setup (only used during development):
@@ -37,7 +36,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from zenreg import cleanup_omio_cache, load_stack, print_available_compute, register_stack, save_stack, z_project
+from zenreg import (
+    cleanup_omio_cache,
+    load_expected_rigid_z_rotation,
+    load_expected_slice_registration_shifts,
+    load_expected_time_registration_rotations,
+    load_expected_time_registration_shifts,
+    load_stack,
+    maybe_open_in_napari,
+    print_available_compute,
+    print_shift_comparison,
+    register_stack,
+    save_stack,
+    show_slices,
+    show_timepoints,
+)
 
 # %% DEFINE INPUT AND OUTPUT PATHS
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
@@ -45,6 +58,7 @@ OUTPUT_DIR = EXAMPLE_DIR / "registered"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MEMMAP_CACHE_DIR = OUTPUT_DIR / "omio_memmap_cache"
 OPEN_IN_NAPARI = False
+# OPEN_IN_NAPARI = True
 AVAILABLE_CPUS = print_available_compute()
 
 STACK_2D_T_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_xy.ome.tif"
@@ -63,169 +77,13 @@ GT_3D_T_ZYX_PATH = EXAMPLE_DIR / "synthetic_3d_t_zyx_time_shifts_gt.csv"
 GT_2D_T_ROT_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_rot_xy_time_shifts_gt.csv"
 GT_2D_T_ROT_DEG_PATH = EXAMPLE_DIR / "synthetic_2d_t_rot_xy_time_rotations_gt.csv"
 GT_3D_T_TRANS_ROT_Z_PATH = EXAMPLE_DIR / "synthetic_3d_t_trans_rot_z_rigid_transform_gt.csv"
-# %% QUICK VIEW AND GT HELPERS
-def show_timepoints(
-    stack,
-    *,
-    title: str,
-    channel: int = 0,
-    projection_method: str = "max",
-) -> None:
-    """Show t=0, t=1, and their difference as Z projections."""
-
-    stack = np.asarray(stack)
-    if stack.shape[0] < 2:
-        print(f"Skipping timepoint quick view for {title!r}: T < 2.")
-        return
-
-    projection_t0 = z_project(
-        stack[0:1, :, channel : channel + 1, :, :],
-        projection_method=projection_method,
-    )[0, 0, 0, :, :]
-    projection_t1 = z_project(
-        stack[1:2, :, channel : channel + 1, :, :],
-        projection_method=projection_method,
-    )[0, 0, 0, :, :]
-    projection_diff = projection_t1 - projection_t0
-
-    fig, axes = plt.subplots(1, 3, figsize=(10, 3), constrained_layout=True)
-    axes[0].imshow(projection_t0, cmap="gray")
-    axes[0].set_title("t=0")
-    axes[0].axis("off")
-
-    axes[1].imshow(projection_t1, cmap="gray")
-    axes[1].set_title("t=1")
-    axes[1].axis("off")
-
-    max_abs_diff = float(np.max(np.abs(projection_diff)))
-    if max_abs_diff == 0:
-        max_abs_diff = 1.0
-    axes[2].imshow(projection_diff, cmap="bwr", vmin=-max_abs_diff, vmax=max_abs_diff)
-    axes[2].set_title("t1 - t0")
-    axes[2].axis("off")
-
-    fig.suptitle(title)
-    plt.show()
-
-def show_slices(
-    stack,
-    *,
-    title: str,
-    channel: int = 0,
-    z0: int = 0,
-    z1: int = 6,
-) -> None:
-    """Show two slices from t=0 and their difference."""
-
-    stack = np.asarray(stack)
-    z1 = min(int(z1), stack.shape[1] - 1)
-    image_z0 = stack[0, int(z0), int(channel), :, :]
-    image_z1 = stack[0, z1, int(channel), :, :]
-    diff = image_z1 - image_z0
-
-    fig, axes = plt.subplots(1, 3, figsize=(10, 3), constrained_layout=True)
-    axes[0].imshow(image_z0, cmap="gray")
-    axes[0].set_title(f"z={z0}")
-    axes[0].axis("off")
-
-    axes[1].imshow(image_z1, cmap="gray")
-    axes[1].set_title(f"z={z1}")
-    axes[1].axis("off")
-
-    max_abs_diff = float(np.max(np.abs(diff)))
-    if max_abs_diff == 0:
-        max_abs_diff = 1.0
-    axes[2].imshow(diff, cmap="bwr", vmin=-max_abs_diff, vmax=max_abs_diff)
-    axes[2].set_title(f"z{z1} - z{z0}")
-    axes[2].axis("off")
-
-    fig.suptitle(title)
-    plt.show()
-
-def _load_csv(path: Path) -> np.ndarray:
-    """Load a GT CSV as a structured numpy table."""
-
-    return np.genfromtxt(path, delimiter=",", names=True)
-
-def load_expected_time_registration_shifts(
-    path: Path,
-    *,
-    registration_stack: int = 0,
-    axes: str = "yx",
-) -> np.ndarray:
-    """Load expected correction shifts from a synthetic GT time-shift table."""
-
-    table = _load_csv(path)
-    columns = [f"expected_registration_shift_{axis}_ref_t{registration_stack}" for axis in axes]
-    return np.column_stack([table[column] for column in columns]).astype(np.float32)
-
-
-def load_expected_time_registration_rotations(path: Path, *, registration_stack: int = 0) -> np.ndarray:
-    """Load expected rotation corrections from a synthetic GT table."""
-
-    table = _load_csv(path)
-    column = f"expected_registration_rotation_deg_ref_t{registration_stack}"
-    return np.asarray(table[column], dtype=np.float32)
-
-
-def load_expected_rigid_z_rotation(path: Path, *, registration_stack: int = 0) -> tuple[np.ndarray, np.ndarray]:
-    """Load expected ZYX shifts and Z-axis rotation corrections from a 3D rigid GT table."""
-
-    table = _load_csv(path)
-    shift_columns = [
-        f"expected_registration_shift_{axis}_ref_t{registration_stack}"
-        for axis in ("z", "y", "x")
-    ]
-    rotation_column = f"expected_registration_rotation_z_deg_ref_t{registration_stack}"
-    shifts_zyx = np.column_stack([table[column] for column in shift_columns]).astype(np.float32)
-    rotations_z_deg = np.asarray(table[rotation_column], dtype=np.float32)
-    return shifts_zyx, rotations_z_deg
-
-
-def load_expected_slice_registration_shifts(path: Path) -> np.ndarray:
-    """Load expected per-slice correction shifts as ``T, Z, 2``."""
-
-    table = _load_csv(path)
-    t_count = int(np.max(table["t"])) + 1
-    z_count = int(np.max(table["z"])) + 1
-    expected = np.zeros((t_count, z_count, 2), dtype=np.float32)
-    for row in table:
-        expected[int(row["t"]), int(row["z"]), :] = (
-            row["expected_local_z_correction_shift_y"],
-            row["expected_local_z_correction_shift_x"],
-        )
-    return expected
-
-
-def print_shift_comparison(name: str, estimated_shifts: np.ndarray, expected_shifts: np.ndarray) -> None:
-    """Print a compact comparison between estimated correction shifts and GT."""
-
-    estimated_shifts = np.asarray(estimated_shifts, dtype=np.float32)
-    expected_shifts = np.asarray(expected_shifts, dtype=np.float32)
-    delta = estimated_shifts - expected_shifts
-    flat_estimated = estimated_shifts.reshape(-1, estimated_shifts.shape[-1])
-    flat_expected = expected_shifts.reshape(-1, expected_shifts.shape[-1])
-    flat_delta = delta.reshape(-1, delta.shape[-1])
-    print(f"{name}:")
-    print(f"  mean abs error: {np.mean(np.abs(flat_delta), axis=0)}")
-    print(f"  max abs error:  {np.max(np.abs(flat_delta), axis=0)}")
-    print("  first rows [estimated..., expected..., delta...]:")
-    print(np.column_stack([flat_estimated, flat_expected, flat_delta])[:5])
-
-
-def maybe_open_in_napari(stack, metadata, *, fname: str) -> None:
-    """Open a stack in Napari only when the interactive flag is enabled."""
-
-    if OPEN_IN_NAPARI:
-        import omio as om
-
-        om.open_in_napari(stack, metadata, fname=fname)
-
 # %% 1) 2D+t: GLOBAL XY TIME REGISTRATION RELATIVE TO t=0
 stack_2d_t_xy, metadata_2d_t_xy = load_stack(STACK_2D_T_XY_PATH, return_metadata=True, verbose=False)
 expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")
 print(f"2D+t XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
 show_timepoints(stack_2d_t_xy, title="2D+t XY before registration", channel=0, projection_method="max")
+
+maybe_open_in_napari(stack_2d_t_xy, metadata_2d_t_xy, fname="2D+t XY before registration", open_in_napari=OPEN_IN_NAPARI)
 
 registered_2d_t_xy, details_2d_t_xy = register_stack(
     stack_2d_t_xy,
@@ -257,6 +115,7 @@ registered_2d_t_xy, details_2d_t_xy = register_stack(
 )
 print_shift_comparison("2D+t XY time registration", details_2d_t_xy["time_shifts_yx"], expected_2d_t_xy)
 show_timepoints(registered_2d_t_xy, title="2D+t XY after registration", channel=0, projection_method="max")
+maybe_open_in_napari(registered_2d_t_xy, metadata_2d_t_xy, fname="2D+t XY after registration", open_in_napari=OPEN_IN_NAPARI)
 save_stack(
     OUTPUT_DIR / "synthetic_2d_t_xy_registered.ome.tif",
     registered_2d_t_xy,
@@ -397,7 +256,7 @@ expected_3d_t_zyx = load_expected_time_registration_shifts(GT_3D_T_ZYX_PATH, reg
 print(f"3D+t ZYX stack shape: {stack_3d_t_zyx.shape} (TZCYX)")
 show_timepoints(stack_3d_t_zyx, title="3D+t ZYX before full 3D registration", channel=0, projection_method="max")
 
-maybe_open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX before full 3D registration")
+maybe_open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX before full 3D registration", open_in_napari=OPEN_IN_NAPARI)
 
 registered_3d_t_zyx, details_3d_t_zyx = register_stack(
     stack_3d_t_zyx,
@@ -443,7 +302,7 @@ save_stack(
     registration_details=details_3d_t_zyx,
 )
 
-maybe_open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX after full 3D registration")
+maybe_open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX after full 3D registration", open_in_napari=OPEN_IN_NAPARI)
 # %% 6) 3D+t: FULL 3D TRANSLATION PLUS XY-PLANE ROTATION ONLY
 stack_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z = load_stack(
     STACK_3D_T_TRANS_ROT_Z_PATH,
@@ -461,7 +320,9 @@ show_timepoints(
 maybe_open_in_napari(
     stack_3d_t_trans_rot_z,
     metadata_3d_t_trans_rot_z,
-    fname="3D+t translation + XY rotation before registration")
+    fname="3D+t translation + XY rotation before registration",
+    open_in_napari=OPEN_IN_NAPARI,
+)
 
 registered_3d_t_trans_rot_z, details_3d_t_trans_rot_z = register_stack(
     stack_3d_t_trans_rot_z,
@@ -516,7 +377,9 @@ save_stack(
 maybe_open_in_napari(
     registered_3d_t_trans_rot_z,
     metadata_3d_t_trans_rot_z,
-    fname="3D+t translation + XY rotation after registration")
+    fname="3D+t translation + XY rotation after registration",
+    open_in_napari=OPEN_IN_NAPARI,
+)
 
 # %% 7) 2D+t: GLOBAL XY ROTATION
 stack_2d_t_rot_xy, metadata_2d_t_rot_xy = load_stack(
@@ -536,7 +399,7 @@ show_timepoints(
     title="2D+t rotation before registration",
     channel=0,
     projection_method="max")
-maybe_open_in_napari(stack_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation before registration")
+maybe_open_in_napari(stack_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation before registration", open_in_napari=OPEN_IN_NAPARI)
 
 
 registered_2d_t_rot_xy, details_2d_t_rot_xy = register_stack(
@@ -587,7 +450,7 @@ save_stack(
     metadata=metadata_2d_t_rot_xy,
     registration_details=details_2d_t_rot_xy)
 
-maybe_open_in_napari(registered_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation after registration")
+maybe_open_in_napari(registered_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation after registration", open_in_napari=OPEN_IN_NAPARI)
 # %% 8) 2D+t: DISK-BACKED OMIO MEMMAP INPUT
 # To force a fresh start, clear any pre-existing OMIO cache in the local scratch folder.
 # Skip this cleanup line after a kernel restart if you want OMIO to reuse the existing cache.
