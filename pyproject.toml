@@ -43,6 +43,13 @@ dev = [
   "pytest>=7",
   "ruff>=0.5"
 ]
+docs = [
+  "sphinx",
+  "sphinx-autodoc-typehints",
+  "sphinx-rtd-theme",
+  "myst-parser",
+  "sphinx-copybutton"
+]
 
 [project.urls]
 Homepage = "https://github.com/fabriziomusacchio/zenreg"
