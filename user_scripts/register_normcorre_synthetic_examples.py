@@ -455,8 +455,7 @@ registered_2d_t_xy_phase, details_2d_t_xy_phase = register_stack(
     n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
-    return_details=True,
-)
+    return_details=True)
 
 registered_2d_t_xy_normcorre, details_2d_t_xy_normcorre = register_stack(
     stack_2d_t_xy,
@@ -482,8 +481,7 @@ registered_2d_t_xy_normcorre, details_2d_t_xy_normcorre = register_stack(
     nc_output_memmap_folder=None,  # local scratch folder for output Zarr if enabled
     nc_output_memmap_name="2d_t_xy_normcorre_registered_zarr",  # output Zarr store name
     verbose=True,
-    return_details=True,
-)
+    return_details=True)
 
 # Optional CaImAn comparison; requires ``mamba install -y caiman`` and uncommented imports above.
 # registered_2d_t_xy_caiman, details_2d_t_xy_caiman = run_caiman_normcorre_2d_t(
