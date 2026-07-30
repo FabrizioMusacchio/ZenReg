@@ -1,4 +1,4 @@
-Synthetic Example Datasets
+Synthetic example datasets
 ==========================
 
 ZenReg ships a synthetic dataset generator that writes small OME-TIFF stacks
@@ -23,6 +23,7 @@ Or from Python:
 
    paths = write_example_dataset(Path("example_data") / "synthetic_data")
 
+
 What is written?
 ----------------
 
@@ -31,7 +32,7 @@ tables. Important datasets include:
 
 .. list-table::
    :header-rows: 1
-
+   
    * - Dataset
      - Purpose
    * - ``synthetic_2d_t_xy.ome.tif``

@@ -6,7 +6,6 @@ import os
 import sys
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version as pkg_version
-from importlib.util import find_spec
 
 
 os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
@@ -38,11 +37,9 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinx.ext.viewcode",
     "sphinx_autodoc_typehints",
+    "myst_parser",
+    "sphinx_copybutton",
 ]
-if find_spec("myst_parser") is not None:
-    extensions.append("myst_parser")
-if find_spec("sphinx_copybutton") is not None:
-    extensions.append("sphinx_copybutton")
 
 source_suffix = {
     ".rst": "restructuredtext",
@@ -67,6 +64,7 @@ html_theme_options = {
     "sticky_navigation": True,
 }
 html_static_path = ["_static"]
+html_logo = "_static/ZenReg_logo_square_transparent.png"
 
 mathjax_path = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
 mathjax3_config = {

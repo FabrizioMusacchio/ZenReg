@@ -2,7 +2,29 @@ Installation
 ============
 
 ZenReg is intended to be used in a scientific Python environment with OMIO and
-the registration backends installed.
+the registration backends installed. The package has currently been tested with
+Python 3.12. If you run into problems with newer Python versions, please open 
+`GitHub issue <https://github.com/FabrizioMusacchio/ZenReg/issues>`_
+with the Python version, operating system, and error message.
+
+Create an environment
+---------------------
+
+We recommend creating a fresh conda environment first:
+
+.. code-block:: bash
+
+   conda create -n zenreg -y python=3.12
+   conda activate zenreg
+
+Install from PyPI
+-----------------
+
+ZenReg can be installed from PyPI:
+
+.. code-block:: bash
+
+   pip install zenreg
 
 Development installation
 ------------------------
@@ -20,6 +42,28 @@ For development and documentation work:
 .. code-block:: bash
 
    pip install -e ".[dev,docs]"
+
+Upgrade ZenReg
+---------------
+
+To upgrade ZenReg to the latest version, run:
+
+.. code-block:: bash
+
+   pip install --upgrade zenreg
+
+or, if installed from a local checkout:
+
+.. code-block:: bash
+
+   git pull
+   pip install --upgrade -e .
+
+or
+
+.. code-block:: bash
+
+   pip install --upgrade git+https://github.com/FabrizioMusacchio/ZenReg.git
 
 Core dependencies
 -----------------

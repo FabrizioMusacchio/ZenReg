@@ -1,5 +1,5 @@
-True / Full 3D Rigid Registration
-=================================
+Full 3D rigid registration
+===========================
 
 Full 3D rigid registration estimates a 6-DOF transform for each time point:
 
@@ -51,6 +51,42 @@ Use real physical spacing in ``rot_spacing_zyx`` for anisotropic data. This is
 important because rotations in anisotropic Z stacks are otherwise geometrically
 mis-scaled.
 
+Options introduced here
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+
+   * - Argument
+     - Meaning
+     - Default behavior
+   * - ``rotreg=True``
+     - Enable rotation correction.
+     - ``False``.
+   * - ``rigid_3d_backend="simpleitk"``
+     - Use intensity-based SimpleITK full 3D rigid registration.
+     - ``"phase_cross_correlation"`` for the simpler projection path.
+   * - ``rot_spacing_zyx``
+     - Physical voxel spacing in Z, Y, X order.
+     - ``None`` uses unit spacing.
+   * - ``rot_init_iterations``
+     - Number of projection-based initialization passes before SimpleITK
+       refinement.
+     - ``1``.
+   * - ``rot_metric``
+     - SimpleITK similarity metric. ``"correlation"`` is recommended for
+       same-modality microscopy stacks.
+     - ``"correlation"``.
+   * - ``rot_shrink_factors`` / ``rot_smoothing_sigmas``
+     - Multi-resolution pyramid settings for coarse-to-fine optimization.
+     - Backend defaults.
+   * - ``rot_iterations``
+     - Maximum SimpleITK optimizer iterations.
+     - Backend default.
+   * - ``zero_clip_mask_strategy="relaxed"``
+     - Use a less aggressive valid-region crop after rotations.
+     - ``"strict"``.
+
 Sparse points backend
 ---------------------
 
@@ -86,6 +122,37 @@ Use ``rigid_3d_backend="points"`` for sparse puncta or spot-like data:
 Sparse puncta often benefit from ``transform_order=0`` because nearest-neighbor
 resampling keeps spots sharp. Dense intensity data usually benefits from
 ``transform_order=1``.
+
+New options in this block
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+
+   * - Argument
+     - Meaning
+     - Default behavior
+   * - ``rigid_3d_backend="points"``
+     - Use peak detection plus point matching/RANSAC-style rigid estimation.
+     - ``"phase_cross_correlation"``.
+   * - ``rot_points_max_points``
+     - Maximum number of detected points used per volume.
+     - Backend default.
+   * - ``rot_points_min_distance``
+     - Minimum distance between detected local maxima.
+     - Backend default.
+   * - ``rot_points_threshold_rel``
+     - Relative intensity threshold for peak detection.
+     - Backend default.
+   * - ``rot_points_iterations``
+     - Maximum point-matching refinement iterations.
+     - Backend default.
+   * - ``rot_points_max_match_distance``
+     - Maximum nearest-neighbor distance accepted as a point match.
+     - Backend default.
+   * - ``transform_order=0``
+     - Nearest-neighbor interpolation during transform application.
+     - ``1`` for linear interpolation.
 
 SimpleITK on sparse puncta
 --------------------------

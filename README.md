@@ -1,10 +1,12 @@
+![ZenReg logo](figures/ZenReg_logo_wide.jpg)
+
 # ZenReg: A Python-based high-throughput, memory-efficient N-dimensional image registration pipeline
 
 ZenReg is a Python-based high-throughput, memory-efficient pipeline for N-dimensional image registration, designed for large microscopy and imaging datasets.
 
 The project targets volumetric and time-resolved data with arbitrary dimensionality (3D, 4D, and full 5D stacks such as TZCYX), with a strong focus on scalable, out-of-core processing using chunked array storage and parallel execution.
 
-**ZenReg is currently under active development**. This repository hosts an initial  release while the core registration pipeline is being refactored, cleaned up, and prepared for open-source publication.
+**ZenReg is currently under active development**. Version 0.0.2 is the first functional release and provides the core workflow, synthetic examples, reporting, memory-mapped I/O, and multiple registration backends.
 
 ## Scope and design goals
 ZenReg is designed with the following principles in mind:
@@ -40,8 +42,9 @@ The current core includes:
 - template-based or sequential previous-frame time registration;
 - optional median filtering on slices before projection and on projections before
   shift estimation;
-- two shift-estimation backends: `phase_cross_correlation` from scikit-image and
-  `pystackreg`;
+- registration backends including `phase_cross_correlation` from scikit-image,
+  `pystackreg`, ZenReg-native NoRMCorre-style correction, dense full 3D rigid
+  registration via SimpleITK, and sparse point-based full 3D rigid registration;
 - small filtering and Z-projection helpers;
 - OMIO-backed microscopy I/O for TIFF/OME-TIFF, CZI, LSM, and Thorlabs RAW,
   normalized to canonical `TZCYX` with metadata inheritance on OME-TIFF output.
@@ -236,7 +239,10 @@ path; true Z translations use a SciPy 3D shift internally even with the skimage
 backend.
 
 ## Project status
-No stable public API is provided yet.
+ZenReg is usable but still evolving. The main workflow
+`load_stack -> register_stack -> save_stack` is intended to remain stable, while
+new registration methods and backend-specific options may still change as the
+package matures.
 
 ## License
 ZenReg is released under an open-source license (GPL-3.0). See the LICENSE file for details.
@@ -245,5 +251,5 @@ ZenReg is released under an open-source license (GPL-3.0). See the LICENSE file 
 If you use ZenReg in your research, please cite it as:
 
 ```
-Fabrizio Musacchio (2026). ZenReg: A Python-based high-throughput, memory-efficient N-dimensional image registration pipeline. Zenodo. https://doi.org/10.5281/zenodo.XXXXXXX
+Fabrizio Musacchio (2026). ZenReg: fast and memory-efficient microscopy image registration for Python. Zenodo. https://doi.org/10.5281/zenodo.20787509
 ``` 

@@ -1,4 +1,4 @@
-3D+t Registration
+3D+t registration
 =================
 
 The 3D+t examples use canonical ``T, Z, C, Y, X`` stacks. ZenReg can register
@@ -31,6 +31,37 @@ to every Z slice and channel:
        return_details=True,
    )
 
+This is usually the fastest 3D+t option because ZenReg estimates motion on one
+2D image per time point instead of on full 3D volumes. It works well when the
+dominant motion is lateral XY drift and the axial structure remains stable. Do
+not use it as the only correction when there is real Z drift, strong axial
+tilting, or true 3D rotation; use projection-based Z registration, full-volume
+translation, or full 3D rigid registration instead.
+
+Options introduced here
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+
+   * - Argument
+     - Meaning
+     - Default behavior
+   * - ``time_registration_mode="projection"``
+     - Register YX projections over time and apply the resulting correction to
+       all Z slices.
+     - Default mode.
+   * - ``projection_method``
+     - Projection used to build the registration image.
+     - ``"max"``.
+   * - ``zreg=False``
+     - Estimate XY shifts only.
+     - ``False``.
+   * - ``n_jobs``
+     - Worker count for independent time points/slices. ``-1`` uses all
+       available CPU workers.
+     - ``1``.
+
 Projection-based Z registration
 -------------------------------
 
@@ -55,6 +86,22 @@ projections and Z motion from orthogonal ZY/ZX projections:
 
 This is faster than full 3D registration and can be useful for moderate Z
 drift.
+
+New options in this block
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+
+   * - Argument
+     - Meaning
+     - Default behavior
+   * - ``zreg=True``
+     - Estimate and apply Z shifts in addition to XY shifts.
+     - ``False``.
+   * - ``max_z_shifts``
+     - Optional absolute Z correction-shift limit.
+     - ``None`` means no Z clipping.
 
 Full-volume ZYX translation
 ---------------------------
@@ -83,11 +130,37 @@ on the selected ZYX volume and returns Z, Y, and X correction shifts.
        return_details=True,
    )
 
-XY-plane rotation only
-----------------------
+New options in this block
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For a 3D+t stack that shifts in ZYX but only rotates in the XY plane, use the
-default projection-based rotation backend:
+.. list-table::
+   :header-rows: 1
+
+   * - Argument
+     - Meaning
+     - Default behavior
+   * - ``time_registration_mode="full_3d"``
+     - Register full ZYX volumes instead of YX projections.
+     - ``"projection"``.
+   * - ``projection_range``
+     - Optional half-open Z range used for registration. ``None`` uses all
+       slices.
+     - ``None``.
+   * - ``max_xy_shifts``
+     - Optional absolute XY correction-shift limit as ``(max_y, max_x)``.
+     - ``None``.
+
+Rotation Around the Z-axis
+--------------------------
+
+ZenReg's simple ``rotreg`` path estimates an in-plane rotation from YX
+projections. In 3D+t this means rotation around the Z axis. Translation can
+still be estimated in different ways.
+
+Full 3D translation plus Z-axis rotation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use this when the stack drifts in ZYX and also rotates slightly around Z:
 
 .. code-block:: python
 
@@ -99,23 +172,23 @@ default projection-based rotation backend:
        registration_channel=0,
        registration_stack=0,
        method="phase_cross_correlation",
-       time_registration_mode="projection",
+       time_registration_mode="full_3d",
        projection_method="max",
        zreg=True,
        rotreg=True,
        rigid_3d_backend="phase_cross_correlation",
+       max_xy_shifts=(8, 8),
+       max_z_shifts=4,
        max_rot_shifts=10,
        return_shifts=True,
        return_details=True,
    )
 
-Projection-based XYZ rotation estimates
----------------------------------------
+Projection-based translation plus Z-axis rotation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The simple projection-based rotation path can also estimate rotations from
-orthogonal projections. It is useful as a quick approximation, but it is not a
-full 6-DOF rigid-volume optimization. For true 3D rotations, use the full 3D
-rigid-registration workflow described in the next sections.
+Use this faster variant when the main translation can be estimated from
+projections:
 
 .. code-block:: python
 
@@ -124,11 +197,66 @@ rigid-registration workflow described in the next sections.
        registration_channel=0,
        registration_stack=0,
        method="phase_cross_correlation",
-       time_registration_mode="full_3d",
+       time_registration_mode="projection",
+       projection_method="max",
        zreg=True,
+       rotreg=True,
+       rigid_3d_backend="phase_cross_correlation",
+       max_z_shifts=3,
+       max_rot_shifts=10,
+       return_shifts=True,
+       return_details=True,
+   )
+
+Projection-only XY translation plus Z-axis rotation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use this when there is no meaningful Z drift and all corrections should be
+estimated from YX projections:
+
+.. code-block:: python
+
+   registered, details = register_stack(
+       image,
+       registration_channel=0,
+       registration_stack=0,
+       method="phase_cross_correlation",
+       time_registration_mode="projection",
+       projection_method="max",
+       zreg=False,
        rotreg=True,
        rigid_3d_backend="phase_cross_correlation",
        max_rot_shifts=10,
        return_shifts=True,
        return_details=True,
    )
+
+New options in this section
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+
+   * - Argument
+     - Meaning
+     - Default behavior
+   * - ``rotreg``
+     - Enable rotation correction. With
+       ``rigid_3d_backend="phase_cross_correlation"``, this is Z-axis
+       rotation from YX projections.
+     - ``False``.
+   * - ``rigid_3d_backend="phase_cross_correlation"``
+     - Use the simple projection-based rotation path rather than SimpleITK or
+       point-based full 3D rigid registration.
+     - ``"phase_cross_correlation"``.
+   * - ``max_rot_shifts``
+     - Optional absolute rotation limit in degrees.
+     - ``None``.
+
+What about X/Y-axis rotations?
+------------------------------
+
+The simple ``rotreg`` path above only corrects in-plane rotation around Z. It
+does not estimate full all-axis 3D rotations. For true ``rotation_z``,
+``rotation_y``, and ``rotation_x`` correction, use the full 3D rigid workflow
+with ``rigid_3d_backend="simpleitk"`` or ``"points"``.
