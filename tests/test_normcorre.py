@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.ndimage import map_coordinates, shift as ndi_shift
 
-from zenreg import register_stack, register_stack_normcorre
+from zenreg import plot_normcorre_patch_overlay, register_stack, register_stack_normcorre
 
 
 def _gaussian_image(shape_yx=(80, 80)):
@@ -64,6 +64,32 @@ def _local_y_shift(image, *, amplitude=2.0):
     shift_y = amplitude * np.sin(2 * np.pi * xx / image.shape[1])
     coords = [yy - shift_y, xx]
     return map_coordinates(image, coords, order=1, mode="constant", cval=0.0).astype(np.float32)
+
+
+def test_plot_normcorre_patch_overlay_writes_png(tmp_path):
+    stack = _two_channel_3d_stack(np.asarray([[0.0, 0.0, 0.0]], dtype=np.float32))
+    metadata = {
+        "Annotations": {
+            "original_filename": "source.ome.tif",
+            "original_parentfolder": str(tmp_path),
+        }
+    }
+
+    output_path = plot_normcorre_patch_overlay(
+        stack,
+        metadata,
+        registration_channel=0,
+        registration_stack=0,
+        nc_strides=(3, 24, 24),
+        nc_overlaps=(2, 12, 12),
+        projection_method="mean",
+        projection_range=(1, 10),
+        output_dir=tmp_path,
+    )
+
+    assert output_path.exists()
+    assert output_path.suffix == ".png"
+    assert output_path.stat().st_size > 0
 
 
 def test_normcorre_2d_translation_estimates_correction_shift():

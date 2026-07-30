@@ -44,7 +44,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from zenreg import load_stack, print_available_compute, register_stack, save_stack, z_project
+from zenreg import (
+    load_stack,
+    plot_normcorre_patch_overlay,
+    print_available_compute,
+    register_stack,
+    save_stack,
+    z_project,
+)
 from zenreg.synthetic import write_example_dataset
 
 # %% PATHS
@@ -457,6 +464,18 @@ registered_2d_t_xy_phase, details_2d_t_xy_phase = register_stack(
     return_shifts=True,
     return_details=True)
 
+plot_normcorre_patch_overlay(
+    stack_2d_t_xy,
+    metadata_2d_t_xy,
+    registration_channel=0,
+    registration_stack=0,
+    nc_strides=(32, 32),
+    nc_overlaps=(16, 16),
+    projection_method="max",
+    projection_range=(1, 10),
+    output_dir=OUTPUT_DIR,
+)
+
 registered_2d_t_xy_normcorre, details_2d_t_xy_normcorre = register_stack(
     stack_2d_t_xy,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
@@ -583,6 +602,18 @@ print(f"2D+t local-motion stack shape: {stack_2d_t_local.shape} (TZCYX)")
 print("Local GT columns:", local_motion_gt_2d_t.dtype.names)
 print(f"Strongest local-motion frame: t={local_motion_frame_2d_t}")
 
+plot_normcorre_patch_overlay(
+    stack_2d_t_local,
+    metadata_2d_t_local,
+    registration_channel=0,
+    registration_stack=0,
+    nc_strides=(14, 14),
+    nc_overlaps=(24, 24),
+    projection_method="max",
+    projection_range=(1, 10),
+    output_dir=OUTPUT_DIR,
+)
+
 registered_2d_t_local, details_2d_t_local = register_stack(
     stack_2d_t_local,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
@@ -700,6 +731,18 @@ print(
     f"expected correction={expected_2d_t_trans_rot_deg[rotation_event_frame_2d_t]:.3f} deg"
 )
 maybe_open_in_napari(stack_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation")
+
+plot_normcorre_patch_overlay(
+    stack_2d_t_trans_rot,
+    metadata_2d_t_trans_rot,
+    registration_channel=0,
+    registration_stack=0,
+    nc_strides=(16, 16),
+    nc_overlaps=(24, 24),
+    projection_method="max",
+    projection_range=(1, 10),
+    output_dir=OUTPUT_DIR,
+)
 
 registered_2d_t_trans_rot, details_2d_t_trans_rot = register_stack(
     stack_2d_t_trans_rot,
@@ -829,6 +872,18 @@ for t in range(stack_2d_t_piecewise_xy.shape[0]):
 piecewise_event_frame_2d_t = int(np.argmax(piecewise_motion_by_t))
 print(f"2D+t piecewise XY stack shape: {stack_2d_t_piecewise_xy.shape} (TZCYX)")
 print(f"Strongest piecewise-translation frame: t={piecewise_event_frame_2d_t}")
+
+plot_normcorre_patch_overlay(
+    stack_2d_t_piecewise_xy,
+    metadata_2d_t_piecewise_xy,
+    registration_channel=0,
+    registration_stack=0,
+    nc_strides=(24, 24),
+    nc_overlaps=(24, 24),
+    projection_method="max",
+    projection_range=(1, 10),
+    output_dir=OUTPUT_DIR,
+)
 
 registered_2d_t_piecewise_phase, details_2d_t_piecewise_phase = register_stack(
     stack_2d_t_piecewise_xy,
@@ -993,6 +1048,18 @@ stack_3d_t_zyx, metadata_3d_t_zyx = load_stack(
 expected_3d_t_zyx = load_expected_time_registration_shifts(GT_3D_T_ZYX_PATH, registration_stack=0, axes="zyx")
 print(f"3D+t global ZYX stack shape: {stack_3d_t_zyx.shape} (TZCYX)")
 
+plot_normcorre_patch_overlay(
+    stack_3d_t_zyx,
+    metadata_3d_t_zyx,
+    registration_channel=0,
+    registration_stack=0,
+    nc_strides=(6, 48, 48),
+    nc_overlaps=(3, 24, 24),
+    projection_method="max",
+    projection_range=(1, 10),
+    output_dir=OUTPUT_DIR,
+)
+
 registered_3d_t_zyx, details_3d_t_zyx = register_stack(
     stack_3d_t_zyx,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
@@ -1052,6 +1119,18 @@ print(
             rigid_gt_3d_t_trans_rot_z["applied_rotation_x_deg"],
         ]
     )[:5]
+)
+
+plot_normcorre_patch_overlay(
+    stack_3d_t_trans_rot_z,
+    metadata_3d_t_trans_rot_z,
+    registration_channel=0,
+    registration_stack=0,
+    nc_strides=(6, 48, 48),
+    nc_overlaps=(3, 24, 24),
+    projection_method="max",
+    projection_range=(1, 10),
+    output_dir=OUTPUT_DIR,
 )
 
 registered_3d_t_trans_rot_z, details_3d_t_trans_rot_z = register_stack(
@@ -1119,6 +1198,18 @@ print(
     )[:5]
 )
 
+plot_normcorre_patch_overlay(
+    stack_3d_t_trans_rot_x,
+    metadata_3d_t_trans_rot_x,
+    registration_channel=0,
+    registration_stack=0,
+    nc_strides=(6, 48, 48),
+    nc_overlaps=(3, 24, 24),
+    projection_method="max",
+    projection_range=(1, 10),
+    output_dir=OUTPUT_DIR,
+)
+
 registered_3d_t_trans_rot_x, details_3d_t_trans_rot_x = register_stack(
     stack_3d_t_trans_rot_x,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
@@ -1181,6 +1272,18 @@ print(
             rigid_gt_3d_t_trans_rot_all_center["rotation_center_x"],
         ]
     )[:5]
+)
+
+plot_normcorre_patch_overlay(
+    stack_3d_t_trans_rot_all_center,
+    metadata_3d_t_trans_rot_all_center,
+    registration_channel=0,
+    registration_stack=0,
+    nc_strides=(6, 48, 48),
+    nc_overlaps=(3, 24, 24),
+    projection_method="max",
+    projection_range=(1, 10),
+    output_dir=OUTPUT_DIR,
 )
 
 registered_3d_t_trans_rot_all_center, details_3d_t_trans_rot_all_center = register_stack(
@@ -1256,6 +1359,18 @@ print(
     )[:5]
 )
 
+plot_normcorre_patch_overlay(
+    stack_3d_t_trans_rot_all_offcenter,
+    metadata_3d_t_trans_rot_all_offcenter,
+    registration_channel=0,
+    registration_stack=0,
+    nc_strides=(6, 48, 48),
+    nc_overlaps=(3, 24, 24),
+    projection_method="max",
+    projection_range=(1, 10),
+    output_dir=OUTPUT_DIR,
+)
+
 registered_3d_t_trans_rot_all_offcenter, details_3d_t_trans_rot_all_offcenter = register_stack(
     stack_3d_t_trans_rot_all_offcenter,
     registration_channel=0,  # channel used for NoRMCorre shift estimation
@@ -1327,6 +1442,18 @@ print(
             rigid_gt_3d_t_trans_rot_all_outside["rotation_center_x"],
         ]
     )[:5]
+)
+
+plot_normcorre_patch_overlay(
+    stack_3d_t_trans_rot_all_outside,
+    metadata_3d_t_trans_rot_all_outside,
+    registration_channel=0,
+    registration_stack=0,
+    nc_strides=(6, 48, 48),
+    nc_overlaps=(3, 24, 24),
+    projection_method="max",
+    projection_range=(1, 10),
+    output_dir=OUTPUT_DIR,
 )
 
 registered_3d_t_trans_rot_all_outside, details_3d_t_trans_rot_all_outside = register_stack(

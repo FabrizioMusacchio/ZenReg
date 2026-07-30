@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -227,6 +228,257 @@ def _build_patch_grid(
         centers_by_axis=centers_by_axis,
         grid_shape=tuple(len(starts) for starts in starts_by_axis),
     )
+
+
+def _project_zyx_for_overlay(volume_zyx: np.ndarray, *, projection_method: str) -> np.ndarray:
+    """Project one ``ZYX`` volume to a ``YX`` image for patch-grid visualization."""
+
+    if projection_method == "max":
+        return np.max(volume_zyx, axis=0)
+    if projection_method == "mean":
+        return np.mean(volume_zyx, axis=0)
+    if projection_method == "median":
+        return np.median(volume_zyx, axis=0)
+    if projection_method == "var":
+        return np.var(volume_zyx, axis=0)
+    return np.std(volume_zyx, axis=0)
+
+
+def _metadata_source_parent(metadata: dict[str, Any] | None) -> Path:
+    """Return the best available source folder from an OMIO metadata dictionary."""
+
+    if metadata is None:
+        return Path.cwd()
+    annotations = metadata.get("Annotations", {}) if isinstance(metadata, dict) else {}
+    for key in ("original_parentfolder", "omio_cache_folder", "omio_zarr_store_path"):
+        value = annotations.get(key) if key in annotations else metadata.get(key)
+        if value:
+            path = Path(value)
+            return path if path.suffix == "" else path.parent
+    return Path.cwd()
+
+
+def _metadata_source_stem(metadata: dict[str, Any] | None, *, fallback: str) -> str:
+    """Return a compact source name from OMIO metadata."""
+
+    if metadata is None:
+        return fallback
+    annotations = metadata.get("Annotations", {}) if isinstance(metadata, dict) else {}
+    filename = annotations.get("original_filename") or metadata.get("original_filename")
+    if not filename:
+        return fallback
+    name = Path(str(filename)).name
+    lower_name = name.lower()
+    for suffix in (".ome.tiff", ".ome.tif", ".tiff", ".tif"):
+        if lower_name.endswith(suffix):
+            return name[: -len(suffix)]
+    return Path(name).stem
+
+
+def _normalize_overlay_yx_tuple(
+    value,
+    *,
+    z_count: int,
+    default_2d: tuple[int, int],
+    default_3d: tuple[int, int, int],
+    name: str,
+) -> tuple[tuple[int, int], int | None]:
+    """Normalize NoRMCorre patch settings for a YX projection overlay."""
+
+    if value is None:
+        values = default_3d if z_count > 1 else default_2d
+    elif np.isscalar(value):
+        values = (int(value), int(value))
+    else:
+        values = tuple(int(v) for v in value)
+        if len(values) not in (2, 3):
+            raise ValueError(f"{name} must be a scalar or contain 2 YX or 3 ZYX values.")
+    if any(v < 1 for v in values):
+        raise ValueError(f"{name} values must be >= 1. Got {value!r}.")
+    if len(values) == 3:
+        return (int(values[1]), int(values[2])), int(values[0])
+    return (int(values[0]), int(values[1])), None
+
+
+def plot_normcorre_patch_overlay(
+    stack,
+    metadata: dict[str, Any] | None = None,
+    *,
+    registration_channel: int = 0,
+    registration_stack: int = 0,
+    nc_strides: tuple[int, ...] | int | None = None,
+    nc_overlaps: tuple[int, ...] | int | None = None,
+    projection_method: str = "max",
+    projection_range: tuple[int, int] | Sequence[int] | None = (1, 10),
+    output_dir: str | Path | None = None,
+    output_name: str | None = None,
+    show: bool = False,
+    dpi: int = 180,
+) -> Path:
+    """
+    Plot and save a NoRMCorre patch/stride overlay on one reference projection.
+
+    This helper is intended to be called after ``load_stack`` and before
+    ``register_stack(method="normcorre")``. It reads only one time point, one
+    channel, and the requested Z range, so OMIO/Zarr-backed large stacks are not
+    materialized in full. For 3D NoRMCorre settings, the YX patch footprints are
+    drawn on the Z projection and the Z stride/overlap values are noted in the
+    plot annotation.
+
+    Parameters
+    ----------
+    stack : array-like
+        Input image in canonical ``TZCYX`` order.
+    metadata : dict or None, optional
+        OMIO metadata. Used only to infer a convenient default output folder and
+        filename.
+    registration_channel, registration_stack : int, optional
+        Channel and time point shown in the overlay.
+    nc_strides, nc_overlaps : tuple, int, or None, optional
+        NoRMCorre patch-grid settings. The effective patch size is
+        ``nc_strides + nc_overlaps``. 2D settings are interpreted as ``YX``;
+        3D settings are interpreted as ``ZYX`` and projected to YX.
+    projection_method : {"max", "mean", "median", "var", "std"}, optional
+        Projection method for the selected reference volume.
+    projection_range : tuple[int, int] or None, optional
+        Half-open Z range for the projection. The default ``(1, 10)`` is
+        clamped to the available Z extent; if the stack has fewer slices, all
+        available slices in that range are used.
+    output_dir : str, pathlib.Path, or None, optional
+        Destination folder. If None, the plot is saved in
+        ``<source_parent>/registered_normcorre`` when source metadata is
+        available, otherwise in ``./registered_normcorre``.
+    output_name : str or None, optional
+        PNG filename. If None, a descriptive filename is generated.
+    show : bool, optional
+        If True, display the figure interactively after saving.
+    dpi : int, optional
+        Figure resolution.
+
+    Returns
+    -------
+    pathlib.Path
+        Path to the saved PNG overlay.
+    """
+
+    stack = ensure_tzcyx_stack(stack)
+    time_count, z_count, channel_count, y_count, x_count = stack.shape
+    registration_stack = int(registration_stack)
+    registration_channel = int(registration_channel)
+    if not 0 <= registration_stack < time_count:
+        raise ValueError(f"registration_stack must be between 0 and {time_count - 1}.")
+    if not 0 <= registration_channel < channel_count:
+        raise ValueError(f"registration_channel must be between 0 and {channel_count - 1}.")
+
+    projection_method = _normalize_projection_method(projection_method)
+    z_start, z_stop = normalize_zrange(projection_range, z_count, strict=False)
+    volume = np.asarray(
+        stack[registration_stack, z_start:z_stop, registration_channel, :, :],
+        dtype=np.float32,
+    )
+    projection = _project_zyx_for_overlay(volume, projection_method=projection_method)
+
+    strides_yx, stride_z = _normalize_overlay_yx_tuple(
+        nc_strides,
+        z_count=z_count,
+        default_2d=(48, 48),
+        default_3d=(6, 48, 48),
+        name="nc_strides",
+    )
+    overlaps_yx, overlap_z = _normalize_overlay_yx_tuple(
+        nc_overlaps,
+        z_count=z_count,
+        default_2d=(24, 24),
+        default_3d=(3, 24, 24),
+        name="nc_overlaps",
+    )
+    patch_grid = _build_patch_grid(
+        (int(y_count), int(x_count)),
+        strides=strides_yx,
+        overlaps=overlaps_yx,
+    )
+
+    if output_dir is None:
+        output_dir = _metadata_source_parent(metadata) / "registered_normcorre"
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_name is None:
+        stem = _metadata_source_stem(metadata, fallback="zenreg_stack")
+        output_name = (
+            f"{stem}_normcorre_patch_overlay_"
+            f"t{registration_stack}_c{registration_channel}_{projection_method}_z{z_start}-{z_stop}.png"
+        )
+    output_path = output_dir / output_name
+
+    import matplotlib.patches as patches
+    import matplotlib.pyplot as plt
+
+    finite_projection = projection[np.isfinite(projection)]
+    if finite_projection.size:
+        vmin, vmax = np.percentile(finite_projection, [1, 99.5])
+        if vmin == vmax:
+            vmin, vmax = None, None
+    else:
+        vmin, vmax = None, None
+
+    fig, ax = plt.subplots(figsize=(8, 8), constrained_layout=True)
+    ax.imshow(projection, cmap="gray", vmin=vmin, vmax=vmax)
+    for y_slice, x_slice in patch_grid.slices:
+        rect = patches.Rectangle(
+            (x_slice.start, y_slice.start),
+            x_slice.stop - x_slice.start,
+            y_slice.stop - y_slice.start,
+            fill=False,
+            edgecolor="tab:orange",
+            linewidth=1.0,
+            alpha=0.75,
+        )
+        ax.add_patch(rect)
+    for center_y in patch_grid.centers_by_axis[0]:
+        ax.axhline(float(center_y), color="tab:cyan", linewidth=0.6, alpha=0.45)
+    for center_x in patch_grid.centers_by_axis[1]:
+        ax.axvline(float(center_x), color="tab:cyan", linewidth=0.6, alpha=0.45)
+    ax.scatter(
+        np.repeat(patch_grid.centers_by_axis[1], len(patch_grid.centers_by_axis[0])),
+        np.tile(patch_grid.centers_by_axis[0], len(patch_grid.centers_by_axis[1])),
+        s=10,
+        color="tab:cyan",
+        alpha=0.75,
+        linewidths=0,
+    )
+    annotation = [
+        f"strides_yx={strides_yx} overlaps_yx={overlaps_yx}",
+        f"patch_size_yx=({strides_yx[0] + overlaps_yx[0]}, {strides_yx[1] + overlaps_yx[1]})",
+        f"grid_yx={patch_grid.grid_shape} patches={len(patch_grid.slices)}",
+    ]
+    if stride_z is not None or overlap_z is not None:
+        annotation.append(f"z stride/overlap={stride_z}/{overlap_z} projected z={z_start}:{z_stop}")
+    else:
+        annotation.append(f"projected z={z_start}:{z_stop}")
+    ax.text(
+        0.01,
+        0.99,
+        "\n".join(annotation),
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=8,
+        color="white",
+        bbox={"facecolor": "black", "alpha": 0.55, "edgecolor": "none", "pad": 4},
+    )
+    ax.set_title(
+        f"NoRMCorre patch overlay: t={registration_stack}, c={registration_channel}, {projection_method}"
+    )
+    ax.set_xlim(-0.5, x_count - 0.5)
+    ax.set_ylim(y_count - 0.5, -0.5)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    fig.savefig(output_path, dpi=int(dpi))
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+    return output_path
 
 
 def _estimate_shift(

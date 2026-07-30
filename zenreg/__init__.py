@@ -19,7 +19,7 @@ from .io import (
     save_stack,
     update_stack_metadata,
 )
-from .normcorre import register_stack_normcorre
+from .normcorre import plot_normcorre_patch_overlay, register_stack_normcorre
 from .profiling import MemoryTracker, profile_memory
 from .rigid3d import register_stack_rigid_3d
 from .registration import correct_intra_stack_z_drift, register_stack
@@ -38,6 +38,7 @@ __all__ = [
     "MemoryTracker",
     "print_available_compute",
     "profile_memory",
+    "plot_normcorre_patch_overlay",
     "register_stack_normcorre",
     "register_stack_rigid_3d",
     "register_stack",
