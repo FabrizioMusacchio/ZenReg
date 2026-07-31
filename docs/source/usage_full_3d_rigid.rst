@@ -26,33 +26,31 @@ Use ``rigid_3d_backend="simpleitk"`` for dense structural volumes:
 
    registered, details = register_stack(
        image,
-       registration_channel=0,
-       registration_stack=0,
-       method="phase_cross_correlation",
-       time_registration_mode="full_3d",
-       zreg=True,
-       rotreg=True,
-       rigid_3d_backend="simpleitk",
-       rot_spacing_zyx=(1.0, 1.0, 1.0),
-       rot_init_iterations=2,
-       rot_metric="correlation",
-       rot_shrink_factors=(4, 2, 1),
-       rot_smoothing_sigmas=(2.0, 1.0, 0.0),
-       rot_iterations=100,
-       rot_n_jobs=2,
-       zero_clip=True,
-       zero_clip_mode="auto",
-       zero_clip_mask_strategy="relaxed",
-       return_shifts=True,
-       return_details=True,
-   )
+       registration_channel     = 0,
+       registration_stack       = 0,
+       method                   = "phase_cross_correlation",
+       time_registration_mode   = "full_3d",
+       zreg                     = True,
+       rotreg                   = True,
+       rigid_3d_backend         = "simpleitk",
+       rot_spacing_zyx          = (1.0, 1.0, 1.0),
+       rot_init_iterations      = 2,
+       rot_metric               = "correlation",
+       rot_shrink_factors       = (4, 2, 1),
+       rot_smoothing_sigmas     = (2.0, 1.0, 0.0),
+       rot_iterations           = 100,
+       rot_n_jobs               = 2,
+       zero_clip                = True,
+       zero_clip_mode           = "auto",
+       zero_clip_mask_strategy  = "relaxed",
+       return_shifts            = True,
+       return_details           = True)
 
 Use real physical spacing in ``rot_spacing_zyx`` for anisotropic data. This is
 important because rotations in anisotropic Z stacks are otherwise geometrically
 mis-scaled.
 
-Options introduced here
-~~~~~~~~~~~~~~~~~~~~~~~
+Options introduced here:
 
 .. list-table::
    :header-rows: 1

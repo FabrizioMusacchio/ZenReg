@@ -32,6 +32,7 @@ tables. Important datasets include:
 
 .. list-table::
    :header-rows: 1
+   :widths: 51 49
    
    * - Dataset
      - Purpose

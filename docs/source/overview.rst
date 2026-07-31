@@ -78,8 +78,8 @@ ZenReg currently supports:
   3D+t.
 - Full 3D rigid 6-DOF registration with dense SimpleITK or sparse point-based
   backends.
-- Optional memory-efficient workflows with 
-`OMIO <https://github.com/FabrizioMusacchio/omio>`_ disk-backed Zarr arrays.
+- Optional memory-efficient workflows with
+  `OMIO <https://github.com/FabrizioMusacchio/omio>`_ disk-backed Zarr arrays.
 
 Supported methods
 -----------------
@@ -181,4 +181,3 @@ the `ZenReg repository <https://github.com/FabrizioMusacchio/ZenReg>`_ or contac
 directly:
 
 | **Fabrizio Musacchio**: `Email <mailto:fabrizio.musacchio@dzne.de>`_ | `GitHub <https://github.com/FabrizioMusacchio>`_ | `Website <https://www.fabriziomusacchio.com>`_
-
