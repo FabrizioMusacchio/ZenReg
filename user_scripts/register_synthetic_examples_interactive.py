@@ -52,7 +52,6 @@ from zenreg import (
     show_slices,
     show_timepoints,
 )
-
 # %% DEFINE INPUT AND OUTPUT PATHS
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered"
