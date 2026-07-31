@@ -67,6 +67,8 @@ from zenreg.synthetic import write_example_dataset
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered_normcorre"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+FIGURE_DIR = OUTPUT_DIR / "figures"
+FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 AVAILABLE_CPUS = print_available_compute()
 
 STACK_2D_T_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_xy.ome.tif"
@@ -345,12 +347,14 @@ show_before_after(
     registered_2d_t_xy_phase,
     title="2D+t global XY translation (phase cross)",
     channel=0,
+    save_dir=FIGURE_DIR,
 )
 show_before_after(
     stack_2d_t_xy,
     registered_2d_t_xy_normcorre,
     title="2D+t global XY translation (ZenReg NoRMCorre)",
     channel=0,
+    save_dir=FIGURE_DIR,
 )
 # show_before_after(
 #     stack_2d_t_xy,
@@ -447,6 +451,7 @@ show_before_after(
     title="2D+t local in-frame motion",
     channel=0,
     moving_time=local_motion_frame_2d_t,
+    save_dir=FIGURE_DIR,
 )
 save_stack(
     OUTPUT_DIR / "2d_t_local_normcorre_registered.ome.tif",
@@ -587,6 +592,7 @@ show_before_after(
     title="2D+t translation plus rotation",
     channel=0,
     moving_time=rotation_event_frame_2d_t,
+    save_dir=FIGURE_DIR,
 )
 save_stack(
     OUTPUT_DIR / "2d_t_translation_rotation_normcorre_registered.ome.tif",
@@ -781,6 +787,7 @@ show_before_after(
     title="2D+t piecewise XY translation (phase cross)",
     channel=0,
     moving_time=piecewise_event_frame_2d_t,
+    save_dir=FIGURE_DIR,
 )
 show_before_after(
     stack_2d_t_piecewise_xy,
@@ -788,6 +795,7 @@ show_before_after(
     title="2D+t piecewise XY translation (NoRMCorre)",
     channel=0,
     moving_time=piecewise_event_frame_2d_t,
+    save_dir=FIGURE_DIR,
 )
 # show_before_after(
 #     stack_2d_t_piecewise_xy,
@@ -892,7 +900,13 @@ registered_3d_t_zyx, details_3d_t_zyx = register_stack(
     return_details=True,
 )
 print_shift_comparison("3D+t global ZYX NoRMCorre rigid shifts", details_3d_t_zyx["time_shifts_zyx"], expected_3d_t_zyx)
-show_before_after(stack_3d_t_zyx, registered_3d_t_zyx, title="3D+t global ZYX translation", channel=0)
+show_before_after(
+    stack_3d_t_zyx,
+    registered_3d_t_zyx,
+    title="3D+t global ZYX translation",
+    channel=0,
+    save_dir=FIGURE_DIR,
+)
 save_stack(
     OUTPUT_DIR / "3d_t_global_zyx_normcorre_registered.ome.tif",
     registered_3d_t_zyx,
@@ -969,7 +983,13 @@ print_shift_comparison(
     details_3d_t_trans_rot_z["time_shifts_zyx"],
     expected_3d_t_trans_rot_z,
 )
-show_before_after(stack_3d_t_trans_rot_z, registered_3d_t_trans_rot_z, title="3D+t translation plus Z rotation", channel=0)
+show_before_after(
+    stack_3d_t_trans_rot_z,
+    registered_3d_t_trans_rot_z,
+    title="3D+t translation plus Z rotation",
+    channel=0,
+    save_dir=FIGURE_DIR,
+)
 save_stack(
     OUTPUT_DIR / "3d_t_translation_rotation_z_normcorre_registered.ome.tif",
     registered_3d_t_trans_rot_z,
@@ -1046,7 +1066,13 @@ print_shift_comparison(
     details_3d_t_trans_rot_x["time_shifts_zyx"],
     expected_3d_t_trans_rot_x,
 )
-show_before_after(stack_3d_t_trans_rot_x, registered_3d_t_trans_rot_x, title="3D+t translation plus X rotation", channel=0)
+show_before_after(
+    stack_3d_t_trans_rot_x,
+    registered_3d_t_trans_rot_x,
+    title="3D+t translation plus X rotation",
+    channel=0,
+    save_dir=FIGURE_DIR,
+)
 save_stack(
     OUTPUT_DIR / "3d_t_translation_rotation_x_normcorre_registered.ome.tif",
     registered_3d_t_trans_rot_x,
@@ -1127,6 +1153,7 @@ show_before_after(
     registered_3d_t_trans_rot_all_center,
     title="3D+t all-axis rotation around stack center",
     channel=0,
+    save_dir=FIGURE_DIR,
 )
 save_stack(
     OUTPUT_DIR / "3d_t_translation_rotation_all_center_normcorre_registered.ome.tif",
@@ -1213,6 +1240,7 @@ show_before_after(
     registered_3d_t_trans_rot_all_offcenter,
     title="3D+t all-axis rotation around off-center point",
     channel=0,
+    save_dir=FIGURE_DIR,
 )
 save_stack(
     OUTPUT_DIR / "3d_t_translation_rotation_all_offcenter_normcorre_registered.ome.tif",
@@ -1299,6 +1327,7 @@ show_before_after(
     registered_3d_t_trans_rot_all_outside,
     title="3D+t all-axis rotation around outside point",
     channel=0,
+    save_dir=FIGURE_DIR,
 )
 save_stack(
     OUTPUT_DIR / "3d_t_translation_rotation_all_outside_normcorre_registered.ome.tif",

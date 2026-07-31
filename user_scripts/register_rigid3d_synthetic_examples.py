@@ -49,6 +49,8 @@ from zenreg.synthetic import write_example_dataset
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered_rigid3d"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+FIGURE_DIR = OUTPUT_DIR / "figures"
+FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 OPEN_IN_NAPARI = False
 AVAILABLE_CPUS = print_available_compute()
 
@@ -115,6 +117,7 @@ show_before_after(
     title="Dense 3D+t SimpleITK 6-DOF registration",
     channel=0,
     moving_time=1,
+    save_dir=FIGURE_DIR,
 )
 # Optional post-hoc crop after visual inspection. Missing keys are treated as 0.
 # registered_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk = crop_stack(
@@ -187,6 +190,7 @@ show_before_after(
     title="Sparse puncta 3D+t points 6-DOF registration",
     channel=0,
     moving_time=1,
+    save_dir=FIGURE_DIR,
 )
 # Optional post-hoc crop after visual inspection. Missing keys are treated as 0.
 # registered_3d_rigid_points, metadata_3d_rigid_points = crop_stack(
@@ -264,6 +268,7 @@ show_before_after(
     title="Sparse puncta 3D+t SimpleITK 6-DOF registration",
     channel=0,
     moving_time=1,
+    save_dir=FIGURE_DIR,
 )
 # Optional post-hoc crop after visual inspection. Missing keys are treated as 0.
 # registered_3d_rigid_points_simpleitk, metadata_3d_rigid_points_simpleitk = crop_stack(

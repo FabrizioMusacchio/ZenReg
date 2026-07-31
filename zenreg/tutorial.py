@@ -202,6 +202,22 @@ def _project_one_time(stack, *, t: int, channel: int, projection_method: str) ->
     )[0, 0, 0]
 
 
+def _slugify_for_filename(text: str) -> str:
+    """Return a compact ASCII-ish filename slug for tutorial figures."""
+
+    slug_chars = []
+    previous_was_separator = False
+    for character in str(text).strip().lower():
+        if character.isalnum():
+            slug_chars.append(character)
+            previous_was_separator = False
+        elif not previous_was_separator:
+            slug_chars.append("_")
+            previous_was_separator = True
+    slug = "".join(slug_chars).strip("_")
+    return slug or "zenreg_figure"
+
+
 def show_timepoints(
     stack,
     *,
@@ -275,8 +291,33 @@ def show_before_after(
     moving_time: int = 1,
     reference_time: int = 0,
     projection_method: str = "max",
+    save_path: str | Path | None = None,
+    save_dir: str | Path | None = None,
+    dpi: int = 200,
 ) -> None:
-    """Show raw and registered projection residuals for two time points."""
+    """Show and optionally save raw/registered projection residuals.
+
+    Parameters
+    ----------
+    raw_stack, registered_stack : array-like
+        Canonical ``TZCYX`` stacks before and after registration.
+    title : str
+        Figure title. Used to generate a filename when ``save_dir`` is given.
+    channel : int, optional
+        Channel to project.
+    moving_time, reference_time : int, optional
+        Time points to compare.
+    projection_method : str, optional
+        Z-projection method used for the quick-look images.
+    save_path : str, pathlib.Path, or None, optional
+        Explicit output path for the figure. If provided, this takes precedence
+        over ``save_dir``.
+    save_dir : str, pathlib.Path, or None, optional
+        Output directory. When provided without ``save_path``, ZenReg creates a
+        deterministic PNG filename from the title and comparison settings.
+    dpi : int, optional
+        Figure resolution used for saving.
+    """
 
     reference_time = int(np.clip(reference_time, 0, raw_stack.shape[0] - 1))
     moving_time = int(np.clip(moving_time, 0, raw_stack.shape[0] - 1))
@@ -327,6 +368,16 @@ def show_before_after(
         ax.set_title(label)
         ax.axis("off")
     fig.suptitle(title)
+    if save_path is not None or save_dir is not None:
+        if save_path is None:
+            slug = _slugify_for_filename(title)
+            save_path = (
+                Path(save_dir)
+                / f"{slug}_c{int(channel)}_t{reference_time}_t{moving_time}_{projection_method}.png"
+            )
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=int(dpi), bbox_inches="tight")
     if plt.get_backend().lower() == "agg":
         plt.close(fig)
     else:

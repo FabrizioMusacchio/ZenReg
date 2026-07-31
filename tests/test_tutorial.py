@@ -4,6 +4,7 @@ from zenreg import (
     load_expected_rigid_corrections,
     load_expected_slice_registration_shifts,
     load_expected_time_registration_shifts,
+    show_before_after,
 )
 
 
@@ -67,3 +68,26 @@ def test_load_expected_rigid_corrections(tmp_path):
 
     np.testing.assert_allclose(shifts, [[0.0, 0.0, 0.0], [-1.0, 2.0, -3.0]])
     np.testing.assert_allclose(rotations, [[0.0, 0.0, 0.0], [1.5, -2.5, 3.5]])
+
+
+def test_show_before_after_writes_png(tmp_path):
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+    stack = np.zeros((2, 1, 1, 12, 12), dtype=np.float32)
+    registered = np.zeros_like(stack)
+    stack[0, 0, 0, 4:8, 4:8] = 1.0
+    stack[1, 0, 0, 5:9, 5:9] = 1.0
+    registered[0, 0, 0, 4:8, 4:8] = 1.0
+    registered[1, 0, 0, 4:8, 4:8] = 1.0
+
+    output_path = tmp_path / "before_after.png"
+    show_before_after(
+        stack,
+        registered,
+        title="Before after test",
+        save_path=output_path,
+    )
+
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0
