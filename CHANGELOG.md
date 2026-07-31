@@ -6,12 +6,12 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.20787509-blue)](https://doi.org/10.5281/zenodo.20787509)
 
-## 🚀 v0.0.2 - First functional ZenReg release
+## 🚀 v0.0.1 - First functional ZenReg release
 
 July 31, 2026
 
 This is the first real ZenReg release. Version 0.0.1 only established the
-package skeleton; v0.0.2 introduces the functional microscopy registration
+package skeleton; v0.0.1 introduces the functional microscopy registration
 platform.
 
 ### Core workflow
@@ -101,7 +101,7 @@ platform.
 - Added project logo assets for the README and documentation.
 
 
-## 🚀 v0.0.1
+## 🚀 v0.0.0
 
 February 3, 2026
 
