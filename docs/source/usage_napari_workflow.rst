@@ -77,11 +77,11 @@ This is especially useful for:
   view,
 - comparing raw, phase-cross-correlation, NoRMCorre, and rigid-3D outputs.
 
-Headless and RTD-safe scripts
------------------------------
+Headless runs
+--------------
 
 Keep ``OPEN_IN_NAPARI = False`` in scripts that should run on servers,
-continuous integration, Read the Docs, or HPC nodes:
+continuous integration, or HPC nodes:
 
 .. code-block:: python
 
