@@ -11,7 +11,8 @@ jobs:
     env:
       MPLBACKEND: Agg
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-      ZENREG_OMIO_RUNTIME_DIR: /tmp/zenreg-omio-runtime
+      ZENREG_OMIO_CACHE_DIR: /tmp/zenreg-omio-cache
+      NUMBA_CACHE_DIR: /tmp/zenreg-numba-cache
       XDG_CACHE_HOME: /tmp/zenreg-xdg-cache
       MPLCONFIGDIR: /tmp/zenreg-matplotlib
 

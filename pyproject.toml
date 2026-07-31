@@ -33,7 +33,7 @@ dependencies = [
   "scikit-image",
   "SimpleITK",
   "pystackreg",
-  "omio-microscopy",
+  "omio-microscopy>=0.2.5",
   "matplotlib",
   "ipykernel"
 ]
