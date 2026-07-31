@@ -14,6 +14,7 @@ keeping the examples small enough for local experimentation.
    usage_synthetic_datasets
    usage_2d_t
    usage_memory_efficient
+   usage_preprocessing
    usage_3d_t
    usage_intra_stack
    usage_full_3d_rigid
@@ -24,8 +25,9 @@ Recommended order
 
 Start with the synthetic dataset page, then run the 2D+t tutorial. Read the
 memory-efficient workflow page before working with large files, server-hosted
-data, or local scratch caches. The 3D+t and intra-stack pages use the same
-``load_stack -> register_stack -> save_stack`` pattern, but add z-aware
-settings. The full 3D rigid tutorial introduces SimpleITK and point-based
-6-DOF registration. The batch tutorial shows how to wrap the same calls in a
-project-level loop.
+data, or local scratch caches. The optional preprocessing page explains how to
+stabilize registration estimates for noisy data. The 3D+t and intra-stack pages
+use the same ``load_stack -> register_stack -> save_stack`` pattern, but add
+z-aware settings. The full 3D rigid tutorial introduces SimpleITK and
+point-based 6-DOF registration. The batch tutorial shows how to wrap the same
+calls in a project-level loop.
