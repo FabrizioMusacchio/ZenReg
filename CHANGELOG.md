@@ -6,6 +6,12 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.20787509-blue)](https://doi.org/10.5281/zenodo.20787509)
 
+## 🚀 v0.0.3 - Dummy release for Zenodo
+
+July 31, 2026
+
+This is a dummy release to trigger Zenodo archiving. 
+
 ## 🚀 v0.0.2 - First functional ZenReg release
 
 July 31, 2026
