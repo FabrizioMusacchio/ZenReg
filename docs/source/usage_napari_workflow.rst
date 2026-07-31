@@ -50,6 +50,20 @@ interactive inspection one switch away.
        metadata             = metadata,
        registration_details = details)
 
+.. figure:: _static/napari_example.jpg
+   :alt: Example napari session with raw and registered 3D+t stacks
+   :align: center
+   :figwidth: 100%
+
+   Example napari session with raw and registered 3D+t stacks. The 
+   registered stack is in green, the raw stack in magenta. The time 
+   slider is at t=0, where the registration effect is visible. The
+   registration has been performed with ``method="phase_cross_correlation"``, 
+   ``time_registration_mode="full_3d"``, ``zreg=True``,
+   ``rotreg=True``, and ``rigid_3d_backend="simpleitk"``, thus, 
+   the full 3D+t stack has been registered with a 6-DOF rigid transform. 
+
+
 Metadata matters here: OMIO provides canonical ``TZCYX`` image data and a
 matching metadata dictionary. Passing both to napari preserves the intended
 axis interpretation and physical metadata whenever OMIO can provide it.

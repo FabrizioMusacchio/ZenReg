@@ -233,3 +233,4 @@ workflow. The selected method is used for the translational registration passes.
 The rotation estimate itself is always computed internally from polar-transformed
 projections using phase cross-correlation. ``method="normcorre"`` is currently
 not supported together with ``rotreg=True``.
+
