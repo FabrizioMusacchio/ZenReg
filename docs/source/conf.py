@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime
-from importlib.metadata import PackageNotFoundError, version as pkg_version
 
 
 os.environ.setdefault("NUMBA_DISABLE_JIT", "1")
@@ -16,14 +15,11 @@ sys.path.insert(0, os.path.abspath("../.."))
 
 def _resolve_version() -> str:
     try:
-        return pkg_version("zenreg")
-    except PackageNotFoundError:
-        try:
-            import zenreg
+        import zenreg
 
-            return getattr(zenreg, "__version__", "0.0.0+unknown")
-        except Exception:
-            return "0.0.0+unknown"
+        return getattr(zenreg, "__version__", "0.0.0+unknown")
+    except Exception:
+        return "0.0.0+unknown"
 
 
 project = "ZenReg"

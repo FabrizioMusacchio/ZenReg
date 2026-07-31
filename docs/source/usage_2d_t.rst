@@ -168,62 +168,9 @@ patch layout. ZenReg provides a helper function for this:
 Memory-efficient workflow
 -------------------------
 
-For large 2D+t files, use `OMIO <https://github.com/FabrizioMusacchio/omio>`_ 
-disk-backed Zarr loading and ask ZenReg to write
-intermediate registered output to disk-backed Zarr as well:
-
-.. code-block:: python
-
-   from zenreg import cleanup_omio_cache, load_stack, register_stack, save_stack
-
-   cache_dir = "local_omio_cache"
-   cleanup_omio_cache(cache_dir, full_cleanup=True)
-
-   image, metadata = load_stack(
-       "large_timeseries.ome.tif",
-       return_metadata  = True,
-       use_memmap       = True,
-       memmap_folder    = cache_dir,
-       memmap_reuse     = True)
-
-   registered, details = register_stack(
-       image,
-       registration_channel   = 0,
-       method                 = "phase_cross_correlation",
-       time_registration_mode = "projection",
-       output_use_memmap      = True,
-       output_memmap_folder   = cache_dir,
-       n_jobs                 = 8,
-       return_shifts          = True,
-       return_details         = True)
-
-   save_stack("large_timeseries_registered.ome.tif", 
-              registered, 
-              metadata            = metadata, 
-              registration_details= details)
-
-   cleanup_omio_cache(cache_dir, full_cleanup=True)
-
-New options in this block:
-
-
-.. list-table::
-   :header-rows: 1
-   :widths: 40 60
-
-   * - Argument
-     - Meaning
-   * - ``use_memmap``
-     - Ask OMIO to read through a disk-backed Zarr cache. Default:  ``False``.
-   * - ``memmap_folder``
-     - Location for the OMIO disk cache. Use local scratch storage for remote
-       input data.  ``None`` (default) means OMIO chooses its default cache location.
-   * - ``memmap_reuse``
-     - Reuse a validated existing OMIO cache instead of rebuilding it. Default:  ``True``.
-   * - ``output_use_memmap``
-     - Store ZenReg's intermediate registered result in disk-backed Zarr. Default:  ``False``.
-   * - ``output_memmap_folder``
-     - Folder for ZenReg's disk-backed output cache. ``None`` (default) means ZenReg chooses its default cache location.
+Memory mapping is a central ZenReg concept and works beyond 2D+t. See
+:doc:`usage_memory_efficient` for OMIO cache behavior, cache cleanup and reuse,
+server/local-cache strategies, and backend support.
 
 
 Rigid rotation correction
@@ -286,4 +233,3 @@ workflow. The selected method is used for the translational registration passes.
 The rotation estimate itself is always computed internally from polar-transformed
 projections using phase cross-correlation. ``method="normcorre"`` is currently
 not supported together with ``rotreg=True``.
-

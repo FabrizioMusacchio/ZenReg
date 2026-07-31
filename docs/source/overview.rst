@@ -50,6 +50,7 @@ ZenReg separates the workflow into three explicit steps:
 This keeps project scripts short while still making every important setting
 visible and reproducible.
 
+
 .. admonition:: OME-compliant ``TZCYX`` order
 
   .. code-block:: text
@@ -64,6 +65,44 @@ visible and reproducible.
   to this order, even when an input file has singleton or implicit dimensions. 
   This makes channel, time, and z handling consistent across TIFF, OME-TIFF, CZI,
   LSM, and Thorlabs RAW files.
+
+
+Memory-efficient processing
+---------------------------
+
+ZenReg is designed for large microscopy files that may not fit comfortably into
+RAM. Through `OMIO <https://github.com/FabrizioMusacchio/omio>`_, input images can be converted to disk-backed, chunked Zarr
+caches. ZenReg can then read only the slices, projections, or volumes needed by
+the current processing step instead of duplicating the full stack in memory.
+
+This is especially useful when raw data live on a server or network-attached
+storage. A local ``memmap_folder`` can cache the image once on fast local disk,
+so repeated registration attempts, parameter tuning, or restarted Python
+sessions reuse the local cache instead of repeatedly reading the full file over
+the network. ZenReg exposes cache cleanup explicitly via
+``cleanup_omio_cache`` and intentionally does not delete caches automatically,
+so users can decide when reuse or cleanup is preferable.
+
+See :doc:`usage_memory_efficient` for the full workflow and backend support.
+
+Performance and parallel processing
+-----------------------------------
+
+ZenReg uses several measures to keep processing fast and scalable:
+
+- projection-based registration for fast XY/ZYX estimates when full-volume
+  registration is unnecessary,
+- optional full-volume processing only for workflows that need it,
+- disk-backed output caches for large registered results,
+- CPU worker controls through ``n_jobs`` and backend-specific worker settings,
+- parallel execution across independent time points or Z slices where possible,
+- reusable OMIO caches to avoid repeated server reads or repeated cache builds.
+
+The helper ``available_cpu_count()`` reports the number of CPU workers visible
+to the current machine, workstation, or compute node. Passing ``n_jobs=-1`` uses
+all available workers for ZenReg paths that can be parallelized.
+
+
 
 Registration modes
 ------------------
