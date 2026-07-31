@@ -43,6 +43,20 @@ For development and documentation work:
 
    pip install -e ".[dev,docs]"
 
+Verify installation
+-------------------
+
+After installation, verify that ZenReg imports correctly and reports its
+version:
+
+.. code-block:: bash
+
+   python -c "import zenreg; print(f'ZenReg {zenreg.__version__} imported successfully; available CPUs: {zenreg.available_cpu_count()}')"
+
+This one-liner should print the installed ZenReg version and the number of CPU
+workers visible to Python. If it fails, check that the active terminal session
+uses the environment in which ZenReg was installed.
+
 Upgrade ZenReg
 ---------------
 
