@@ -1,9 +1,12 @@
 # ZenReg: Fast and memory-efficient N-dimensional microscopy image registration for Python
 
+
+![GitHub Release](https://img.shields.io/github/v/release/FabrizioMusacchio/ZenReg) [![PyPI version](https://img.shields.io/pypi/v/zenreg.svg)](https://pypi.org/project/zenreg/) [![GPLv3 License](https://img.shields.io/badge/License-GPL%20v3-green.svg)](https://zenreg.readthedocs.io/en/latest/overview.html#license) ![Tests](https://github.com/FabrizioMusacchio/ZenReg/actions/workflows/zenreg_tests.yml/badge.svg) [![GitHub last commit](https://img.shields.io/github/last-commit/FabrizioMusacchio/ZenReg)](https://github.com/FabrizioMusacchio/ZenReg/commits/main/)  [![codecov](https://img.shields.io/codecov/c/github/FabrizioMusacchio/ZenReg?logo=codecov)](https://codecov.io/gh/fabriziomusacchio/ZenReg)  [![GitHub Issues Open](https://img.shields.io/github/issues/FabrizioMusacchio/ZenReg)](https://github.com/FabrizioMusacchio/ZenReg/issues) [![GitHub Issues Closed](https://img.shields.io/github/issues-closed/FabrizioMusacchio/ZenReg?color=53c92e)](https://github.com/FabrizioMusacchio/ZenReg/issues?q=is%3Aissue%20state%3Aclosed) [![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-pr/FabrizioMusacchio/ZenReg)](https://github.com/FabrizioMusacchio/ZenReg/pulls)  [![Documentation Status](https://readthedocs.org/projects/zenreg/badge/?version=latest)](https://zenreg.readthedocs.io/en/latest/?badge=latest) ![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/fabriziomusacchio/ZenReg) [![PyPI - Downloads](https://img.shields.io/pypi/dm/zenreg?logo=pypy&label=PiPY%20downloads&color=blue)](https://pypistats.org/packages/zenreg) [![PyPI Total Downloads](https://static.pepy.tech/personalized-badge/zenreg?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLUE&left_text=PiPY+total+downloads)](https://pepy.tech/projects/zenreg)  [![Example Datasets on Zenodo](https://img.shields.io/badge/Example%20Datasets-10.5281%2Fzenodo.18078231-blue)](https://doi.org/10.5281/zenodo.18078231) [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.18030883-blue)](https://doi.org/10.5281/zenodo.18030883)  [![Read the docs](https://badgen.net/badge/rtd/Documentation)](https://zenreg.readthedocs.io)  
+
+
+
 ![ZenReg logo](figures/ZenReg_logo_wide.jpg)
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-green.svg)](LICENSE)
-[![Documentation Status](https://readthedocs.org/projects/zenreg/badge/?version=latest)](https://zenreg.readthedocs.io/en/latest/?badge=latest)
 
 ZenReg is a Python package for modular microscopy image registration. It is
 designed for time-resolved, volumetric, and multi-channel microscopy data and
