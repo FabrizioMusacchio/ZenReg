@@ -8,7 +8,7 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ## 🚀 v0.0.2 - First functional ZenReg release
 
-July 30, 2026
+July 31, 2026
 
 This is the first real ZenReg release. Version 0.0.1 only established the
 package skeleton; v0.0.2 introduces the functional microscopy registration
