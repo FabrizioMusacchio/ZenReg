@@ -1,0 +1,20 @@
+.wy-table-responsive {
+  overflow-x: visible;
+}
+
+.wy-table-responsive table.docutils {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.wy-table-responsive table.docutils th,
+.wy-table-responsive table.docutils td {
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+  word-break: normal;
+}
+
+.wy-table-responsive table.docutils code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
