@@ -1,4 +1,4 @@
-ZenReg Documentation
+ZenReg documentation
 ====================
 
 .. image:: _static/ZenReg_logo_wide.jpg
