@@ -1,258 +1,195 @@
-# ZenReg: Fast and memory-efficient N-dimensional image registration for Python
-
-ZenReg is a Python-based high-throughput, memory-efficient pipeline for N-dimensional image registration, designed for large microscopy and imaging datasets.
+# ZenReg: Fast and memory-efficient N-dimensional microscopy image registration for Python
 
 ![ZenReg logo](figures/ZenReg_logo_wide.jpg)
 
-The project targets volumetric and time-resolved data with arbitrary dimensionality (3D, 4D, and full 5D stacks such as TZCYX), with a strong focus on scalable, out-of-core processing using chunked array storage and parallel execution.
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-green.svg)](LICENSE)
+[![Documentation Status](https://readthedocs.org/projects/zenreg/badge/?version=latest)](https://zenreg.readthedocs.io/en/latest/?badge=latest)
 
+ZenReg is a Python package for modular microscopy image registration. It is
+designed for time-resolved, volumetric, and multi-channel microscopy data and
+uses a canonical `TZCYX` data model:
 
+```text
+T = time
+Z = z slices
+C = channels
+Y = image rows
+X = image columns
+```
 
-**ZenReg is currently under active development**. Version 0.0.2 is the first functional release and provides the core workflow, synthetic examples, reporting, memory-mapped I/O, and multiple registration backends.
+The main workflow is intentionally short:
 
+```python
+from zenreg import load_stack, register_stack, save_stack
 
-## Scope and design goals
-ZenReg is designed with the following principles in mind:
+image, metadata = load_stack("image.ome.tif", return_metadata=True)
 
-* support for true N-dimensional image data without special-casing (e.g. T=1, C=1, or Z=1)
-* memory-efficient, out-of-core processing via chunked array storage
-* scalable and parallel execution for high-throughput workloads
-* suitability for large microscopy datasets that do not fit into memory
-* clean and explicit handling of dimensional metadata
+registered, details = register_stack(
+    image,
+    registration_channel=0,
+    method="phase_cross_correlation",
+    return_shifts=True,
+    return_details=True)
 
-## What ZenReg currently does
-ZenReg currently focuses on translation-based registration for microscopy image
-stacks represented in canonical `TZCYX` order:
+save_stack(
+    "image_registered.ome.tif",
+    registered,
+    metadata=metadata,
+    registration_details=details)
+```
 
-- `T`: time
-- `Z`: z-slices
-- `C`: channels
-- `Y, X`: image plane coordinates
+ZenReg writes registered OME-TIFF files together with optional CSV, YAML, and PNG report sidecars so registration settings and quality-control outputs remain reproducible and easy to share.
 
-The current core includes:
+## What ZenReg is for
+ZenReg is built for common microscopy registration tasks:
 
-- time-wise stack registration with shifts estimated from configurable Z projections
-  or full-3D phase cross-correlation;
-- optional intra-stack Z-drift correction, where individual z-slices are aligned
-  to the first slice, local projections, or full-stack projections;
-- optional Z-shift estimation and correction for 3D+t time registration, either
-  from full 3D phase cross-correlation or from orthogonal Z projections;
-- optional zero-clipping of translation-introduced borders in Z, Y, and X based
-  on the largest detected correction shifts in each direction, or via an
-  internal transformed validity mask for rotation-induced angled borders;
-- optional in-plane XY rotation correction across time using polar projections
-  and phase cross-correlation;
-- template-based or sequential previous-frame time registration;
-- optional median filtering on slices before projection and on projections before
-  shift estimation;
-- registration backends including `phase_cross_correlation` from scikit-image,
-  `pystackreg`, ZenReg-native NoRMCorre-style correction, dense full 3D rigid
-  registration via SimpleITK, and sparse point-based full 3D rigid registration;
-- small filtering and Z-projection helpers;
-- OMIO-backed microscopy I/O for TIFF/OME-TIFF, CZI, LSM, and Thorlabs RAW,
-  normalized to canonical `TZCYX` with metadata inheritance on OME-TIFF output.
+- 2D+t time-lapse registration with global XY motion.
+- 2D+t in-plane rotation correction.
+- 3D+t registration using fast Z projections or full ZYX volumes.
+- 3D and 3D+t intra-stack XY slice correction.
+- Full 3D rigid 6-DOF registration for structural volumes.
+- NoRMCorre-style rigid and piecewise-rigid correction.
+- Multi-channel registration where one channel is used for estimating motion
+  and all channels are transformed consistently.
+- Memory-efficient workflows for large microscopy files through OMIO-backed
+  disk caches.
 
-## Installation for local development
-We recommend using a Python virtual environment for local development. You can create one with:
+## Supported inputs
+ZenReg uses [OMIO](https://github.com/FabrizioMusacchio/omio) for microscopy
+I/O. OMIO normalizes supported inputs to canonical `TZCYX` arrays and returns a
+metadata dictionary that ZenReg carries through to registered outputs.
+
+Supported formats include:
+
+- TIFF and OME-TIFF
+- CZI
+- LSM
+- Thorlabs RAW
+
+## Registration methods
+ZenReg provides several registration backends through the same `register_stack`
+wrapper:
+
+| Method/backend | Main use |
+| --- | --- |
+| `phase_cross_correlation` | Fast translational registration on 2D projections or full 3D volumes. |
+| `pystackreg` | StackReg-style 2D registration on projections. |
+| `normcorre` | NoRMCorre-style rigid and piecewise-rigid correction without requiring CaImAn. |
+| `rigid_3d_backend="simpleitk"` | Dense full 3D rigid-volume registration with physical Z/Y/X spacing. |
+| `rigid_3d_backend="points"` | Sparse puncta/spot-based 3D rigid registration. |
+
+## Memory-efficient processing
+Large microscopy stacks can be read through OMIO disk-backed Zarr caches:
+
+```python
+from zenreg import cleanup_omio_cache, load_stack
+
+memmap_folder = "/path/to/local/omio_cache"
+
+image, metadata = load_stack(
+    "large_server_file.ome.tif",
+    return_metadata=True,
+    use_memmap=True,
+    memmap_folder=memmap_folder,
+    memmap_reuse=True)
+```
+
+This is useful when files are larger than available RAM or when raw data live on
+a server or network volume. A local cache lets ZenReg process chunked data from
+fast local storage and reuse an existing validated cache across repeated
+parameter tuning sessions. Cache cleanup is explicit:
+
+```python
+cleanup_omio_cache(memmap_folder, full_cleanup=True)
+```
+
+## Installation
+ZenReg requires Python 3.12 or newer. The package has been tested with Python
+3.12.
+
+Create a fresh environment:
 
 ```bash
 conda create -n zenreg -y python=3.12
 conda activate zenreg
 ```
 
-
-You can install ZenReg from PyPI with:
+Install from PyPI:
 
 ```bash
 pip install zenreg
 ```
 
-From inside this folder (dev mode), you can install ZenReg with:
+Verify the installation:
 
 ```bash
-python -m pip install -e ".[dev]"
+python -c "import zenreg; print(f'ZenReg {zenreg.__version__} imported successfully; available CPUs: {zenreg.available_cpu_count()}')"
 ```
 
-In case you want to upgrade ZenReg to the latest version from this repository, you can run:
+For a development checkout:
 
 ```bash
-pip install --upgrade zenreg
+git clone https://github.com/FabrizioMusacchio/ZenReg.git
+cd ZenReg
+pip install -e ".[dev,docs]"
 ```
 
-or
-
-```bash
-python -m pip install -e ".[dev]" --upgrade
-```
-
-
-The examples use only local synthetic data. Generate the benchmark set with:
+## Synthetic tutorial data
+The tutorials use synthetic OME-TIFF datasets with matching ground-truth CSV
+tables. Generate them with:
 
 ```bash
 python additional_scripts/create_synthetic_example_data.py
 ```
 
-This writes six two-channel OME-TIFF examples under
-`example_data/synthetic_data`: 2D+t global XY shifts, 3D per-slice XY shifts,
-3D+t global XY shifts, 3D+t intra-stack-only XY shifts, and 3D+t global ZYX
-shifts, plus 2D+t global in-plane rotation. Each stack has a matching GT CSV
-table.
+This writes datasets into `example_data/synthetic_data/`. The repository keeps
+`example_data/` as the tutorial data location, but the generated image data are
+not intended to be committed.
 
-Then run the interactive VS Code script:
+Useful tutorial scripts:
 
-```text
-user_scripts/register_synthetic_examples_interactive.py
-```
+- `user_scripts/register_synthetic_examples_interactive.py`
+- `user_scripts/register_normcorre_synthetic_examples.py`
+- `user_scripts/register_rigid3d_synthetic_examples.py`
+- `user_scripts/register_batch_bids_like_synthetic.py`
+- `user_scripts/profile_zenreg_memory_synthetic.py`
 
-The script is structured with `# %%` cells so it can be executed step by step in
-VS Code's interactive window.
+The scripts are structured with `# %%` cells for VS Code, Spyder, Jupyter-like
+interactive execution, and napari inspection.
 
-## Minimal usage
+## Output files
+When `registration_details` are passed to `save_stack`, ZenReg writes:
 
-```python
-from zenreg import load_stack, register_stack, save_stack
+- `*_registered.ome.tif`: registered image with updated OMIO metadata.
+- `*_registration_shifts.csv`: detected shifts, optional rotations, optional
+  intra-stack shifts, and Pearson correlations before/after registration.
+- `*_registration_settings.yaml`: settings and metadata needed to reproduce
+  the registration.
+- `*_registration_summary.png`: detected motion and correlation summary plot.
 
-stack, metadata = load_stack(
-    "example_data/synthetic_data/synthetic_2d_t_xy.ome.tif",
-    return_metadata=True)
-registered, shifts = register_stack(
-    stack,
-    registration_channel=0,
-    registration_stack=0,
-    projection_method="max",
-    method="phase_cross_correlation",
-    transform_backend="skimage",
-    transform_order=1,
-    return_shifts=True)
-save_stack(
-    "example_data/synthetic_data/registered/synthetic_2d_t_xy_registered.ome.tif",
-    registered,
-    metadata=metadata)
-print(shifts)
-```
+Additional tutorial helpers such as `show_before_after`, `show_timepoints`,
+`show_slices`, and `open_in_napari` support visual quality control during
+interactive analysis.
 
-To write transparent registration sidecars next to the registered OME-TIFF, ask
-for full details and pass them to `save_stack`:
+## Documentation
+The full documentation is available on Read the Docs:
 
-```python
-registered, details = register_stack(
-    stack,
-    registration_channel=0,
-    registration_stack=0,
-    projection_method="max",
-    method="phase_cross_correlation",
-    return_shifts=True,
-    return_details=True)
-save_stack(
-    "example_data/synthetic_data/registered/synthetic_2d_t_xy_registered.ome.tif",
-    registered,
-    metadata=metadata,
-    registration_details=details)
-```
+https://zenreg.readthedocs.io/
 
-This writes `*_registration_shifts.csv`, `*_registration_settings.yaml`, and
-`*_registration_summary.png` next to the registered image. The CSV contains
-detected shifts, optional intra-stack shifts, optional rotation corrections, and
-Pearson correlations between the template frame and each registered frame. The
-plot shows shifts over frames, dashed max-shift limits when configured, Pearson
-correlation, and rotation on a second y-axis when rotation correction was used.
-
-For large files, OMIO can read through a disk-backed Zarr store:
-
-```python
-from zenreg import cleanup_omio_cache, load_stack, register_stack, save_stack
-
-memmap_folder = "example_data/synthetic_data/registered/omio_memmap_cache"
-# Optional fresh start. Skip this line to reuse an existing cache after restart.
-cleanup_omio_cache(memmap_folder)
-stack, metadata = load_stack(
-    "example_data/synthetic_data/synthetic_2d_t_xy.ome.tif",
-    return_metadata=True,
-    use_memmap=True,
-    memmap_folder=memmap_folder,
-    memmap_reuse=True)
-
-registered, details = register_stack(
-    stack,
-    registration_channel=0,
-    return_shifts=True,
-    return_details=True)
-save_stack(
-    "example_data/synthetic_data/registered/synthetic_2d_t_xy_registered.ome.tif",
-    registered,
-    metadata=metadata,
-    registration_details=details)
-cleanup_omio_cache(memmap_folder)
-```
-
-Use a local `memmap_folder` when the input data live on a server or network
-volume. `memmap_reuse=True` is the default and lets OMIO reuse an existing
-validated `.omio_cache` Zarr store; set it to `False` to force rebuilding the
-cache. The current registration core can accept disk-backed OMIO/Zarr inputs,
-but several registration steps still materialize float32 working arrays; the
-memmap path is therefore useful for I/O and cache locality now, while fully
-streaming block-wise registration remains a future optimization.
-
-For a 3D stack with true intra-stack XY slice motion relative to z=0:
-
-```python
-from zenreg import register_stack
-
-z_corrected, intra_shifts = register_stack(
-    stack,
-    registration_channel=0,
-    time_registration_mode="none",
-    intra_stack=True,
-    intra_stack_reference_mode="first_slice",
-    transform_backend="skimage",
-    transform_order=1,
-    return_shifts=True)
-```
-
-For a 3D time-lapse stack with global Z/Y/X motion:
-
-```python
-from zenreg import register_stack
-
-registered, shift_details = register_stack(
-    stack,
-    registration_channel=0,
-    registration_stack=0,
-    time_registration_mode="full_3d",
-    time_reference_mode="template",
-    method="phase_cross_correlation",
-    projection_method="max",
-    zreg=True,
-    zero_clip=True,
-    zero_clip_mode="auto",
-    zero_clip_margin=(0, 0, 0),
-    max_xy_shifts=None,
-    max_z_shifts=None,
-    projection_range=None,
-    transform_backend="skimage",
-    transform_order=1,
-    return_shifts=True)
-```
-
-`transform_order=1` is a good default for intensity microscopy data because it
-keeps subpixel translations smooth. Use `transform_order=0` for sparse puncta,
-label-like images, or cases where preserving sharp peaks matters more than
-smooth interpolation. `transform_backend="skimage"` is the default XY correction
-path; true Z translations use a SciPy 3D shift internally even with the skimage
-backend.
-
-## Project status
-ZenReg is usable but still evolving. The main workflow
-`load_stack -> register_stack -> save_stack` is intended to remain stable, while
-new registration methods and backend-specific options may still change as the
-package matures.
+It includes installation instructions, synthetic data generation, 2D+t and 3D+t
+registration tutorials, memory-efficient workflows, projection strategies,
+napari inspection, result assessment, full 3D rigid registration, and batch
+processing examples.
 
 ## License
-ZenReg is released under an open-source license (GPL-3.0). See the LICENSE file for details.
+ZenReg is distributed under the terms of the GNU General Public License v3.0 or
+later. See [LICENSE](LICENSE) for details.
 
 ## Citation
-If you use ZenReg in your research, please cite it as:
+If you use ZenReg in scientific work, please cite:
 
+```text
+Musacchio, F. (2026). ZenReg: Fast and memory-efficient microscopy image
+registration for Python. https://doi.org/10.5281/zenodo.20787509
 ```
-Fabrizio Musacchio (2026). ZenReg: fast and memory-efficient microscopy image registration for Python. Zenodo. https://doi.org/10.5281/zenodo.20787509
-``` 
+
