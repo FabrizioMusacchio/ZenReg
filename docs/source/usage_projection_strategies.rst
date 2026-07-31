@@ -93,14 +93,16 @@ Before choosing a projection strategy, inspect a few projected time points:
        image,
        title             = "Projection preview",
        channel           = 0,
-       projection_method = "max")
+       projection_method = "max",
+       save_dir          = "example_data/synthetic_data/registered/figures")
 
    projected = z_project(
        image,
        zrange            = (5, 25),
        projection_method = "mean")
 
-``show_timepoints`` is a tutorial helper for quick visual inspection.
+``show_timepoints`` is a tutorial helper for quick visual inspection and can
+save the preview figure when ``save_dir`` or ``save_path`` is provided.
 ``z_project`` returns the projected array and can be used in custom scripts.
 
 Projection settings in reports

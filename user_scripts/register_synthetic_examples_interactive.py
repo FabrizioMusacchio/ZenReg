@@ -48,6 +48,7 @@ from zenreg import (
     print_shift_comparison,
     register_stack,
     save_stack,
+    show_before_after,
     show_slices,
     show_timepoints,
 )
@@ -56,6 +57,8 @@ from zenreg import (
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+FIGURE_DIR = OUTPUT_DIR / "figures"
+FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 MEMMAP_CACHE_DIR = OUTPUT_DIR / "omio_memmap_cache"
 OPEN_IN_NAPARI = False
 # OPEN_IN_NAPARI = True
@@ -81,7 +84,7 @@ GT_3D_T_TRANS_ROT_Z_PATH = EXAMPLE_DIR / "synthetic_3d_t_trans_rot_z_rigid_trans
 stack_2d_t_xy, metadata_2d_t_xy = load_stack(STACK_2D_T_XY_PATH, return_metadata=True, verbose=False)
 expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")
 print(f"2D+t XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
-show_timepoints(stack_2d_t_xy, title="2D+t XY before registration", channel=0, projection_method="max")
+show_timepoints(stack_2d_t_xy, title="2D+t XY before registration", channel=0, projection_method="max", save_dir=FIGURE_DIR)
 
 open_in_napari(stack_2d_t_xy, metadata_2d_t_xy, fname="2D+t XY before registration", enabled=OPEN_IN_NAPARI)
 
@@ -111,22 +114,28 @@ registered_2d_t_xy, details_2d_t_xy = register_stack(
     n_jobs=2,  # CPU worker threads for independent time points/slices
     verbose=True,
     return_shifts=True,
-    return_details=True,
-)
+    return_details=True)
 print_shift_comparison("2D+t XY time registration", details_2d_t_xy["time_shifts_yx"], expected_2d_t_xy)
-show_timepoints(registered_2d_t_xy, title="2D+t XY after registration", channel=0, projection_method="max")
+show_timepoints(registered_2d_t_xy, title="2D+t XY after registration", channel=0, projection_method="max", save_dir=FIGURE_DIR)
 open_in_napari(registered_2d_t_xy, metadata_2d_t_xy, fname="2D+t XY after registration", enabled=OPEN_IN_NAPARI)
+
+show_before_after(
+    stack_2d_t_xy,
+    registered_2d_t_xy,
+    title             = STACK_2D_T_XY_PATH.name.split(".")[0] + "_before/after registration",
+    channel           = 0,
+    save_dir          = OUTPUT_DIR)
+
 save_stack(
     OUTPUT_DIR / "synthetic_2d_t_xy_registered.ome.tif",
     registered_2d_t_xy,
     metadata=metadata_2d_t_xy,
-    registration_details=details_2d_t_xy,
-)
+    registration_details=details_2d_t_xy)
 # %% 2) 3D: INTRA-STACK XY SLICE REGISTRATION
 stack_3d_z_xy, metadata_3d_z_xy = load_stack(STACK_3D_Z_XY_PATH, return_metadata=True, verbose=False)
 expected_3d_z_xy = load_expected_slice_registration_shifts(GT_3D_Z_XY_PATH)
 print(f"3D Z-XY stack shape: {stack_3d_z_xy.shape} (TZCYX)")
-show_slices(stack_3d_z_xy, title="3D intra-stack before correction", channel=0, z0=0, z1=6)
+show_slices(stack_3d_z_xy, title="3D intra-stack before correction", channel=0, z0=0, z1=6, save_dir=FIGURE_DIR)
 
 registered_3d_z_xy, details_3d_z_xy = register_stack(
     stack_3d_z_xy,
@@ -154,7 +163,7 @@ print_shift_comparison(
     "3D intra-stack XY correction",
     details_3d_z_xy["intra_stack_shifts_yx"],
     expected_3d_z_xy)
-show_slices(registered_3d_z_xy, title="3D intra-stack after correction", channel=0, z0=0, z1=6)
+show_slices(registered_3d_z_xy, title="3D intra-stack after correction", channel=0, z0=0, z1=6, save_dir=FIGURE_DIR)
 save_stack(
     OUTPUT_DIR / "synthetic_3d_z_xy_registered.ome.tif",
     registered_3d_z_xy,
@@ -165,7 +174,7 @@ save_stack(
 stack_3d_t_xy, metadata_3d_t_xy = load_stack(STACK_3D_T_XY_PATH, return_metadata=True, verbose=False)
 expected_3d_t_xy = load_expected_time_registration_shifts(GT_3D_T_XY_PATH, registration_stack=0, axes="yx")
 print(f"3D+t XY stack shape: {stack_3d_t_xy.shape} (TZCYX)")
-show_timepoints(stack_3d_t_xy, title="3D+t XY before time registration", channel=0, projection_method="max")
+show_timepoints(stack_3d_t_xy, title="3D+t XY before time registration", channel=0, projection_method="max", save_dir=FIGURE_DIR)
 
 registered_3d_t_xy, details_3d_t_xy = register_stack(
     stack_3d_t_xy,
@@ -199,7 +208,7 @@ print_shift_comparison(
     "3D+t global XY time registration",
     details_3d_t_xy["time_shifts_yx"],
     expected_3d_t_xy)
-show_timepoints(registered_3d_t_xy, title="3D+t XY after time registration", channel=0, projection_method="max")
+show_timepoints(registered_3d_t_xy, title="3D+t XY after time registration", channel=0, projection_method="max", save_dir=FIGURE_DIR)
 save_stack(
     OUTPUT_DIR / "synthetic_3d_t_xy_registered.ome.tif",
     registered_3d_t_xy,
@@ -214,7 +223,7 @@ stack_3d_t_intra_xy, metadata_3d_t_intra_xy = load_stack(
 )
 expected_3d_t_intra_xy = load_expected_slice_registration_shifts(GT_3D_T_INTRA_XY_PATH)
 print(f"3D+t intra-only stack shape: {stack_3d_t_intra_xy.shape} (TZCYX)")
-show_slices(stack_3d_t_intra_xy, title="3D+t intra-only before correction", channel=0, z0=0, z1=6)
+show_slices(stack_3d_t_intra_xy, title="3D+t intra-only before correction", channel=0, z0=0, z1=6, save_dir=FIGURE_DIR)
 
 registered_3d_t_intra_xy, details_3d_t_intra_xy = register_stack(
     stack_3d_t_intra_xy,
@@ -243,7 +252,7 @@ print_shift_comparison(
     "3D+t intra-stack-only XY correction",
     details_3d_t_intra_xy["intra_stack_shifts_yx"],
     expected_3d_t_intra_xy)
-show_slices(registered_3d_t_intra_xy, title="3D+t intra-only after correction", channel=0, z0=0, z1=6)
+show_slices(registered_3d_t_intra_xy, title="3D+t intra-only after correction", channel=0, z0=0, z1=6, save_dir=FIGURE_DIR)
 save_stack(
     OUTPUT_DIR / "synthetic_3d_t_intra_xy_registered.ome.tif",
     registered_3d_t_intra_xy,
@@ -254,7 +263,7 @@ save_stack(
 stack_3d_t_zyx, metadata_3d_t_zyx = load_stack(STACK_3D_T_ZYX_PATH, return_metadata=True, verbose=False)
 expected_3d_t_zyx = load_expected_time_registration_shifts(GT_3D_T_ZYX_PATH, registration_stack=0, axes="zyx")
 print(f"3D+t ZYX stack shape: {stack_3d_t_zyx.shape} (TZCYX)")
-show_timepoints(stack_3d_t_zyx, title="3D+t ZYX before full 3D registration", channel=0, projection_method="max")
+show_timepoints(stack_3d_t_zyx, title="3D+t ZYX before full 3D registration", channel=0, projection_method="max", save_dir=FIGURE_DIR)
 
 open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX before full 3D registration", enabled=OPEN_IN_NAPARI)
 
@@ -294,7 +303,8 @@ show_timepoints(
     registered_3d_t_zyx,
     title="3D+t ZYX after full 3D registration",
     channel=0,
-    projection_method="max",)
+    projection_method="max",
+    save_dir=FIGURE_DIR,)
 save_stack(
     OUTPUT_DIR / "synthetic_3d_t_zyx_registered.ome.tif",
     registered_3d_t_zyx,
@@ -316,7 +326,8 @@ show_timepoints(
     stack_3d_t_trans_rot_z,
     title="3D+t ZYX translation + XY-plane rotation before registration",
     channel=0,
-    projection_method="max")
+    projection_method="max",
+    save_dir=FIGURE_DIR)
 open_in_napari(
     stack_3d_t_trans_rot_z,
     metadata_3d_t_trans_rot_z,
@@ -368,7 +379,8 @@ show_timepoints(
     registered_3d_t_trans_rot_z,
     title="3D+t ZYX translation + XY-plane rotation after registration",
     channel=0,
-    projection_method="max")
+    projection_method="max",
+    save_dir=FIGURE_DIR)
 save_stack(
     OUTPUT_DIR / "synthetic_3d_t_trans_rot_z_projection_registered.ome.tif",
     registered_3d_t_trans_rot_z,
@@ -398,7 +410,8 @@ show_timepoints(
     stack_2d_t_rot_xy,
     title="2D+t rotation before registration",
     channel=0,
-    projection_method="max")
+    projection_method="max",
+    save_dir=FIGURE_DIR)
 open_in_napari(stack_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation before registration", enabled=OPEN_IN_NAPARI)
 
 
@@ -443,7 +456,8 @@ show_timepoints(
     registered_2d_t_rot_xy,
     title="2D+t rotation after registration",
     channel=0,
-    projection_method="max")
+    projection_method="max",
+    save_dir=FIGURE_DIR)
 save_stack(
     OUTPUT_DIR / "synthetic_2d_t_rot_xy_registered.ome.tif",
     registered_2d_t_rot_xy,

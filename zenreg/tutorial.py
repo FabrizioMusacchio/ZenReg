@@ -224,8 +224,31 @@ def show_timepoints(
     title: str,
     channel: int = 0,
     projection_method: str = "max",
+    save_path: str | Path | None = None,
+    save_dir: str | Path | None = None,
+    dpi: int = 200,
 ) -> None:
-    """Show t=0, t=1, and their difference as Z projections."""
+    """Show and optionally save t=0, t=1, and their difference as Z projections.
+
+    Parameters
+    ----------
+    stack : array-like
+        Canonical ``TZCYX`` stack.
+    title : str
+        Figure title. Used to generate a filename when ``save_dir`` is given.
+    channel : int, optional
+        Channel to project.
+    projection_method : str, optional
+        Z-projection method used for the quick-look images.
+    save_path : str, pathlib.Path, or None, optional
+        Explicit output path for the figure. If provided, this takes precedence
+        over ``save_dir``.
+    save_dir : str, pathlib.Path, or None, optional
+        Output directory. When provided without ``save_path``, ZenReg creates a
+        deterministic PNG filename from the title and display settings.
+    dpi : int, optional
+        Figure resolution used for saving.
+    """
 
     if stack.shape[0] < 2:
         print(f"Skipping timepoint quick view for {title!r}: T < 2.")
@@ -248,7 +271,17 @@ def show_timepoints(
     for ax in axes:
         ax.axis("off")
     fig.suptitle(title)
-    plt.show()
+    if save_path is not None or save_dir is not None:
+        if save_path is None:
+            slug = _slugify_for_filename(title)
+            save_path = Path(save_dir) / f"{slug}_c{int(channel)}_{projection_method}_timepoints.png"
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=int(dpi), bbox_inches="tight")
+    if plt.get_backend().lower() == "agg":
+        plt.close(fig)
+    else:
+        plt.show()
 
 
 def show_slices(
@@ -258,8 +291,31 @@ def show_slices(
     channel: int = 0,
     z0: int = 0,
     z1: int = 6,
+    save_path: str | Path | None = None,
+    save_dir: str | Path | None = None,
+    dpi: int = 200,
 ) -> None:
-    """Show two slices from t=0 and their difference."""
+    """Show and optionally save two slices from t=0 and their difference.
+
+    Parameters
+    ----------
+    stack : array-like
+        Canonical ``TZCYX`` stack.
+    title : str
+        Figure title. Used to generate a filename when ``save_dir`` is given.
+    channel : int, optional
+        Channel to show.
+    z0, z1 : int, optional
+        Slices to compare.
+    save_path : str, pathlib.Path, or None, optional
+        Explicit output path for the figure. If provided, this takes precedence
+        over ``save_dir``.
+    save_dir : str, pathlib.Path, or None, optional
+        Output directory. When provided without ``save_path``, ZenReg creates a
+        deterministic PNG filename from the title and display settings.
+    dpi : int, optional
+        Figure resolution used for saving.
+    """
 
     z1 = min(int(z1), stack.shape[1] - 1)
     image_z0 = np.asarray(stack[0, int(z0), int(channel), :, :], dtype=np.float32)
@@ -279,7 +335,17 @@ def show_slices(
     for ax in axes:
         ax.axis("off")
     fig.suptitle(title)
-    plt.show()
+    if save_path is not None or save_dir is not None:
+        if save_path is None:
+            slug = _slugify_for_filename(title)
+            save_path = Path(save_dir) / f"{slug}_c{int(channel)}_z{int(z0)}_z{z1}_slices.png"
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=int(dpi), bbox_inches="tight")
+    if plt.get_backend().lower() == "agg":
+        plt.close(fig)
+    else:
+        plt.show()
 
 
 def show_before_after(

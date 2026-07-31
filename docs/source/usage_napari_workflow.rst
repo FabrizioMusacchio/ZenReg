@@ -109,7 +109,8 @@ helpers instead of opening napari:
        image,
        title             = "raw timepoints",
        channel           = 0,
-       projection_method = "max")
+       projection_method = "max",
+       save_dir          = "example_data/synthetic_data/registered/figures")
 
    show_before_after(
        image,
@@ -120,10 +121,12 @@ helpers instead of opening napari:
 
    show_slices(
        registered,
-       title   = "registered slices",
-       channel = 0,
-       z0      = 0,
-       z1      = 6)
+       title    = "registered slices",
+       channel  = 0,
+       z0       = 0,
+       z1       = 6,
+       save_dir = "example_data/synthetic_data/registered/figures")
 
-``show_before_after`` can save PNGs directly, which makes it convenient for
-building documentation figures from the same tutorial scripts used for testing.
+``show_timepoints``, ``show_before_after``, and ``show_slices`` can save PNGs
+directly, which makes them convenient for building documentation figures from
+the same tutorial scripts used for testing.
