@@ -4,14 +4,14 @@ Axis and shape helpers used across ZenReg.
 Author: Fabrizio Musacchio
 Date: June 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 import numpy as np
-
+# %% CONSTANTS
 CANONICAL_AXIS_ORDER = "TZCYX"
 
-
+# %% HELPER FUNCTIONS
 def ensure_tzcyx_stack(stack):
     """
     Validate that an input array follows canonical ``TZCYX`` order.
@@ -41,7 +41,6 @@ def ensure_tzcyx_stack(stack):
             f"Got shape {stack.shape!r}."
         )
     return stack
-
 
 def promote_to_tzcyx(stack) -> tuple[np.ndarray, int]:
     """
@@ -74,7 +73,6 @@ def promote_to_tzcyx(stack) -> tuple[np.ndarray, int]:
         f"Got shape {stack.shape!r}."
     )
 
-
 def restore_promoted_shape(stack: np.ndarray, original_ndim: int) -> np.ndarray:
     """
     Restore the shape of an array promoted by :func:`promote_to_tzcyx`.
@@ -97,7 +95,6 @@ def restore_promoted_shape(stack: np.ndarray, original_ndim: int) -> np.ndarray:
     if original_ndim == 3:
         return stack[0, :, 0, :, :]
     return stack
-
 
 def normalize_zrange(zrange, z_count: int, *, strict: bool = False) -> tuple[int, int]:
     """
@@ -142,3 +139,4 @@ def normalize_zrange(zrange, z_count: int, *, strict: bool = False) -> tuple[int
         else:
             stop = min(z_count, start + 1)
     return start, stop
+# %% END

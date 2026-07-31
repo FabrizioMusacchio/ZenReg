@@ -9,7 +9,7 @@ sparse puncta-style benchmarks and can be expanded later.
 Author: Fabrizio Musacchio
 Date: July 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 import os
@@ -26,12 +26,11 @@ from skimage.registration import phase_cross_correlation
 from skimage.transform import warp_polar
 
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack, normalize_zrange
-
-
+# %% CONSTANTS
 SUPPORTED_RIGID_3D_BACKENDS = {"phase_cross_correlation", "simpleitk", "points"}
 SUPPORTED_RIGID_3D_METRICS = {"correlation", "mutual_information"}
 
-
+# %% DATA CLASSES
 @dataclass(frozen=True)
 class Rigid3DTransform:
     """Rigid transform represented as moving-to-fixed correction in ZYX coordinates."""
@@ -40,7 +39,7 @@ class Rigid3DTransform:
     translation_zyx: np.ndarray
     center_zyx: np.ndarray
 
-
+# %% HELPER FUNCTIONS
 def normalize_rigid_3d_backend(rigid_3d_backend: str) -> str:
     """Normalize and validate the 3D rigid backend name."""
 
@@ -51,7 +50,6 @@ def normalize_rigid_3d_backend(rigid_3d_backend: str) -> str:
             f"Supported backends: {sorted(SUPPORTED_RIGID_3D_BACKENDS)}."
         )
     return normalized
-
 
 def normalize_rigid_3d_metric(metric: str) -> str:
     """Normalize and validate the dense 3D registration metric."""
@@ -64,7 +62,6 @@ def normalize_rigid_3d_metric(metric: str) -> str:
         )
     return normalized
 
-
 def _normalize_spacing_zyx(spacing_zyx) -> tuple[float, float, float]:
     """Normalize physical spacing in Z/Y/X order."""
 
@@ -76,7 +73,6 @@ def _normalize_spacing_zyx(spacing_zyx) -> tuple[float, float, float]:
     if any(v <= 0 for v in spacing):
         raise ValueError(f"rot_spacing_zyx values must be > 0. Got {spacing_zyx!r}.")
     return spacing
-
 
 def _normalize_vector_zyx(value, *, default: tuple[float, float, float], name: str) -> tuple[float, float, float]:
     """Normalize a scalar/sequence to a 3-value ZYX tuple."""
@@ -91,7 +87,6 @@ def _normalize_vector_zyx(value, *, default: tuple[float, float, float], name: s
         values = tuple(float(v) for v in value)
     return values
 
-
 def _as_float32_stack(stack) -> np.ndarray:
     """Return a float32 ``TZCYX`` stack view/copy."""
 
@@ -100,7 +95,6 @@ def _as_float32_stack(stack) -> np.ndarray:
         return stack.astype(np.float32, copy=False)
     except (AttributeError, TypeError):
         return np.asarray(stack, dtype=np.float32)
-
 
 def _create_registered_output(
     shape: tuple[int, int, int, int, int],
@@ -127,7 +121,6 @@ def _create_registered_output(
         )
     return np.empty(tuple(int(v) for v in shape), dtype=np.dtype(dtype))
 
-
 def _project(volume_zyx: np.ndarray, *, axis: int, method: str = "max") -> np.ndarray:
     """Project a ``ZYX`` volume along one axis."""
 
@@ -141,7 +134,6 @@ def _project(volume_zyx: np.ndarray, *, axis: int, method: str = "max") -> np.nd
         return np.std(volume_zyx, axis=axis)
     return np.max(volume_zyx, axis=axis)
 
-
 def _normalize_rotation_image(image: np.ndarray) -> np.ndarray:
     """Normalize a 2D image for polar phase-correlation rotation estimation."""
 
@@ -151,7 +143,6 @@ def _normalize_rotation_image(image: np.ndarray) -> np.ndarray:
     if max_value > 0:
         image = image / max_value
     return image
-
 
 def _estimate_rotation_deg_2d(
     fixed_projection: np.ndarray,
@@ -180,7 +171,6 @@ def _estimate_rotation_deg_2d(
         angle_deg = float(np.clip(angle_deg, -float(max_angle_deg), float(max_angle_deg)))
     return float(angle_deg)
 
-
 def _rotation_matrix_from_correction_zyx(rotation_zyx_deg: np.ndarray) -> np.ndarray:
     """Return an active ZYX correction rotation matrix in array coordinates."""
 
@@ -190,12 +180,10 @@ def _rotation_matrix_from_correction_zyx(rotation_zyx_deg: np.ndarray) -> np.nda
         degrees=True,
     ).as_matrix().astype(np.float64)
 
-
 def _rotation_zyx_from_matrix(matrix_zyx: np.ndarray) -> np.ndarray:
     """Extract Z/Y/X Euler angles in degrees from an array-coordinate matrix."""
 
     return Rotation.from_matrix(np.asarray(matrix_zyx, dtype=np.float64)).as_euler("ZYX", degrees=True).astype(np.float32)
-
 
 def _apply_rigid_transform_to_volume(
     volume_zyx: np.ndarray,
@@ -221,7 +209,6 @@ def _apply_rigid_transform_to_volume(
         prefilter=int(order) > 1,
     ).astype(np.float32, copy=False)
 
-
 def _phase_correlation_shift_zyx(
     fixed: np.ndarray,
     moving: np.ndarray,
@@ -238,7 +225,6 @@ def _phase_correlation_shift_zyx(
         normalization=normalization,
     )
     return np.asarray(shift, dtype=np.float32)
-
 
 def estimate_initial_rotation_from_projections(
     fixed_zyx: np.ndarray,
@@ -301,7 +287,6 @@ def estimate_initial_rotation_from_projections(
     )
     return _rotation_zyx_from_matrix(total_matrix), transform
 
-
 def _compose_correction_transforms(first: Rigid3DTransform, second: Rigid3DTransform) -> Rigid3DTransform:
     """Compose two moving-to-fixed correction transforms as ``second(first(x))``."""
 
@@ -314,7 +299,6 @@ def _compose_correction_transforms(first: Rigid3DTransform, second: Rigid3DTrans
     translation = r2 @ t1 + t2
     return Rigid3DTransform(matrix_zyx=matrix, translation_zyx=translation, center_zyx=center)
 
-
 def _sitk_image_from_zyx(volume_zyx: np.ndarray, spacing_zyx: tuple[float, float, float]):
     """Create a SimpleITK image from a ZYX NumPy volume."""
 
@@ -323,7 +307,6 @@ def _sitk_image_from_zyx(volume_zyx: np.ndarray, spacing_zyx: tuple[float, float
     image = sitk.GetImageFromArray(np.asarray(volume_zyx, dtype=np.float32))
     image.SetSpacing((float(spacing_zyx[2]), float(spacing_zyx[1]), float(spacing_zyx[0])))
     return image
-
 
 def _physical_xyz_from_zyx_shift(shift_zyx: np.ndarray, spacing_zyx: tuple[float, float, float]) -> np.ndarray:
     """Convert a ZYX pixel shift to XYZ physical units."""
@@ -338,7 +321,6 @@ def _physical_xyz_from_zyx_shift(shift_zyx: np.ndarray, spacing_zyx: tuple[float
         dtype=np.float64,
     )
 
-
 def _zyx_shift_from_physical_xyz(translation_xyz: np.ndarray, spacing_zyx: tuple[float, float, float]) -> np.ndarray:
     """Convert an XYZ physical translation to ZYX pixels."""
 
@@ -352,12 +334,10 @@ def _zyx_shift_from_physical_xyz(translation_xyz: np.ndarray, spacing_zyx: tuple
         dtype=np.float32,
     )
 
-
 def _permutation_zyx_to_xyz() -> np.ndarray:
     """Return permutation matrix mapping ZYX coordinate vectors to XYZ."""
 
     return np.asarray([[0, 0, 1], [0, 1, 0], [1, 0, 0]], dtype=np.float64)
-
 
 def _zyx_matrix_to_xyz(matrix_zyx: np.ndarray) -> np.ndarray:
     """Convert an array-coordinate ZYX matrix to physical XYZ axis order."""
@@ -365,13 +345,11 @@ def _zyx_matrix_to_xyz(matrix_zyx: np.ndarray) -> np.ndarray:
     p = _permutation_zyx_to_xyz()
     return p @ np.asarray(matrix_zyx, dtype=np.float64) @ p.T
 
-
 def _xyz_matrix_to_zyx(matrix_xyz: np.ndarray) -> np.ndarray:
     """Convert a physical XYZ matrix to array-coordinate ZYX axis order."""
 
     p = _permutation_zyx_to_xyz()
     return p.T @ np.asarray(matrix_xyz, dtype=np.float64) @ p
-
 
 def _effective_affine_from_sitk_transform(transform) -> tuple[np.ndarray, np.ndarray]:
     """Return matrix/translation for a SimpleITK transform in XYZ physical coordinates."""
@@ -391,7 +369,6 @@ def _effective_affine_from_sitk_transform(transform) -> tuple[np.ndarray, np.nda
     matrix = np.asarray(affine.GetMatrix(), dtype=np.float64).reshape(3, 3)
     translation = center + np.asarray(affine.GetTranslation(), dtype=np.float64) - matrix @ center
     return matrix, translation
-
 
 def _simpleitk_transform_from_correction(
     transform: Rigid3DTransform,
@@ -414,7 +391,6 @@ def _simpleitk_transform_from_correction(
     initial.SetTranslation(tuple(float(v) for v in (inv_translation - center_xyz + inv_matrix @ center_xyz)))
     return initial
 
-
 def _correction_from_simpleitk_transform(
     sitk_transform,
     *,
@@ -433,7 +409,6 @@ def _correction_from_simpleitk_transform(
         translation_zyx=_zyx_shift_from_physical_xyz(translation_corr_xyz, spacing_zyx),
         center_zyx=np.asarray(center_zyx, dtype=np.float64),
     )
-
 
 def _register_simpleitk(
     fixed_zyx: np.ndarray,
@@ -484,7 +459,6 @@ def _register_simpleitk(
         center_zyx=initial_transform.center_zyx,
     )
 
-
 def _detect_points(volume_zyx: np.ndarray, *, max_points: int, min_distance: int, threshold_rel: float) -> np.ndarray:
     """Detect sparse bright points in a ZYX volume."""
 
@@ -498,7 +472,6 @@ def _detect_points(volume_zyx: np.ndarray, *, max_points: int, min_distance: int
         exclude_border=False,
     )
     return np.asarray(points, dtype=np.float64)
-
 
 def _rigid_kabsch(moving_points: np.ndarray, fixed_points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Estimate rigid moving-to-fixed transform with Kabsch."""
@@ -515,7 +488,6 @@ def _rigid_kabsch(moving_points: np.ndarray, fixed_points: np.ndarray) -> tuple[
         matrix = vt.T @ u.T
     translation = fixed_centroid - matrix @ moving_centroid
     return matrix, translation
-
 
 def _register_points(
     fixed_zyx: np.ndarray,
@@ -571,7 +543,6 @@ def _register_points(
         translation_zyx=center_translation,
         center_zyx=center,
     )
-
 
 def _process_timepoint(
     t: int,
@@ -698,7 +669,6 @@ def _process_timepoint(
         "center_zyx": np.asarray(final_transform.center_zyx, dtype=np.float32),
     }
     return t, registered_frame, valid_mask, details
-
 
 def register_stack_rigid_3d(
     stack,
@@ -887,3 +857,4 @@ def register_stack_rigid_3d(
         "valid_mask_tzyx": valid_mask_tzyx,
     }
     return registered, details
+# %% END

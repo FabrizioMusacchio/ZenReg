@@ -4,7 +4,7 @@ Synthetic motion-distorted example data for ZenReg.
 Author: Fabrizio Musacchio
 Date: June 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 import csv
@@ -19,8 +19,7 @@ from scipy.spatial.transform import Rotation
 from skimage.transform import rotate
 
 from .io import create_empty_stack, create_stack_metadata, save_stack
-
-
+# %% HELPER FUNCTIONS
 def _gaussian_blob_grid(shape_yx: tuple[int, int], centers, sigmas) -> np.ndarray:
     """Create a sum of anisotropic Gaussian blobs."""
 
@@ -31,7 +30,6 @@ def _gaussian_blob_grid(shape_yx: tuple[int, int], centers, sigmas) -> np.ndarra
     image -= float(image.min())
     image /= max(float(image.max()), 1e-6)
     return image.astype(np.float32)
-
 
 def _apply_yx_shift(image: np.ndarray, shift_yx: tuple[float, float]) -> np.ndarray:
     """Apply a 2D translation to one image plane."""
@@ -45,7 +43,6 @@ def _apply_yx_shift(image: np.ndarray, shift_yx: tuple[float, float]) -> np.ndar
         prefilter=True,
     ).astype(np.float32, copy=False)
 
-
 def _apply_zyx_shift(volume: np.ndarray, shift_zyx: tuple[float, float, float]) -> np.ndarray:
     """Apply a 3D translation to one ``ZYX`` volume."""
 
@@ -57,7 +54,6 @@ def _apply_zyx_shift(volume: np.ndarray, shift_zyx: tuple[float, float, float]) 
         cval=0.0,
         prefilter=True,
     ).astype(np.float32, copy=False)
-
 
 def _apply_yx_rotation(image: np.ndarray, angle_deg: float) -> np.ndarray:
     """Apply an in-plane XY rotation to one image plane."""
@@ -71,7 +67,6 @@ def _apply_yx_rotation(image: np.ndarray, angle_deg: float) -> np.ndarray:
         cval=0.0,
         preserve_range=True,
     ).astype(np.float32, copy=False)
-
 
 def _rotation_matrix_zyx(
     *,
@@ -114,7 +109,6 @@ def _rotation_matrix_zyx(
     )
     return (rot_z @ rot_y @ rot_x).astype(np.float32)
 
-
 def _apply_zyx_rigid_transform(
     volume: np.ndarray,
     *,
@@ -149,7 +143,6 @@ def _apply_zyx_rigid_transform(
         prefilter=True,
     ).astype(np.float32, copy=False)
 
-
 def _apply_yx_displacement(
     image: np.ndarray,
     *,
@@ -168,7 +161,6 @@ def _apply_yx_displacement(
         cval=0.0,
         prefilter=True,
     ).astype(np.float32, copy=False)
-
 
 def _base_2d_channels(
     shape_yx: tuple[int, int],
@@ -192,7 +184,6 @@ def _base_2d_channels(
     while len(base_channels) < channel_count:
         base_channels.append(rng.random(shape_yx, dtype=np.float32) * 0.2)
     return base_channels[:channel_count]
-
 
 def _base_2d_puncta_channels(
     shape_yx: tuple[int, int],
@@ -250,7 +241,6 @@ def _base_2d_puncta_channels(
         base_channels.append(_gaussian_blob_grid(shape_yx, centers=extra_centers, sigmas=extra_sigmas))
     return base_channels[:channel_count]
 
-
 def _base_3d_channels(
     *,
     z_count: int,
@@ -288,7 +278,6 @@ def _base_3d_channels(
         channels.append(random_volume)
     return channels[:channel_count]
 
-
 def _add_noise_and_clip(
     image: np.ndarray,
     *,
@@ -302,7 +291,6 @@ def _add_noise_and_clip(
         noisy = noisy + rng.normal(0, noise_sigma, size=image.shape).astype(np.float32)
     return np.clip(noisy, 0, None).astype(np.float32, copy=False)
 
-
 def _time_shifts_yx(time_count: int, *, amplitude_y: float = 4.0, amplitude_x: float = 3.0) -> np.ndarray:
     """Create deterministic time-wise YX shifts with t=0 as the reference."""
 
@@ -314,7 +302,6 @@ def _time_shifts_yx(time_count: int, *, amplitude_y: float = 4.0, amplitude_x: f
             amplitude_x * (np.cos(2 * np.pi * t / denominator) - 1.0),
         )
     return shifts
-
 
 def _time_shifts_zyx(
     time_count: int,
@@ -336,7 +323,6 @@ def _time_shifts_zyx(
     shifts[0, :] = 0.0
     return shifts
 
-
 def _time_rotations_deg(time_count: int, *, amplitude_deg: float = 8.0) -> np.ndarray:
     """Create deterministic time-wise in-plane rotations with t=0 as reference."""
 
@@ -346,7 +332,6 @@ def _time_rotations_deg(time_count: int, *, amplitude_deg: float = 8.0) -> np.nd
         rotations[t] = amplitude_deg * np.sin(2 * np.pi * t / denominator)
     rotations[0] = 0.0
     return rotations
-
 
 def _time_sparse_rotation_events_deg(time_count: int) -> np.ndarray:
     """Create sparse short rotation events on an otherwise stable baseline."""
@@ -374,7 +359,6 @@ def _time_sparse_rotation_events_deg(time_count: int) -> np.ndarray:
     rotations -= rotations[0]
     rotations[0] = 0.0
     return rotations.astype(np.float32)
-
 
 def _time_progressive_shifts_yx(time_count: int) -> np.ndarray:
     """Create smooth global translations with weak and stronger motion epochs."""
@@ -408,7 +392,6 @@ def _time_progressive_shifts_yx(time_count: int) -> np.ndarray:
     shifts[0, :] = 0.0
     return shifts.astype(np.float32)
 
-
 def _time_rotations_zyx_deg(
     time_count: int,
     *,
@@ -429,7 +412,6 @@ def _time_rotations_zyx_deg(
         )
     rotations[0, :] = 0.0
     return rotations
-
 
 def _local_motion_parameters(time_count: int) -> np.ndarray:
     """Create sparse-in-time local motion bursts plus short global jitters."""
@@ -463,7 +445,6 @@ def _local_motion_parameters(time_count: int) -> np.ndarray:
             params[t, 4:6] = shift_yx
     return params
 
-
 def _local_motion_fields_yx(shape_yx: tuple[int, int], params: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Create smooth dense Y/X displacement fields from compact parameters."""
 
@@ -477,7 +458,6 @@ def _local_motion_fields_yx(shape_yx: tuple[int, int], params: np.ndarray) -> tu
     shift_y = shift_y + global_y
     shift_x = shift_x + global_x
     return shift_y.astype(np.float32), shift_x.astype(np.float32)
-
 
 def _interpolate_anchor_shift_field_yx(
     shape_yx: tuple[int, int],
@@ -506,7 +486,6 @@ def _interpolate_anchor_shift_field_yx(
     shift_y = interp_y(points).reshape(shape_yx).astype(np.float32)
     shift_x = interp_x(points).reshape(shape_yx).astype(np.float32)
     return shift_y, shift_x
-
 
 def _piecewise_anchor_shifts_yx(
     *,
@@ -539,7 +518,6 @@ def _piecewise_anchor_shifts_yx(
     shifts[0, :, :, :] = 0.0
     return shifts.astype(np.float32)
 
-
 def _slice_shifts_yx(
     *,
     time_count: int,
@@ -561,7 +539,6 @@ def _slice_shifts_yx(
                 amplitude_x * (np.cos(z_phase + time_phase) - np.cos(time_phase)),
             )
     return shifts
-
 
 def create_2d_motion_distorted_stack(
     *,
@@ -599,7 +576,6 @@ def create_2d_motion_distorted_stack(
 
     return stack, shifts
 
-
 def create_3d_slice_motion_distorted_stack(
     *,
     z_count: int = 14,
@@ -625,7 +601,6 @@ def create_3d_slice_motion_distorted_stack(
         time_varying_slice_shifts=False,
     )
     return stack, slice_shifts
-
 
 def create_3d_time_xy_motion_distorted_stack(
     *,
@@ -666,7 +641,6 @@ def create_3d_time_xy_motion_distorted_stack(
                 stack[t, z, c, :, :] = _add_noise_and_clip(moved, rng=rng, noise_sigma=noise_sigma)
 
     return stack, time_shifts
-
 
 def create_3d_time_intra_motion_distorted_stack(
     *,
@@ -711,7 +685,6 @@ def create_3d_time_intra_motion_distorted_stack(
 
     return stack, slice_shifts
 
-
 def create_3d_time_zyx_motion_distorted_stack(
     *,
     time_count: int = 10,
@@ -751,7 +724,6 @@ def create_3d_time_zyx_motion_distorted_stack(
 
     return stack, time_shifts
 
-
 def create_2d_time_rotation_motion_distorted_stack(
     *,
     time_count: int = 10,
@@ -789,7 +761,6 @@ def create_2d_time_rotation_motion_distorted_stack(
 
     return stack, time_shifts, rotations_deg
 
-
 def create_2d_local_motion_distorted_stack(
     *,
     time_count: int = 200,
@@ -825,7 +796,6 @@ def create_2d_local_motion_distorted_stack(
             stack[t, 0, c, :, :] = _add_noise_and_clip(moved, rng=rng, noise_sigma=noise_sigma)
 
     return stack, local_params
-
 
 def create_2d_time_translation_rotation_motion_distorted_stack(
     *,
@@ -872,7 +842,6 @@ def create_2d_time_translation_rotation_motion_distorted_stack(
 
     return stack, time_shifts, rotations_deg
 
-
 def create_2d_time_piecewise_xy_motion_distorted_stack(
     *,
     time_count: int = 80,
@@ -917,7 +886,6 @@ def create_2d_time_piecewise_xy_motion_distorted_stack(
             stack[t, 0, c, :, :] = _add_noise_and_clip(moved, rng=rng, noise_sigma=noise_sigma)
 
     return stack, anchor_shifts_yx
-
 
 def create_3d_time_rigid_motion_distorted_stack(
     *,
@@ -1010,7 +978,6 @@ def create_3d_time_rigid_motion_distorted_stack(
 
     return stack, time_shifts, rotations, centers
 
-
 def create_3d_time_sparse_puncta_rigid_motion_distorted_stack(
     *,
     time_count: int = 7,
@@ -1091,7 +1058,6 @@ def create_3d_time_sparse_puncta_rigid_motion_distorted_stack(
 
     return stack, time_shifts, rotations, centers
 
-
 def create_3d_motion_distorted_stack(
     *,
     time_count: int = 10,
@@ -1153,7 +1119,6 @@ def create_3d_motion_distorted_stack(
 
     return stack, time_shifts, z_shifts
 
-
 def _write_time_shift_table(
     path: Path,
     shifts_yx: np.ndarray,
@@ -1187,7 +1152,6 @@ def _write_time_shift_table(
                 ]
             )
     return path
-
 
 def _write_time_shift_zyx_table(
     path: Path,
@@ -1227,7 +1191,6 @@ def _write_time_shift_zyx_table(
             )
     return path
 
-
 def _write_time_rotation_table(
     path: Path,
     rotations_deg: np.ndarray,
@@ -1251,7 +1214,6 @@ def _write_time_rotation_table(
         ):
             writer.writerow([t, float(applied_rotation), float(expected_rotation)])
     return path
-
 
 def _write_local_motion_table(path: Path, local_params: np.ndarray) -> Path:
     """Write compact GT parameters for smooth dense 2D local motion fields."""
@@ -1277,7 +1239,6 @@ def _write_local_motion_table(path: Path, local_params: np.ndarray) -> Path:
             motion_magnitude = float(np.sum(np.abs(params[[0, 1, 4, 5]])))
             writer.writerow([t, *[float(v) for v in params[:6]], motion_magnitude])
     return path
-
 
 def _write_piecewise_anchor_shift_table(path: Path, anchor_shifts_yx: np.ndarray) -> Path:
     """Write GT local anchor shifts for piecewise 2D+t translation data."""
@@ -1312,7 +1273,6 @@ def _write_piecewise_anchor_shift_table(path: Path, anchor_shifts_yx: np.ndarray
                         ]
                     )
     return path
-
 
 def _write_3d_rigid_transform_table(
     path: Path,
@@ -1386,7 +1346,6 @@ def _write_3d_rigid_transform_table(
             )
     return path
 
-
 def _write_3d_slice_shift_table(
     path: Path,
     *,
@@ -1430,7 +1389,6 @@ def _write_3d_slice_shift_table(
                     ]
                 )
     return path
-
 
 def write_batch_example_project(
     project_root: str | Path,
@@ -1506,7 +1464,6 @@ def write_batch_example_project(
             paths[f"{key}_image"] = str(image_path)
             paths[f"{key}_time_gt_csv"] = str(gt_path)
     return paths
-
 
 def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
     """
@@ -1944,3 +1901,4 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     paths["metadata"] = str(metadata_path)
     return paths
+# %% END

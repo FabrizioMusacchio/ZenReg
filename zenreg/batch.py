@@ -4,14 +4,13 @@ Small batch-processing helpers for ZenReg project folders.
 Author: Fabrizio Musacchio
 Date: July 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
-
-
+# %% CONSTANTS
 DEFAULT_IMAGE_EXTENSIONS = (
     ".tif",
     ".tiff",
@@ -21,8 +20,7 @@ DEFAULT_IMAGE_EXTENSIONS = (
     ".czi",
     ".raw",
 )
-
-
+# %% DATA CLASSES
 @dataclass(frozen=True)
 class BatchImageRecord:
     """One image discovered in a BIDS-like ZenReg batch project."""
@@ -31,7 +29,7 @@ class BatchImageRecord:
     experiment_tag: str
     image_path: Path
 
-
+# %% HELPER FUNCTIONS
 def _normalize_requested_names(
     names: Iterable[str | Path] | None,
     *,
@@ -49,7 +47,6 @@ def _normalize_requested_names(
         normalized.add(value)
     return normalized
 
-
 def _has_supported_image_extension(
     path: Path,
     *,
@@ -59,7 +56,6 @@ def _has_supported_image_extension(
 
     name = path.name.lower()
     return any(name.endswith(extension.lower()) for extension in image_extensions)
-
 
 def iter_bids_like_image_files(
     project_root: str | Path,
@@ -154,3 +150,4 @@ def iter_bids_like_image_files(
                         )
                     )
     return records
+# %% END

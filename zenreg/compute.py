@@ -4,12 +4,11 @@ Compute-resource helpers for ZenReg.
 Author: Fabrizio Musacchio
 Date: July 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 import os
-
-
+# %% HELPER FUNCTIONS
 def available_cpu_count() -> int:
     """
     Return the number of CPU workers visible to the current Python process.
@@ -20,7 +19,6 @@ def available_cpu_count() -> int:
     """
 
     return int(os.cpu_count() or 1)
-
 
 def print_available_compute() -> int:
     """
@@ -37,3 +35,4 @@ def print_available_compute() -> int:
     print(f"ZenReg available CPU workers: {n_cpus}")
     print("Use n_jobs=-1 to use all available CPU workers.")
     return n_cpus
+# %% END

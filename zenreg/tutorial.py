@@ -8,7 +8,7 @@ detected-vs-GT summaries, quick residual plots, and optional Napari display.
 Author: Fabrizio Musacchio
 Date: July 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,13 +16,11 @@ from pathlib import Path
 import numpy as np
 
 from .filters import z_project
-
-
+# %% HELPER FUNCTIONS
 def load_csv_table(path: str | Path) -> np.ndarray:
     """Load a CSV file as a structured NumPy table."""
 
     return np.genfromtxt(Path(path), delimiter=",", names=True)
-
 
 def load_expected_time_registration_shifts(
     path: str | Path,
@@ -36,7 +34,6 @@ def load_expected_time_registration_shifts(
     columns = [f"expected_registration_shift_{axis}_ref_t{registration_stack}" for axis in axes]
     return np.column_stack([table[column] for column in columns]).astype(np.float32)
 
-
 def load_expected_time_registration_rotations(
     path: str | Path,
     *,
@@ -47,7 +44,6 @@ def load_expected_time_registration_rotations(
     table = load_csv_table(path)
     column = f"expected_registration_rotation_deg_ref_t{registration_stack}"
     return np.asarray(table[column], dtype=np.float32)
-
 
 def load_expected_rigid_z_rotation(
     path: str | Path,
@@ -65,7 +61,6 @@ def load_expected_rigid_z_rotation(
     shifts_zyx = np.column_stack([table[column] for column in shift_columns]).astype(np.float32)
     rotations_z_deg = np.asarray(table[rotation_column], dtype=np.float32)
     return shifts_zyx, rotations_z_deg
-
 
 def load_expected_rigid_corrections(
     path: str | Path,
@@ -91,7 +86,6 @@ def load_expected_rigid_corrections(
     ).astype(np.float32)
     return expected_shifts_zyx, expected_rotations_zyx_deg
 
-
 def load_expected_slice_registration_shifts(path: str | Path) -> np.ndarray:
     """Load expected intra-stack slice correction shifts from a synthetic GT table."""
 
@@ -112,7 +106,6 @@ def load_expected_slice_registration_shifts(path: str | Path) -> np.ndarray:
         )
     return shifts
 
-
 def print_shift_comparison(
     name: str,
     estimated_shifts: np.ndarray,
@@ -131,7 +124,6 @@ def print_shift_comparison(
     print(f"  max abs error:  {np.max(np.abs(flat_delta), axis=0)}")
     print("  first rows [estimated..., expected..., delta...]:")
     print(np.column_stack([flat_estimated, flat_expected, flat_delta])[:5])
-
 
 def print_rigid_comparison(
     title: str,
@@ -165,7 +157,6 @@ def print_rigid_comparison(
         )
     )
 
-
 def print_local_patch_summary(name: str, details: dict, *, t: int = 1) -> None:
     """Print patch-shift statistics for local NoRMCorre examples."""
 
@@ -177,7 +168,6 @@ def print_local_patch_summary(name: str, details: dict, *, t: int = 1) -> None:
     print(f"  patch std yx:   {patch_shifts.std(axis=0)}")
     print(f"  patch min yx:   {patch_shifts.min(axis=0)}")
     print(f"  patch max yx:   {patch_shifts.max(axis=0)}")
-
 
 def print_caiman_patch_summary(name: str, details: dict, *, t: int = 1) -> None:
     """Print CaImAn patch-shift statistics for one time frame."""
@@ -192,7 +182,6 @@ def print_caiman_patch_summary(name: str, details: dict, *, t: int = 1) -> None:
     print(f"  patch min xy:           {patch_shifts_xy.min(axis=0)}")
     print(f"  patch max xy:           {patch_shifts_xy.max(axis=0)}")
 
-
 def _project_one_time(stack, *, t: int, channel: int, projection_method: str) -> np.ndarray:
     """Project one time point/channel to YX without reading all time points."""
 
@@ -200,7 +189,6 @@ def _project_one_time(stack, *, t: int, channel: int, projection_method: str) ->
         stack[int(t) : int(t) + 1, :, int(channel) : int(channel) + 1, :, :],
         projection_method=projection_method,
     )[0, 0, 0]
-
 
 def _slugify_for_filename(text: str) -> str:
     """Return a compact ASCII-ish filename slug for tutorial figures."""
@@ -216,7 +204,6 @@ def _slugify_for_filename(text: str) -> str:
             previous_was_separator = True
     slug = "".join(slug_chars).strip("_")
     return slug or "zenreg_figure"
-
 
 def show_timepoints(
     stack,
@@ -283,7 +270,6 @@ def show_timepoints(
     else:
         plt.show()
 
-
 def show_slices(
     stack,
     *,
@@ -346,7 +332,6 @@ def show_slices(
         plt.close(fig)
     else:
         plt.show()
-
 
 def show_before_after(
     raw_stack,
@@ -449,7 +434,6 @@ def show_before_after(
     else:
         plt.show()
 
-
 def show_residual_comparison(
     raw,
     registered_zenreg,
@@ -474,7 +458,6 @@ def show_residual_comparison(
         reference_time=reference_time,
         projection_method=projection_method,
     )
-
 
 def show_residual_comparison_multi(
     raw,
@@ -523,7 +506,6 @@ def show_residual_comparison_multi(
     fig.suptitle(title)
     plt.show()
 
-
 def print_residual_mae_summary(
     raw,
     *registered_stacks,
@@ -560,7 +542,6 @@ def print_residual_mae_summary(
             f"max={float(np.max(residuals)):.6f}"
         )
 
-
 def open_in_napari(
     stack,
     metadata,
@@ -576,3 +557,4 @@ def open_in_napari(
     import omio as om
 
     om.open_in_napari(stack, metadata, fname=fname)
+# %% END

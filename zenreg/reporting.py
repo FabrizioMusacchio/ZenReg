@@ -4,7 +4,7 @@ Registration report writers for ZenReg outputs.
 Author: Fabrizio Musacchio
 Date: July 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 import csv
@@ -16,7 +16,7 @@ import numpy as np
 
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack, normalize_zrange
 from .registration import _compute_registration_frame_correlations
-
+# %% CONSTANTS
 SETTING_KEYS = (
     "registration_channel",
     "registration_stack",
@@ -106,7 +106,7 @@ SETTING_KEYS = (
     "stack_shape_tzcyx",
 )
 
-
+# %% HELPER FUNCTIONS
 def _as_details_dict(registration_details: dict[str, Any] | np.ndarray) -> dict[str, Any]:
     """Normalize report input to a details dictionary."""
 
@@ -119,7 +119,6 @@ def _as_details_dict(registration_details: dict[str, Any] | np.ndarray) -> dict[
         "time_shifts_zyx": shifts_zyx,
         "time_shifts_yx": shifts_yx,
     }
-
 
 def _plain_value(value):
     """Convert NumPy-rich values to YAML/CSV-friendly Python values."""
@@ -136,7 +135,6 @@ def _plain_value(value):
         return [_plain_value(item) for item in value]
     return value
 
-
 def _format_yaml_scalar(value) -> str:
     """Return a scalar represented as a conservative YAML subset."""
 
@@ -150,7 +148,6 @@ def _format_yaml_scalar(value) -> str:
             return "null"
         return repr(value)
     return json.dumps(str(value))
-
 
 def _append_yaml_value(lines: list[str], key: str, value, *, indent: int = 0) -> None:
     """Append one YAML key/value block to ``lines``."""
@@ -183,7 +180,6 @@ def _append_yaml_value(lines: list[str], key: str, value, *, indent: int = 0) ->
         return
     lines.append(f"{prefix}{key}: {_format_yaml_scalar(value)}")
 
-
 def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
     """Write a small dependency-free YAML file."""
 
@@ -191,7 +187,6 @@ def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
     for key, value in payload.items():
         _append_yaml_value(lines, key, value)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
 
 def _report_prefix(output_image_path: Path, report_prefix: str | Path | None) -> Path:
     """Return the common report path prefix."""
@@ -204,7 +199,6 @@ def _report_prefix(output_image_path: Path, report_prefix: str | Path | None) ->
         if lower_name.endswith(suffix):
             return output_image_path.with_name(name[: -len(suffix)])
     return output_image_path.with_suffix("")
-
 
 def _time_shifts_zyx(details: dict[str, Any], time_count: int) -> np.ndarray:
     """Return time shifts as ``T, 3`` with missing values filled by zeros."""
@@ -223,7 +217,6 @@ def _time_shifts_zyx(details: dict[str, Any], time_count: int) -> np.ndarray:
             shifts[:, 1:] = shifts_yx
     return shifts
 
-
 def _rotation_shift_series_deg(details: dict[str, Any], time_count: int) -> tuple[np.ndarray, list[str]]:
     """Return per-frame rotation corrections and axis labels."""
 
@@ -241,7 +234,6 @@ def _rotation_shift_series_deg(details: dict[str, Any], time_count: int) -> tupl
         return np.empty((time_count, 0), dtype=np.float32), []
     return rotations[:, None], ["rotation_z"]
 
-
 def _frame_correlations(registered_stack: np.ndarray, details: dict[str, Any]) -> np.ndarray:
     """Compute template-vs-registered Pearson correlations per time frame."""
 
@@ -254,7 +246,6 @@ def _frame_correlations(registered_stack: np.ndarray, details: dict[str, Any]) -
         effective_time_registration_mode=str(details.get("effective_time_registration_mode", "projection")),
     )
 
-
 def _pre_frame_correlations(details: dict[str, Any], time_count: int) -> np.ndarray:
     """Return pre-registration correlations when stored in registration details."""
 
@@ -265,7 +256,6 @@ def _pre_frame_correlations(details: dict[str, Any], time_count: int) -> np.ndar
     if correlations.shape != (time_count,):
         return np.full(time_count, np.nan, dtype=np.float32)
     return correlations
-
 
 def _csv_value(value) -> str:
     """Format one CSV cell."""
@@ -279,7 +269,6 @@ def _csv_value(value) -> str:
         return f"{float(value):.8g}"
     return str(value)
 
-
 def _nan_stat(values: np.ndarray, reducer) -> float:
     """Return a finite NaN-aware statistic or NaN for empty/all-NaN inputs."""
 
@@ -287,7 +276,6 @@ def _nan_stat(values: np.ndarray, reducer) -> float:
     if values.size == 0 or not np.any(np.isfinite(values)):
         return float("nan")
     return float(reducer(values))
-
 
 def _write_shift_csv(
     path: Path,
@@ -370,7 +358,6 @@ def _write_shift_csv(
                     }
                 )
 
-
 def _projection_range_label(details: dict[str, Any], z_count: int) -> str:
     """Return a compact projection-range label for annotations."""
 
@@ -379,7 +366,6 @@ def _projection_range_label(details: dict[str, Any], z_count: int) -> str:
         return f"all slices (0:{z_count})"
     z_start, z_stop = normalize_zrange(projection_range, z_count, strict=True)
     return f"{z_start}:{z_stop}"
-
 
 def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) -> str:
     """Build the compact plot annotation."""
@@ -414,7 +400,6 @@ def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) 
         ]
     )
 
-
 def _add_shift_limits(ax_shift, details: dict[str, Any]) -> None:
     """Draw configured shift-limit guide lines."""
 
@@ -437,7 +422,6 @@ def _add_shift_limits(ax_shift, details: dict[str, Any]) -> None:
         max_z = float(max_z)
         ax_shift.axhline(max_z, color="tab:green", linestyle="--", linewidth=0.8, alpha=0.45)
         ax_shift.axhline(-max_z, color="tab:green", linestyle="--", linewidth=0.8, alpha=0.45)
-
 
 def _write_summary_plot(
     path: Path,
@@ -523,7 +507,6 @@ def _write_summary_plot(
     fig.savefig(path, dpi=180)
     plt.close(fig)
 
-
 def _settings_payload(
     *,
     output_image_path: Path,
@@ -553,7 +536,6 @@ def _settings_payload(
         },
         "registration_settings": settings,
     }
-
 
 def write_registration_outputs(
     output_image_path: str | Path,
@@ -620,3 +602,4 @@ def write_registration_outputs(
         ),
     )
     return report_paths
+# %% END

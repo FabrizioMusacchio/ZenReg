@@ -11,7 +11,7 @@ supports 2D+t and full 3D+t stacks without requiring the full CaImAn suite.
 Author: Fabrizio Musacchio
 Date: July 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -28,7 +28,7 @@ from skimage.transform import resize as resize_image
 
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack, normalize_zrange
 from .filters import _normalize_projection_method, z_project
-
+# %% CONSTANTS AND DATA CLASSES
 
 @dataclass(frozen=True)
 class _PatchGrid:
@@ -38,7 +38,7 @@ class _PatchGrid:
     centers_by_axis: tuple[np.ndarray, ...]
     grid_shape: tuple[int, ...]
 
-
+# %% HELPER FUNCTIONS
 def _as_float32_stack(stack) -> np.ndarray:
     """Return a float32 ``TZCYX`` working view/copy."""
 
@@ -47,7 +47,6 @@ def _as_float32_stack(stack) -> np.ndarray:
         return stack.astype(np.float32, copy=False)
     except (AttributeError, TypeError):
         return np.asarray(stack, dtype=np.float32)
-
 
 def _normalize_spatial_tuple(
     value,
@@ -70,7 +69,6 @@ def _normalize_spatial_tuple(
         raise ValueError(f"{name} values must be >= 1. Got {value!r}.")
     return values
 
-
 def _normalize_max_shifts(max_shifts, *, ndim: int) -> np.ndarray | None:
     """Normalize optional absolute shift limits in spatial axis order."""
 
@@ -85,7 +83,6 @@ def _normalize_max_shifts(max_shifts, *, ndim: int) -> np.ndarray | None:
     if np.any(limits < 0):
         raise ValueError(f"max_shifts values must be >= 0. Got {max_shifts!r}.")
     return limits
-
 
 def _normalize_max_deviation(max_deviation_rigid, *, ndim: int) -> np.ndarray | None:
     """Normalize optional patch-shift deviation limits around the rigid shift."""
@@ -102,7 +99,6 @@ def _normalize_max_deviation(max_deviation_rigid, *, ndim: int) -> np.ndarray | 
         raise ValueError(f"max_deviation_rigid values must be >= 0. Got {max_deviation_rigid!r}.")
     return limits
 
-
 def _normalize_choice(value: str, *, allowed: set[str], name: str) -> str:
     """Normalize a small string option."""
 
@@ -110,7 +106,6 @@ def _normalize_choice(value: str, *, allowed: set[str], name: str) -> str:
     if normalized not in allowed:
         raise ValueError(f"{name} must be one of {sorted(allowed)}. Got {value!r}.")
     return normalized
-
 
 def _normalize_gsig_filt(gSig_filt, *, ndim: int) -> tuple[float, float] | None:
     """Normalize CaImAn-style spatial high-pass filter sigma values."""
@@ -129,7 +124,6 @@ def _normalize_gsig_filt(gSig_filt, *, ndim: int) -> tuple[float, float] | None:
         raise ValueError(f"gSig_filt values must be > 0. Got {gSig_filt!r}.")
     return values
 
-
 def _caiman_high_pass_kernel(gSig_filt: tuple[float, float]) -> np.ndarray:
     """Create CaImAn's centered Gaussian high-pass kernel."""
 
@@ -147,7 +141,6 @@ def _caiman_high_pass_kernel(gSig_filt: tuple[float, float]) -> np.ndarray:
     kernel[~core_mask] = 0
     return kernel
 
-
 def _high_pass_filter_space(image: np.ndarray, gSig_filt: tuple[float, float] | None) -> np.ndarray:
     """Apply CaImAn-style XY spatial high-pass filtering."""
 
@@ -163,7 +156,6 @@ def _high_pass_filter_space(image: np.ndarray, gSig_filt: tuple[float, float] | 
             filtered[z] = convolve(image[z], kernel, mode="reflect")
         return filtered
     raise ValueError(f"Expected a 2D or 3D image for gSig_filt. Got ndim={image.ndim}.")
-
 
 def _clip_shift(
     shift: np.ndarray,
@@ -182,7 +174,6 @@ def _clip_shift(
         shift = np.clip(shift, -max_shifts, max_shifts)
     return shift.astype(np.float32, copy=False)
 
-
 def _patch_starts(dim: int, window: int, stride: int) -> list[int]:
     """Return CaImAn-style patch starts, including the final edge patch."""
 
@@ -195,7 +186,6 @@ def _patch_starts(dim: int, window: int, stride: int) -> list[int]:
     if not starts or starts[-1] != final_start:
         starts.append(final_start)
     return starts
-
 
 def _build_patch_grid(
     spatial_shape: tuple[int, ...],
@@ -229,7 +219,6 @@ def _build_patch_grid(
         grid_shape=tuple(len(starts) for starts in starts_by_axis),
     )
 
-
 def _project_zyx_for_overlay(volume_zyx: np.ndarray, *, projection_method: str) -> np.ndarray:
     """Project one ``ZYX`` volume to a ``YX`` image for patch-grid visualization."""
 
@@ -243,7 +232,6 @@ def _project_zyx_for_overlay(volume_zyx: np.ndarray, *, projection_method: str) 
         return np.var(volume_zyx, axis=0)
     return np.std(volume_zyx, axis=0)
 
-
 def _metadata_source_parent(metadata: dict[str, Any] | None) -> Path:
     """Return the best available source folder from an OMIO metadata dictionary."""
 
@@ -256,7 +244,6 @@ def _metadata_source_parent(metadata: dict[str, Any] | None) -> Path:
             path = Path(value)
             return path if path.suffix == "" else path.parent
     return Path.cwd()
-
 
 def _metadata_source_stem(metadata: dict[str, Any] | None, *, fallback: str) -> str:
     """Return a compact source name from OMIO metadata."""
@@ -273,7 +260,6 @@ def _metadata_source_stem(metadata: dict[str, Any] | None, *, fallback: str) -> 
         if lower_name.endswith(suffix):
             return name[: -len(suffix)]
     return Path(name).stem
-
 
 def _normalize_overlay_yx_tuple(
     value,
@@ -298,7 +284,6 @@ def _normalize_overlay_yx_tuple(
     if len(values) == 3:
         return (int(values[1]), int(values[2])), int(values[0])
     return (int(values[0]), int(values[1])), None
-
 
 def plot_normcorre_patch_overlay(
     stack,
@@ -543,7 +528,6 @@ def plot_normcorre_patch_overlay(
         plt.close(fig)
     return output_path
 
-
 def _estimate_shift(
     reference: np.ndarray,
     moving: np.ndarray,
@@ -560,7 +544,6 @@ def _estimate_shift(
         normalization=normalization,
     )
     return np.asarray(shift, dtype=np.float32), float(error)
-
 
 def _estimate_patch_shifts(
     reference: np.ndarray,
@@ -599,7 +582,6 @@ def _estimate_patch_shifts(
 
     return patch_shifts, patch_errors
 
-
 def _uniform_shift_grid(
     spatial_shape: tuple[int, ...],
     shift: np.ndarray,
@@ -610,7 +592,6 @@ def _uniform_shift_grid(
     shift_grid = np.zeros((*((1,) * len(spatial_shape)), len(spatial_shape)), dtype=np.float32)
     shift_grid[...] = np.asarray(shift, dtype=np.float32)
     return centers, shift_grid
-
 
 def _regular_interpolators(
     centers_by_axis: tuple[np.ndarray, ...],
@@ -647,7 +628,6 @@ def _regular_interpolators(
         for axis in range(ndim)
     ]
 
-
 def _dense_shift_field_resize(
     shift_grid: np.ndarray,
     spatial_shape: tuple[int, ...],
@@ -667,7 +647,6 @@ def _dense_shift_field_resize(
         for axis in range(len(spatial_shape))
     ]
 
-
 def _evaluate_shift_block(
     coords: tuple[np.ndarray, ...],
     *,
@@ -680,7 +659,6 @@ def _evaluate_shift_block(
         interpolator(points).reshape(coords[0].shape).astype(np.float32, copy=False)
         for interpolator in interpolators
     ]
-
 
 def _map_border_settings(image: np.ndarray, *, border_nan, mode: str, cval: float) -> tuple[str, float]:
     """Map CaImAn-style border_nan values to scipy map_coordinates settings."""
@@ -696,7 +674,6 @@ def _map_border_settings(image: np.ndarray, *, border_nan, mode: str, cval: floa
     if border_nan == "copy":
         return "nearest", 0.0
     raise ValueError("border_nan must be None, False, True, 'min', or 'copy'.")
-
 
 def _warp_with_shift_grid(
     image: np.ndarray,
@@ -772,7 +749,6 @@ def _warp_with_shift_grid(
 
     raise ValueError(f"Only 2D and 3D spatial images are supported. Got ndim={ndim}.")
 
-
 def _registration_image(
     frame_tzcyx: np.ndarray,
     *,
@@ -793,7 +769,6 @@ def _registration_image(
         return volume[0]
     projection_input = volume[np.newaxis, :, np.newaxis, :, :]
     return z_project(projection_input, projection_method=projection_method)[0, 0, 0].astype(np.float32, copy=False)
-
 
 def _registration_image_for_estimation(
     frame_tzcyx: np.ndarray,
@@ -816,7 +791,6 @@ def _registration_image_for_estimation(
         ),
         gSig_filt,
     )
-
 
 def _registration_images(
     stack: np.ndarray,
@@ -844,13 +818,11 @@ def _registration_images(
         for t in np.asarray(indices, dtype=np.int32)
     ]
 
-
 def _frame_sample_indices(time_count: int, *, is3d: bool) -> np.ndarray:
     """Return CaImAn-like sparse frame indices used for initial templates."""
 
     step = time_count // 10 if is3d else time_count // 50
     return np.arange(time_count, dtype=np.int32)[slice(None, None, step + 1)]
-
 
 def _update_template_from_registered(
     registered: np.ndarray,
@@ -909,7 +881,6 @@ def _update_template_from_registered(
     template = np.nanmedian(np.stack(chunk_templates, axis=0), axis=0).astype(np.float32)
     return _high_pass_filter_space(template, gSig_filt).astype(np.float32, copy=False)
 
-
 def _estimate_min_mov(
     stack: np.ndarray,
     *,
@@ -935,7 +906,6 @@ def _estimate_min_mov(
         )
         minima.append(float(np.nanmin(image)))
     return float(np.nanmin(minima)) if minima else 0.0
-
 
 def _initial_template(
     stack: np.ndarray,
@@ -1016,7 +986,6 @@ def _initial_template(
         sampled_images = corrected_images
     return template
 
-
 def _apply_shift_grid_to_frame(
     frame_tzcyx: np.ndarray,
     *,
@@ -1064,7 +1033,6 @@ def _apply_shift_grid_to_frame(
                 block_size=block_size,
             )
     return corrected
-
 
 def _process_frame(
     t: int,
@@ -1139,7 +1107,6 @@ def _process_frame(
         block_size=block_size,
     )
     return t, corrected_frame, rigid_shift, rigid_error, patch_shifts, patch_errors
-
 
 def register_stack_normcorre(
     stack,
@@ -1583,3 +1550,4 @@ def register_stack_normcorre(
     }
 
     return (registered, details) if return_details else registered
+# %% END

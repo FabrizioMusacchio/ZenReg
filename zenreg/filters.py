@@ -4,7 +4,7 @@ Filtering and projection helpers for ZenReg registration workflows.
 Author: Fabrizio Musacchio
 Date: June 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -13,11 +13,10 @@ import numpy as np
 from scipy.ndimage import gaussian_filter, median_filter
 
 from ._axes import normalize_zrange, promote_to_tzcyx, restore_promoted_shape
-
+# %% CONSTANTS
 SUPPORTED_FILTERS = {"median", "gaussian"}
 SUPPORTED_PROJECTION_METHODS = {"max", "mean", "median", "var", "std"}
-
-
+# %% HELPER FUNCTIONS
 def _normalize_filter_sequence(filters: str | Sequence[str]) -> list[str]:
     """Normalize one or more filter names into a validated execution sequence."""
 
@@ -35,7 +34,6 @@ def _normalize_filter_sequence(filters: str | Sequence[str]) -> list[str]:
         normalized.append(normalized_name)
     return normalized
 
-
 def _normalize_time_dependent_parameter(value, *, time_count: int, name: str, cast):
     """Expand a scalar or time-matched sequence into one value per time point."""
 
@@ -49,7 +47,6 @@ def _normalize_time_dependent_parameter(value, *, time_count: int, name: str, ca
         return [fallback for _ in range(time_count)]
     scalar_value = cast(value)
     return [scalar_value for _ in range(time_count)]
-
 
 def _apply_filter_sequence_to_volume(
     volume_zyx: np.ndarray,
@@ -86,7 +83,6 @@ def _apply_filter_sequence_to_volume(
             working_volume = filtered
     return working_volume
 
-
 def _normalize_projection_method(projection_method: str) -> str:
     """Normalize and validate a Z-projection method."""
 
@@ -97,7 +93,6 @@ def _normalize_projection_method(projection_method: str) -> str:
             f"Supported methods: {sorted(SUPPORTED_PROJECTION_METHODS)}."
         )
     return normalized
-
 
 def _project_z(stack: np.ndarray, *, projection_method: str) -> np.ndarray:
     """Project a temporary ``TZCYX`` stack along Z while preserving Z as length 1."""
@@ -111,7 +106,6 @@ def _project_z(stack: np.ndarray, *, projection_method: str) -> np.ndarray:
     if projection_method == "var":
         return np.var(stack, axis=1, keepdims=True)
     return np.std(stack, axis=1, keepdims=True)
-
 
 def apply_filters(
     stack,
@@ -183,7 +177,6 @@ def apply_filters(
             )
     return restore_promoted_shape(filtered, original_ndim)
 
-
 def z_project(
     stack,
     *,
@@ -225,7 +218,6 @@ def z_project(
     )
     return restore_promoted_shape(projected.astype(np.float32, copy=False), original_ndim)
 
-
 def max_z_project(stack, *, zrange: tuple[int, int] | Sequence[int] | None = None) -> np.ndarray:
     """
     Compute a maximum-intensity projection over Z while preserving ``T`` and ``C``.
@@ -234,3 +226,4 @@ def max_z_project(stack, *, zrange: tuple[int, int] | Sequence[int] | None = Non
     """
 
     return z_project(stack, zrange=zrange, projection_method="max")
+# %% END

@@ -4,7 +4,7 @@ OMIO-backed stack I/O helpers for ZenReg.
 Author: Fabrizio Musacchio
 Date: June 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 import os
@@ -20,7 +20,7 @@ import numpy as np
 
 from ._axes import CANONICAL_AXIS_ORDER, ensure_tzcyx_stack
 from .reporting import write_registration_outputs
-
+# %% HELPER FUNCTIONS
 
 def _configure_omio_runtime() -> None:
     """Point optional OMIO/Napari caches at writable locations when needed."""
@@ -43,7 +43,6 @@ def _configure_omio_runtime() -> None:
         omio_home.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("HOME", str(omio_home))
 
-
 def _import_omio():
     """Import OMIO lazily so array-only ZenReg workflows do not pay I/O import cost."""
 
@@ -57,12 +56,10 @@ def _import_omio():
         ) from exc
     return om
 
-
 def _copy_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
     """Return a detached metadata dictionary."""
 
     return deepcopy(metadata) if isinstance(metadata, dict) else {}
-
 
 def create_stack_metadata(
     stack,
@@ -102,7 +99,6 @@ def create_stack_metadata(
     )
     return om.update_metadata_from_image(metadata, stack, verbose=verbose)
 
-
 def update_stack_metadata(
     metadata: dict[str, Any] | None,
     stack,
@@ -140,7 +136,6 @@ def update_stack_metadata(
         verbose=verbose,
     )
 
-
 def _normalize_crop_value(crop: dict[str, int], key: str) -> int:
     """Return one non-negative integer crop value from a sparse crop dictionary."""
 
@@ -148,7 +143,6 @@ def _normalize_crop_value(crop: dict[str, int], key: str) -> int:
     if value < 0:
         raise ValueError(f"crop[{key!r}] must be >= 0. Got {value!r}.")
     return value
-
 
 def crop_stack(
     stack,
@@ -230,7 +224,6 @@ def crop_stack(
         }
     return cropped, cropped_metadata
 
-
 def create_empty_stack(
     shape: tuple[int, int, int, int, int] = (1, 1, 1, 1, 1),
     *,
@@ -278,7 +271,6 @@ def create_empty_stack(
         input_metadata=input_metadata,
         verbose=verbose,
     )
-
 
 def load_stack(
     path: str | Path,
@@ -343,7 +335,6 @@ def load_stack(
         )
     return (stack, metadata) if return_metadata else stack
 
-
 def cleanup_omio_cache(
     target: str | Path,
     *,
@@ -368,7 +359,6 @@ def cleanup_omio_cache(
         return
     with redirect_stdout(StringIO()):
         cleanup(str(target), full_cleanup=full_cleanup, verbose=verbose)
-
 
 def _metadata_for_output_path(
     path: Path,
@@ -399,7 +389,6 @@ def _metadata_for_output_path(
         verbose=verbose,
     )
     return output_metadata
-
 
 def save_stack(
     path: str | Path,
@@ -480,3 +469,4 @@ def save_stack(
             report_prefix=report_prefix,
         )
     return output_path
+# %% END

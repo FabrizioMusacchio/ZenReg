@@ -4,7 +4,7 @@ Optional memory profiling helpers for ZenReg workflows.
 Author: Fabrizio Musacchio
 Date: July 2026
 """
-
+# %% IMPORTS
 from __future__ import annotations
 
 import csv
@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
+# %% HELPER FUNCTIONS
 
 def _import_psutil():
     """Import psutil lazily because memory profiling is an optional diagnostic."""
@@ -29,7 +29,6 @@ def _import_psutil():
             "environment such as zenreg2 that already provides it."
         ) from exc
     return psutil
-
 
 @dataclass
 class MemoryTracker:
@@ -230,7 +229,6 @@ class MemoryTracker:
         with self._lock:
             self._records.append(record)
 
-
 @contextmanager
 def profile_memory(
     *,
@@ -255,5 +253,6 @@ def profile_memory(
     finally:
         tracker.stop()
 
-
+# set module-level __all__ for explicit exports:
 __all__ = ["MemoryTracker", "profile_memory"]
+# %% END

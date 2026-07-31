@@ -29,7 +29,6 @@ SUPPORTED_TIME_REFERENCE_MODES = {"template", "previous"}
 SUPPORTED_ZERO_CLIP_MODES = {"auto", "shift", "mask"}
 SUPPORTED_ZERO_CLIP_MASK_STRATEGIES = {"auto", "greedy", "relaxed", "max_volume"}
 SUPPORTED_TRANSFORM_BACKENDS = {"skimage", "scipy"}
-
 # %% FUNCTIONS
 def _metadata_spacing_zyx(metadata: dict | None) -> tuple[tuple[float, float, float] | None, str]:
     """Return physical Z/Y/X spacing from an OMIO metadata dictionary if available."""
@@ -61,7 +60,6 @@ def _metadata_spacing_zyx(metadata: dict | None) -> tuple[tuple[float, float, fl
         )
     return spacing_zyx, "metadata"
 
-
 def _resolve_rot_spacing_zyx(
     rot_spacing_zyx,
     metadata: dict | None,
@@ -80,7 +78,6 @@ def _resolve_rot_spacing_zyx(
         return metadata_spacing, source
     return (1.0, 1.0, 1.0), "default"
 
-
 def _normalize_registration_method(method: str) -> str:
     """Normalize and validate the requested registration backend."""
 
@@ -91,7 +88,6 @@ def _normalize_registration_method(method: str) -> str:
             f"Supported methods: {sorted(SUPPORTED_REGISTRATION_METHODS)}."
         )
     return normalized
-
 
 def _normalize_time_registration_mode(time_registration_mode: str) -> str:
     """Normalize and validate the time-registration strategy."""
@@ -104,7 +100,6 @@ def _normalize_time_registration_mode(time_registration_mode: str) -> str:
         )
     return normalized
 
-
 def _normalize_time_reference_mode(time_reference_mode: str) -> str:
     """Normalize and validate the time-reference strategy."""
 
@@ -115,7 +110,6 @@ def _normalize_time_reference_mode(time_reference_mode: str) -> str:
             f"Supported modes: {sorted(SUPPORTED_TIME_REFERENCE_MODES)}."
         )
     return normalized
-
 
 def _normalize_intra_stack_reference_mode(reference_mode: str) -> str:
     """Normalize and validate the intra-stack reference-image strategy."""
@@ -128,7 +122,6 @@ def _normalize_intra_stack_reference_mode(reference_mode: str) -> str:
         )
     return normalized
 
-
 def _normalize_neighbor_window_size(neighbor_window_size: int) -> int:
     """Validate the odd-sized neighborhood used for local Z references."""
 
@@ -138,7 +131,6 @@ def _normalize_neighbor_window_size(neighbor_window_size: int) -> int:
     if neighbor_window_size % 2 == 0:
         raise ValueError("neighbor_window_size must be odd so that the current z-slice stays centered.")
     return neighbor_window_size
-
 
 def _normalize_registration_stack(registration_stack: int, time_count: int) -> int:
     """Validate the time point used as the registration reference."""
@@ -151,7 +143,6 @@ def _normalize_registration_stack(registration_stack: int, time_count: int) -> i
         )
     return registration_stack
 
-
 def _normalize_projection_method(projection_method: str) -> str:
     """Normalize and validate a Z-projection method."""
 
@@ -162,7 +153,6 @@ def _normalize_projection_method(projection_method: str) -> str:
             f"Supported methods: {sorted(SUPPORTED_PROJECTION_METHODS)}."
         )
     return normalized
-
 
 def _normalize_max_xy_shifts(max_xy_shifts: tuple[float, float] | Sequence[float] | None):
     """Normalize optional absolute shift limits for Y and X."""
@@ -176,7 +166,6 @@ def _normalize_max_xy_shifts(max_xy_shifts: tuple[float, float] | Sequence[float
         raise ValueError(f"max_xy_shifts values must be >= 0. Got {max_xy_shifts!r}.")
     return limits
 
-
 def _normalize_max_z_shifts(max_z_shifts: float | None):
     """Normalize an optional absolute shift limit for Z."""
 
@@ -186,7 +175,6 @@ def _normalize_max_z_shifts(max_z_shifts: float | None):
     if limit < 0:
         raise ValueError(f"max_z_shifts must be >= 0. Got {max_z_shifts!r}.")
     return limit
-
 
 def _normalize_max_rot_shifts(max_rot_shifts: float | None):
     """Normalize an optional absolute rotation limit in degrees."""
@@ -198,7 +186,6 @@ def _normalize_max_rot_shifts(max_rot_shifts: float | None):
         raise ValueError(f"max_rot_shifts must be >= 0. Got {max_rot_shifts!r}.")
     return limit
 
-
 def _normalize_rotreg_iter(rotreg_iter: int) -> int:
     """Validate the number of translation-rotation refinement iterations."""
 
@@ -206,7 +193,6 @@ def _normalize_rotreg_iter(rotreg_iter: int) -> int:
     if rotreg_iter < 1:
         raise ValueError(f"rotreg_iter must be >= 1. Got {rotreg_iter!r}.")
     return rotreg_iter
-
 
 def _normalize_n_jobs(n_jobs: int | None) -> int:
     """Normalize worker-count arguments shared by CPU-parallel registration paths."""
@@ -223,7 +209,6 @@ def _normalize_n_jobs(n_jobs: int | None) -> int:
         return max(cpu_count + 1 + n_jobs, 1)
     return n_jobs
 
-
 def _parallel_map_ordered(function, items, *, n_jobs: int):
     """Map ``function`` over ``items`` while preserving input order."""
 
@@ -232,7 +217,6 @@ def _parallel_map_ordered(function, items, *, n_jobs: int):
         return [function(item) for item in items]
     with ThreadPoolExecutor(max_workers=int(n_jobs)) as executor:
         return list(executor.map(function, items))
-
 
 def _iter_map_ordered(function, items, *, n_jobs: int):
     """Yield mapped results in input order without storing all outputs first."""
@@ -245,7 +229,6 @@ def _iter_map_ordered(function, items, *, n_jobs: int):
     with ThreadPoolExecutor(max_workers=int(n_jobs)) as executor:
         yield from executor.map(function, items)
 
-
 def _normalize_zero_clip_mode(zero_clip_mode: str) -> str:
     """Normalize and validate the zero-clipping strategy."""
 
@@ -256,7 +239,6 @@ def _normalize_zero_clip_mode(zero_clip_mode: str) -> str:
             f"Supported modes: {sorted(SUPPORTED_ZERO_CLIP_MODES)}."
         )
     return normalized
-
 
 def _normalize_zero_clip_mask_threshold(zero_clip_mask_threshold: float) -> float:
     """Validate the valid-mask threshold used by mask-based zero-clipping."""
@@ -269,7 +251,6 @@ def _normalize_zero_clip_mask_threshold(zero_clip_mask_threshold: float) -> floa
         )
     return threshold
 
-
 def _normalize_zero_clip_mask_strategy(zero_clip_mask_strategy: str) -> str:
     """Normalize and validate the crop strategy used for mask-based zero-clipping."""
 
@@ -281,7 +262,6 @@ def _normalize_zero_clip_mask_strategy(zero_clip_mask_strategy: str) -> str:
         )
     return normalized
 
-
 def _normalize_zero_clip_mask_min_fraction(zero_clip_mask_min_fraction: float) -> float:
     """Validate the relaxed mask-crop minimum valid-plane fraction."""
 
@@ -292,7 +272,6 @@ def _normalize_zero_clip_mask_min_fraction(zero_clip_mask_min_fraction: float) -
             f"Got {zero_clip_mask_min_fraction!r}."
         )
     return fraction
-
 
 def _normalize_zero_clip_margin(zero_clip_margin: int | Sequence[int]) -> np.ndarray:
     """Normalize optional extra ``(z, y, x)`` crop margins."""
@@ -307,7 +286,6 @@ def _normalize_zero_clip_margin(zero_clip_margin: int | Sequence[int]) -> np.nda
         raise ValueError(f"zero_clip_margin values must be >= 0. Got {zero_clip_margin!r}.")
     return margins
 
-
 def _normalize_transform_backend(transform_backend: str) -> str:
     """Normalize and validate the image transformation backend."""
 
@@ -319,7 +297,6 @@ def _normalize_transform_backend(transform_backend: str) -> str:
         )
     return normalized
 
-
 def _normalize_transform_order(transform_order: int) -> int:
     """Validate interpolation order for geometric transformations."""
 
@@ -327,7 +304,6 @@ def _normalize_transform_order(transform_order: int) -> int:
     if not 0 <= transform_order <= 5:
         raise ValueError(f"transform_order must be between 0 and 5. Got {transform_order!r}.")
     return transform_order
-
 
 def _as_float32_stack_copy(stack) -> np.ndarray:
     """Return a float32 ``TZCYX`` working copy from NumPy or disk-backed arrays."""
@@ -338,12 +314,10 @@ def _as_float32_stack_copy(stack) -> np.ndarray:
     except (AttributeError, TypeError):
         return np.asarray(stack, dtype=np.float32).copy()
 
-
 def _as_float32_work_array(array) -> np.ndarray:
     """Return a local float32 working array for the currently processed chunk."""
 
     return np.asarray(array, dtype=np.float32)
-
 
 def _normalize_output_dtype(output_dtype) -> np.dtype:
     """Normalize the registered-output dtype."""
@@ -359,7 +333,6 @@ def _normalize_output_dtype(output_dtype) -> np.dtype:
         )
     return dtype
 
-
 def _compose_output_memmap_name(base_name: str | None, stage_name: str | None) -> str | None:
     """Build a deterministic Zarr store name for intermediate registration stages."""
 
@@ -368,7 +341,6 @@ def _compose_output_memmap_name(base_name: str | None, stage_name: str | None) -
     if not stage_name:
         return str(base_name)
     return f"{base_name}_{stage_name}"
-
 
 def _create_registered_output(
     shape: tuple[int, int, int, int, int],
@@ -396,7 +368,6 @@ def _create_registered_output(
         )
     return np.empty(tuple(int(v) for v in shape), dtype=np.dtype(dtype))
 
-
 def _extract_registration_volume(
     stack,
     *,
@@ -414,7 +385,6 @@ def _extract_registration_volume(
         return _apply_median_to_zyx(volume, int(median_kernel_size))
     return volume
 
-
 def _effective_zero_clip_mode(*, zero_clip: bool, zero_clip_mode: str, rotreg: bool) -> str:
     """Return the concrete zero-clipping mode for this registration run."""
 
@@ -423,7 +393,6 @@ def _effective_zero_clip_mode(*, zero_clip: bool, zero_clip_mode: str, rotreg: b
     if zero_clip_mode == "auto":
         return "mask" if rotreg else "shift"
     return zero_clip_mode
-
 
 def _effective_zero_clip_mask_strategy(
     *,
@@ -435,7 +404,6 @@ def _effective_zero_clip_mask_strategy(
     if zero_clip_mask_strategy == "auto":
         return "relaxed" if rigid_3d else "greedy"
     return zero_clip_mask_strategy
-
 
 def _resolve_projection_range_alias(
     *,
@@ -450,7 +418,6 @@ def _resolve_projection_range_alias(
         raise ValueError("Use either zrange or projection_range, not conflicting values for both.")
     return projection_range
 
-
 def _clip_shift_yx(shift_yx: np.ndarray, max_xy_shifts: np.ndarray | None) -> np.ndarray:
     """Clip a ``YX`` correction shift to configured absolute limits."""
 
@@ -458,7 +425,6 @@ def _clip_shift_yx(shift_yx: np.ndarray, max_xy_shifts: np.ndarray | None) -> np
     if max_xy_shifts is not None:
         shift_yx = np.clip(shift_yx, -max_xy_shifts, max_xy_shifts)
     return shift_yx.astype(np.float32, copy=False)
-
 
 def _clip_shift_zyx(
     shift_zyx: np.ndarray,
@@ -475,7 +441,6 @@ def _clip_shift_zyx(
         shift_zyx[1:] = np.clip(shift_zyx[1:], -max_xy_shifts, max_xy_shifts)
     return shift_zyx.astype(np.float32, copy=False)
 
-
 def _clip_rotation_deg(angle_deg: float, max_rot_shifts: float | None) -> float:
     """Clip a rotation correction to an optional absolute degree limit."""
 
@@ -483,7 +448,6 @@ def _clip_rotation_deg(angle_deg: float, max_rot_shifts: float | None) -> float:
     if max_rot_shifts is not None:
         angle_deg = float(np.clip(angle_deg, -max_rot_shifts, max_rot_shifts))
     return angle_deg
-
 
 def _crop_bounds_from_zyx_shifts(shifts_zyx: np.ndarray | None) -> dict[str, int]:
     """Compute directional crop widths from applied ``ZYX`` correction shifts."""
@@ -510,7 +474,6 @@ def _crop_bounds_from_zyx_shifts(shifts_zyx: np.ndarray | None) -> dict[str, int
     bounds["x_right"] = int(np.ceil(max(0.0, float(np.max(-shifts[:, 2])))))
     return bounds
 
-
 def _crop_bounds_from_yx_shifts(shifts_yx: np.ndarray | None) -> dict[str, int]:
     """Compute directional Y/X crop widths from applied ``YX`` correction shifts."""
 
@@ -534,13 +497,11 @@ def _crop_bounds_from_yx_shifts(shifts_yx: np.ndarray | None) -> dict[str, int]:
     bounds["x_right"] = int(np.ceil(max(0.0, float(np.max(-shifts[:, 1])))))
     return bounds
 
-
 def _add_crop_bounds(*bounds_list: dict[str, int]) -> dict[str, int]:
     """Add crop bounds from sequential correction stages."""
 
     keys = ("z_top", "z_bottom", "y_top", "y_bottom", "x_left", "x_right")
     return {key: int(sum(bounds.get(key, 0) for bounds in bounds_list)) for key in keys}
-
 
 def _apply_zero_clip_margin(crop_bounds: dict[str, int], margin_zyx: np.ndarray) -> dict[str, int]:
     """Add symmetric extra ``Z/Y/X`` margins to directional crop bounds."""
@@ -555,7 +516,6 @@ def _apply_zero_clip_margin(crop_bounds: dict[str, int], margin_zyx: np.ndarray)
         "x_right": int(crop_bounds.get("x_right", 0) + margin_zyx[2]),
     }
 
-
 def _bounds_from_valid_starts_stops(valid: np.ndarray, starts: np.ndarray, stops: np.ndarray) -> dict[str, int]:
     """Convert Z/Y/X start-stop indices to directional crop widths."""
 
@@ -569,7 +529,6 @@ def _bounds_from_valid_starts_stops(valid: np.ndarray, starts: np.ndarray, stops
         "x_left": int(starts[2]),
         "x_right": int(valid.shape[2] - stops[2]),
     }
-
 
 def _crop_bounds_from_valid_mask_greedy(valid: np.ndarray) -> dict[str, int]:
     """Compute strict crop bounds by greedily removing invalid border faces."""
@@ -621,7 +580,6 @@ def _crop_bounds_from_valid_mask_greedy(valid: np.ndarray) -> dict[str, int]:
         np.asarray([z_start, y_start, x_start], dtype=np.int64),
         np.asarray([z_stop, y_stop, x_stop], dtype=np.int64),
     )
-
 
 def _crop_bounds_from_valid_mask_relaxed(valid: np.ndarray, *, min_fraction: float) -> dict[str, int]:
     """Crop border planes only while their valid fraction is below ``min_fraction``."""
@@ -675,7 +633,6 @@ def _crop_bounds_from_valid_mask_relaxed(valid: np.ndarray, *, min_fraction: flo
             last_error = exc
     raise ValueError("Mask-based relaxed zero_clip could not find a valid image region.") from last_error
 
-
 def _largest_rectangle_in_binary_mask(mask_yx: np.ndarray) -> tuple[int, int, int, int, int]:
     """Return area and Y/X bounds of the largest all-true rectangle."""
 
@@ -699,7 +656,6 @@ def _largest_rectangle_in_binary_mask(mask_yx: np.ndarray) -> tuple[int, int, in
                     best = (int(y - h + 1), int(y + 1), left, int(x))
             stack.append(int(x))
     return int(best_area), best[0], best[1], best[2], best[3]
-
 
 def _crop_bounds_from_valid_mask_max_volume(valid: np.ndarray) -> dict[str, int]:
     """Find the largest strict all-valid axis-aligned cuboid."""
@@ -726,7 +682,6 @@ def _crop_bounds_from_valid_mask_max_volume(valid: np.ndarray) -> dict[str, int]
         np.asarray([z_stop, y_stop, x_stop], dtype=np.int64),
     )
 
-
 def _crop_bounds_from_valid_mask(
     mask_tzyx: np.ndarray,
     *,
@@ -742,7 +697,6 @@ def _crop_bounds_from_valid_mask(
     if strategy == "max_volume":
         return _crop_bounds_from_valid_mask_max_volume(valid)
     return _crop_bounds_from_valid_mask_greedy(valid)
-
 
 def _zero_clip_stack(
     stack,
@@ -804,7 +758,6 @@ def _zero_clip_stack(
         cropped[t, :, :, :, :] = chunk
     return cropped
 
-
 def _project_zyx_to_yx(volume_zyx: np.ndarray, *, projection_method: str) -> np.ndarray:
     """Project one ``ZYX`` volume to ``YX`` using a validated method."""
 
@@ -818,7 +771,6 @@ def _project_zyx_to_yx(volume_zyx: np.ndarray, *, projection_method: str) -> np.
         return np.var(volume_zyx, axis=0)
     return np.std(volume_zyx, axis=0)
 
-
 def _pearson_correlation_flat(template: np.ndarray, image: np.ndarray) -> float:
     """Compute Pearson correlation for two registration-image vectors."""
 
@@ -830,7 +782,6 @@ def _pearson_correlation_flat(template: np.ndarray, image: np.ndarray) -> float:
     if denominator == 0.0:
         return float("nan")
     return float(np.dot(template, image) / denominator)
-
 
 def _registration_correlation_image_for_frame(
     stack,
@@ -849,7 +800,6 @@ def _registration_correlation_image_for_frame(
         return volume.ravel()
     projection = _project_zyx_to_yx(volume, projection_method=projection_method)
     return np.asarray(projection, dtype=np.float32).ravel()
-
 
 def _compute_registration_frame_correlations(
     stack,
@@ -884,7 +834,6 @@ def _compute_registration_frame_correlations(
         correlations[t] = _pearson_correlation_flat(template, image)
     return correlations
 
-
 def _project_zyx_along_axis(
     volume_zyx: np.ndarray,
     *,
@@ -902,7 +851,6 @@ def _project_zyx_along_axis(
     if projection_method == "var":
         return np.var(volume_zyx, axis=axis)
     return np.std(volume_zyx, axis=axis)
-
 
 def _resolve_filter_aliases(
     *,
@@ -935,7 +883,6 @@ def _resolve_filter_aliases(
 
     return bool(filter_slices), bool(filter_projections)
 
-
 def _normalize_phase_cross_correlation_normalization(normalization: str | None) -> str | None:
     """Normalize scikit-image's phase-cross-correlation normalization option."""
 
@@ -951,7 +898,6 @@ def _normalize_phase_cross_correlation_normalization(normalization: str | None) 
         )
     return normalized
 
-
 def _apply_median_to_zyx(volume_zyx: np.ndarray, kernel_size: int) -> np.ndarray:
     """Apply a 2D median filter independently to each Z plane of a ``ZYX`` volume."""
 
@@ -959,7 +905,6 @@ def _apply_median_to_zyx(volume_zyx: np.ndarray, kernel_size: int) -> np.ndarray
     for z in range(volume_zyx.shape[0]):
         filtered[z, :, :] = median_filter(volume_zyx[z, :, :], size=(kernel_size, kernel_size))
     return filtered
-
 
 def _build_intra_stack_reference_image(
     volume_zyx: np.ndarray,
@@ -980,7 +925,6 @@ def _build_intra_stack_reference_image(
     start = max(0, z_index - half_window)
     stop = min(volume_zyx.shape[0], z_index + half_window + 1)
     return _project_zyx_to_yx(volume_zyx[start:stop, :, :], projection_method=projection_method)
-
 
 def _build_registration_projections(
     stack: np.ndarray,
@@ -1016,7 +960,6 @@ def _build_registration_projections(
             )
     return projections
 
-
 def _phase_cross_correlation_shift(
     reference_projection: np.ndarray,
     moving_projection: np.ndarray,
@@ -1032,7 +975,6 @@ def _phase_cross_correlation_shift(
         upsample_factor=upsample_factor,
         normalization=normalization,
     )
-
 
 def _phase_cross_correlation_nd_shift(
     reference_image: np.ndarray,
@@ -1051,7 +993,6 @@ def _phase_cross_correlation_nd_shift(
     )
     return np.asarray(shift_2d, dtype=np.float32)
 
-
 def _pystackreg_shift(reference_projection: np.ndarray, moving_projection: np.ndarray) -> np.ndarray:
     """Estimate a 2D translation with :mod:`pystackreg` in translation mode."""
 
@@ -1060,7 +1001,6 @@ def _pystackreg_shift(reference_projection: np.ndarray, moving_projection: np.nd
     sr = StackReg(StackReg.TRANSLATION)
     tmat = sr.register(reference_projection.astype(np.float32), moving_projection.astype(np.float32))
     return np.asarray([-tmat[1, 2], -tmat[0, 2]], dtype=np.float32)
-
 
 def _estimate_shift(
     reference_projection: np.ndarray,
@@ -1083,7 +1023,6 @@ def _estimate_shift(
         return _pystackreg_shift(reference_projection, moving_projection)
     raise ValueError("method='normcorre' is available only through register_stack(), not pairwise shift helpers.")
 
-
 def _estimate_full_3d_shift(
     reference_volume: np.ndarray,
     moving_volume: np.ndarray,
@@ -1099,7 +1038,6 @@ def _estimate_full_3d_shift(
         upsample_factor=phase_cross_correlation_upsample_factor,
         normalization=phase_cross_correlation_normalization,
     )
-
 
 def _estimate_z_shift_from_orthogonal_projections(
     reference_volume: np.ndarray,
@@ -1143,7 +1081,6 @@ def _estimate_z_shift_from_orthogonal_projections(
         z_shifts.append(float(shift[0]))
     return float(np.mean(z_shifts))
 
-
 def _normalize_rotation_image(image: np.ndarray) -> np.ndarray:
     """Normalize a 2D image for polar phase-correlation rotation estimation."""
 
@@ -1153,7 +1090,6 @@ def _normalize_rotation_image(image: np.ndarray) -> np.ndarray:
     if max_value > 0:
         image = image / max_value
     return image.astype(np.float32, copy=False)
-
 
 def _estimate_rotation_deg_from_projections(
     reference_projection: np.ndarray,
@@ -1183,7 +1119,6 @@ def _estimate_rotation_deg_from_projections(
     if angle_deg <= -180.0:
         angle_deg += 360.0
     return _clip_rotation_deg(angle_deg, max_rot_shifts)
-
 
 def _apply_translation_to_yx(
     image_yx: np.ndarray,
@@ -1215,7 +1150,6 @@ def _apply_translation_to_yx(
         prefilter=True,
     ).astype(np.float32, copy=False)
 
-
 def _apply_rotation_to_yx(
     image_yx: np.ndarray,
     correction_angle_deg: float,
@@ -1234,7 +1168,6 @@ def _apply_rotation_to_yx(
         preserve_range=True,
     ).astype(np.float32, copy=False)
 
-
 def _apply_rotation_to_zcyx(
     stack_zcyx: np.ndarray,
     correction_angle_deg: float,
@@ -1252,7 +1185,6 @@ def _apply_rotation_to_zcyx(
                 transform_order=transform_order,
             )
     return rotated
-
 
 def _apply_translation_to_tzyx(
     stack_tzyx: np.ndarray,
@@ -1273,7 +1205,6 @@ def _apply_translation_to_tzyx(
                 transform_order=transform_order,
             )
     return shifted
-
 
 def _apply_translation_to_zcyx(
     stack_zcyx: np.ndarray,
@@ -1308,7 +1239,6 @@ def _apply_translation_to_zcyx(
         )
     return shifted
 
-
 def _apply_translation_to_cyx(
     slice_cyx: np.ndarray,
     shift_yx: np.ndarray,
@@ -1327,7 +1257,6 @@ def _apply_translation_to_cyx(
             transform_order=transform_order,
         )
     return shifted
-
 
 def _apply_translation_to_mask_zyx(
     mask_zyx: np.ndarray,
@@ -1357,7 +1286,6 @@ def _apply_translation_to_mask_zyx(
         prefilter=True,
     ).astype(np.float32, copy=False)
 
-
 def _apply_translation_to_mask_yx(
     mask_yx: np.ndarray,
     shift_yx: np.ndarray,
@@ -1373,7 +1301,6 @@ def _apply_translation_to_mask_yx(
         transform_order=1,
     )
 
-
 def _apply_rotation_to_mask_zyx(mask_zyx: np.ndarray, correction_angle_deg: float) -> np.ndarray:
     """Apply one in-plane XY rotation to all Z slices of one validity-mask volume."""
 
@@ -1386,13 +1313,11 @@ def _apply_rotation_to_mask_zyx(mask_zyx: np.ndarray, correction_angle_deg: floa
         )
     return rotated
 
-
 def _print_verbose(verbose: bool, message: str) -> None:
     """Print a progress message only when verbose mode is enabled."""
 
     if verbose:
         print(message)
-
 
 def _memory_mark(memory_tracker, step: str) -> None:
     """Record an optional memory profiling marker."""
@@ -1402,7 +1327,6 @@ def _memory_mark(memory_tracker, step: str) -> None:
     mark = getattr(memory_tracker, "mark", None)
     if mark is not None:
         mark(step)
-
 
 def _correct_intra_stack_z_drift_impl(
     stack,
@@ -1621,7 +1545,6 @@ def _correct_intra_stack_z_drift_impl(
     _memory_mark(memory_tracker, "intra_stack:end")
     return (corrected, shifts) if return_shifts else corrected
 
-
 def correct_intra_stack_z_drift(
     stack,
     *,
@@ -1706,7 +1629,6 @@ def correct_intra_stack_z_drift(
             corrected_stack[t, z, :, :, :] = corrected_slice
     return (corrected_stack, shifts) if return_shifts else corrected_stack
 
-
 def _registration_channel_volumes(
     stack: np.ndarray,
     *,
@@ -1724,7 +1646,6 @@ def _registration_channel_volumes(
             volumes[t, :, :, :] = _apply_median_to_zyx(volumes[t, :, :, :], median_kernel_size)
     return volumes
 
-
 def _time_reference_index(
     *,
     t: int,
@@ -1737,7 +1658,6 @@ def _time_reference_index(
         return t - 1
     return registration_stack
 
-
 def _reference_shift_for_time(
     shifts_zyx: np.ndarray,
     *,
@@ -1749,7 +1669,6 @@ def _reference_shift_for_time(
     if time_reference_mode == "previous":
         return shifts_zyx[reference_t, :]
     return np.zeros(3, dtype=np.float32)
-
 
 def _estimate_time_shift_from_projections(
     reference_volume: np.ndarray,
@@ -1808,7 +1727,6 @@ def _estimate_time_shift_from_projections(
         max_xy_shifts=max_xy_shifts,
     )
 
-
 def _estimate_time_shift_from_full_3d(
     reference_volume: np.ndarray,
     moving_volume: np.ndarray,
@@ -1834,7 +1752,6 @@ def _estimate_time_shift_from_full_3d(
         max_z_shifts=max_z_shifts,
         max_xy_shifts=max_xy_shifts,
     )
-
 
 def _register_stack_across_time(
     stack,
@@ -2007,7 +1924,6 @@ def _register_stack_across_time(
 
     return registered, shifts_zyx, effective_mode
 
-
 def _register_stack_rotations_across_time(
     stack,
     *,
@@ -2129,7 +2045,6 @@ def _register_stack_rotations_across_time(
 
     return registered, angles_deg
 
-
 def _return_registration_result(
     registered: np.ndarray,
     *,
@@ -2196,7 +2111,6 @@ def _return_registration_result(
         return registered, intra_stack_shifts_yx
     return registered, details
 
-
 def _normcorre_max_shifts_from_common_limits(
     *,
     is3d: bool,
@@ -2215,7 +2129,6 @@ def _normcorre_max_shifts_from_common_limits(
             max_y, max_x = [float(v) for v in max_xy_shifts]
         return (max_z, max_y, max_x)
     return None if max_xy_shifts is None else tuple(float(v) for v in max_xy_shifts)
-
 
 def _register_stack_normcorre_from_main_wrapper(
     stack: np.ndarray,
@@ -2368,7 +2281,6 @@ def _register_stack_normcorre_from_main_wrapper(
             return registered, details["time_shifts_yx"]
         return registered, details
     return registered
-
 
 def _register_stack_rigid_3d_from_main_wrapper(
     stack: np.ndarray,
