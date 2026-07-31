@@ -44,7 +44,6 @@ from zenreg import (
     show_before_after,
 )
 from zenreg.synthetic import write_example_dataset
-
 # %% DEFINE INPUT AND OUTPUT PATHS
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered_rigid3d"
@@ -52,6 +51,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 FIGURE_DIR = OUTPUT_DIR / "figures"
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 OPEN_IN_NAPARI = False
+# OPEN_IN_NAPARI = True
 AVAILABLE_CPUS = print_available_compute()
 
 STACK_3D_RIGID_SIMPLEITK_PATH = EXAMPLE_DIR / "synthetic_3d_t_rigid_simpleitk.ome.tif"
@@ -62,17 +62,13 @@ GT_3D_RIGID_POINTS_PATH = EXAMPLE_DIR / "synthetic_3d_t_rigid_points_rigid_trans
 
 if not STACK_3D_RIGID_SIMPLEITK_PATH.exists() or not STACK_3D_RIGID_POINTS_PATH.exists():
     write_example_dataset(EXAMPLE_DIR)
-
-
 # %% 1) DENSE 3D+t: SIMPLEITK FULL 6-DOF RIGID REGISTRATION
 stack_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk = load_stack(
     STACK_3D_RIGID_SIMPLEITK_PATH,
-    return_metadata=True,
-)
+    return_metadata=True)
 expected_shifts_3d_rigid_simpleitk, expected_rotations_3d_rigid_simpleitk = load_expected_rigid_corrections(
     GT_3D_RIGID_SIMPLEITK_PATH,
-    registration_stack=0,
-)
+    registration_stack=0)
 print(f"Dense SimpleITK stack shape: {stack_3d_rigid_simpleitk.shape} (TZCYX)")
 open_in_napari(stack_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk, fname="Dense 3D rigid raw", enabled=OPEN_IN_NAPARI)
 
@@ -103,40 +99,40 @@ registered_3d_rigid_simpleitk, details_3d_rigid_simpleitk = register_stack(
     zero_clip_mask_min_fraction=0.5,  # relaxed crop: lower keeps more FOV, higher removes more zero corners
     zero_clip_margin=(0, 0, 0),  # extra crop margin in Z/Y/X if zero_clip=True
     verbose=True,
-    return_details=True,
-)
+    return_details=True)
+
 print_rigid_comparison(
     "Dense SimpleITK 6-DOF rigid registration vs GT",
     details_3d_rigid_simpleitk,
     expected_shifts_3d_rigid_simpleitk,
-    expected_rotations_3d_rigid_simpleitk,
-)
+    expected_rotations_3d_rigid_simpleitk)
+
 show_before_after(
     stack_3d_rigid_simpleitk,
     registered_3d_rigid_simpleitk,
     title="Dense 3D+t SimpleITK 6-DOF registration",
     channel=0,
     moving_time=1,
-    save_dir=FIGURE_DIR,
-)
+    save_dir=FIGURE_DIR)
+
 # Optional post-hoc crop after visual inspection. Missing keys are treated as 0.
 # registered_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk = crop_stack(
 #     registered_3d_rigid_simpleitk,
 #     metadata_3d_rigid_simpleitk,
 #     {"top": 1, "bottom": 1, "left": 2, "right": 2, "up": 2, "down": 2},
 # )
+
 save_stack(
     OUTPUT_DIR / "synthetic_3d_t_rigid_simpleitk_registered.ome.tif",
     registered_3d_rigid_simpleitk,
     metadata=metadata_3d_rigid_simpleitk,
-    registration_details=details_3d_rigid_simpleitk,
-)
+    registration_details=details_3d_rigid_simpleitk)
+
 open_in_napari(
     registered_3d_rigid_simpleitk,
     metadata_3d_rigid_simpleitk,
     fname="Dense 3D rigid registered SimpleITK",
-    enabled=OPEN_IN_NAPARI,
-)
+    enabled=OPEN_IN_NAPARI)
 
 print(f"Shape of raw dense stack:        {stack_3d_rigid_simpleitk.shape} (TZCYX)")
 print(f"Shape of registered dense stack: {registered_3d_rigid_simpleitk.shape} (TZCYX)")
