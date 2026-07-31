@@ -31,6 +31,56 @@ SUPPORTED_ZERO_CLIP_MASK_STRATEGIES = {"auto", "greedy", "relaxed", "max_volume"
 SUPPORTED_TRANSFORM_BACKENDS = {"skimage", "scipy"}
 
 # %% FUNCTIONS
+def _metadata_spacing_zyx(metadata: dict | None) -> tuple[tuple[float, float, float] | None, str]:
+    """Return physical Z/Y/X spacing from an OMIO metadata dictionary if available."""
+
+    if not isinstance(metadata, dict):
+        return None, "default"
+    try:
+        spacing_zyx = (
+            float(metadata["PhysicalSizeZ"]),
+            float(metadata["PhysicalSizeY"]),
+            float(metadata["PhysicalSizeX"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None, "default"
+    if any(value <= 0 for value in spacing_zyx):
+        return None, "default"
+    units = [
+        metadata.get("PhysicalSizeZUnit"),
+        metadata.get("PhysicalSizeYUnit"),
+        metadata.get("PhysicalSizeXUnit"),
+    ]
+    if len({unit for unit in units if unit is not None}) > 1:
+        warnings.warn(
+            "OMIO metadata contains different physical-size units for Z/Y/X. "
+            "Using numeric PhysicalSizeZ/Y/X values as rot_spacing_zyx; please "
+            "pass rot_spacing_zyx explicitly if unit conversion is required.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+    return spacing_zyx, "metadata"
+
+
+def _resolve_rot_spacing_zyx(
+    rot_spacing_zyx,
+    metadata: dict | None,
+) -> tuple[tuple[float, float, float], str]:
+    """Resolve user-provided or OMIO-derived physical spacing in Z/Y/X order."""
+
+    if rot_spacing_zyx is not None:
+        if len(rot_spacing_zyx) != 3:
+            raise ValueError("rot_spacing_zyx must contain exactly three values: (z, y, x).")
+        spacing = tuple(float(v) for v in rot_spacing_zyx)
+        if any(value <= 0 for value in spacing):
+            raise ValueError(f"rot_spacing_zyx values must be > 0. Got {rot_spacing_zyx!r}.")
+        return spacing, "user"
+    metadata_spacing, source = _metadata_spacing_zyx(metadata)
+    if metadata_spacing is not None:
+        return metadata_spacing, source
+    return (1.0, 1.0, 1.0), "default"
+
+
 def _normalize_registration_method(method: str) -> str:
     """Normalize and validate the requested registration backend."""
 
@@ -2495,6 +2545,7 @@ def _register_stack_rigid_3d_from_main_wrapper(
 def register_stack(
     stack,
     *,
+    metadata: dict | None = None,
     registration_channel: int,
     registration_stack: int = 0,
     method: str = "phase_cross_correlation",
@@ -2590,6 +2641,13 @@ def register_stack(
     ----------
     stack : array-like
         Input stack in canonical ``TZCYX`` order.
+    metadata : dict or None, optional
+        OMIO metadata dictionary returned by ``load_stack(..., return_metadata=True)``.
+        When ``rotreg=True`` and ``rigid_3d_backend`` is ``"simpleitk"`` or
+        ``"points"``, ZenReg uses ``PhysicalSizeZ``, ``PhysicalSizeY``, and
+        ``PhysicalSizeX`` from this metadata as ``rot_spacing_zyx`` if
+        ``rot_spacing_zyx`` is left as ``None``. Passing ``rot_spacing_zyx``
+        explicitly overrides metadata-derived spacing.
     registration_channel : int
         Channel used to compute the time-wise registration shifts.
     registration_stack : int, optional
@@ -2688,11 +2746,12 @@ def register_stack(
     rot_* : optional
         Full-3D rigid registration settings used with
         ``rigid_3d_backend="simpleitk"`` or ``"points"``. ``rot_spacing_zyx``
-        gives physical Z/Y/X spacing and is important for anisotropic stacks.
-        ``rot_init_iterations`` controls iterative orthogonal-projection
-        pre-estimation. ``rot_metric`` is ``"correlation"`` or
-        ``"mutual_information"`` for SimpleITK. ``rot_points_*`` settings apply
-        only to the sparse point-cloud backend.
+        gives physical Z/Y/X spacing and is important for anisotropic stacks. If
+        left as ``None``, ZenReg uses OMIO ``metadata`` physical sizes when
+        available, otherwise it falls back to unit spacing. ``rot_init_iterations``
+        controls iterative orthogonal-projection pre-estimation. ``rot_metric``
+        is ``"correlation"`` or ``"mutual_information"`` for SimpleITK.
+        ``rot_points_*`` settings apply only to the sparse point-cloud backend.
     transform_backend : {"skimage", "scipy"}, optional
         Backend used to apply translation corrections. ``"skimage"`` is the
         default for XY transforms and keeps translation correction aligned with
@@ -2804,6 +2863,10 @@ def register_stack(
     max_z_shifts = _normalize_max_z_shifts(max_z_shifts)
     max_rot_shifts = _normalize_max_rot_shifts(max_rot_shifts)
     rotreg_iter = _normalize_rotreg_iter(rotreg_iter)
+    effective_rot_spacing_zyx, rot_spacing_source = _resolve_rot_spacing_zyx(
+        rot_spacing_zyx,
+        metadata,
+    )
     rot_init_iterations = int(rot_init_iterations)
     if rot_init_iterations < 0:
         raise ValueError(f"rot_init_iterations must be >= 0. Got {rot_init_iterations!r}.")
@@ -2885,7 +2948,8 @@ def register_stack(
         "rotreg": bool(rotreg),
         "rotreg_iter": int(rotreg_iter),
         "rigid_3d_backend": rigid_3d_backend,
-        "rot_spacing_zyx": None if rot_spacing_zyx is None else tuple(float(v) for v in rot_spacing_zyx),
+        "rot_spacing_zyx": tuple(float(v) for v in effective_rot_spacing_zyx),
+        "rot_spacing_source": rot_spacing_source,
         "rot_init_iterations": int(rot_init_iterations),
         "rot_metric": rot_metric,
         "rot_shrink_factors": tuple(int(v) for v in rot_shrink_factors),
@@ -2940,7 +3004,7 @@ def register_stack(
             phase_cross_correlation_upsample_factor=int(phase_cross_correlation_upsample_factor),
             phase_cross_correlation_normalization=phase_cross_correlation_normalization,
             transform_order=transform_order,
-            rot_spacing_zyx=rot_spacing_zyx,
+            rot_spacing_zyx=effective_rot_spacing_zyx,
             rot_init_iterations=rot_init_iterations,
             rot_metric=rot_metric,
             rot_shrink_factors=rot_shrink_factors,

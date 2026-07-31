@@ -1,7 +1,9 @@
 import numpy as np
+import pytest
 from scipy.ndimage import shift as ndi_shift
 
 from zenreg import register_stack, z_project
+import zenreg.registration as registration_module
 from zenreg.synthetic import (
     create_2d_motion_distorted_stack,
     create_2d_time_rotation_motion_distorted_stack,
@@ -100,6 +102,85 @@ def test_full_3d_time_registration_estimates_zyx_shift():
     )
 
     np.testing.assert_allclose(shift_details["time_shifts_zyx"][1], [-1.0, -2.0, 3.0], atol=0.08)
+
+
+def test_rigid_3d_spacing_defaults_to_omio_metadata(monkeypatch):
+    stack = np.zeros((2, 3, 1, 8, 8), dtype=np.float32)
+    metadata = {
+        "PhysicalSizeZ": 2.5,
+        "PhysicalSizeY": 0.4,
+        "PhysicalSizeX": 0.3,
+        "PhysicalSizeZUnit": "micron",
+        "PhysicalSizeYUnit": "micron",
+        "PhysicalSizeXUnit": "micron",
+    }
+    captured = {}
+
+    def fake_register_stack_rigid_3d_from_main_wrapper(stack_arg, **kwargs):
+        captured["rot_spacing_zyx"] = kwargs["rot_spacing_zyx"]
+        captured["registration_settings"] = kwargs["registration_settings"]
+        details = {
+            "rot_spacing_zyx": kwargs["rot_spacing_zyx"],
+            "rot_spacing_source": kwargs["registration_settings"]["rot_spacing_source"],
+        }
+        return stack_arg, details
+
+    monkeypatch.setattr(
+        registration_module,
+        "_register_stack_rigid_3d_from_main_wrapper",
+        fake_register_stack_rigid_3d_from_main_wrapper,
+    )
+
+    _, details = register_stack(
+        stack,
+        metadata=metadata,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="full_3d",
+        zreg=True,
+        rotreg=True,
+        rigid_3d_backend="simpleitk",
+        verbose=False,
+        return_details=True,
+    )
+
+    assert captured["rot_spacing_zyx"] == pytest.approx((2.5, 0.4, 0.3))
+    assert captured["registration_settings"]["rot_spacing_source"] == "metadata"
+    assert details["rot_spacing_source"] == "metadata"
+
+
+def test_user_rot_spacing_overrides_metadata(monkeypatch):
+    stack = np.zeros((2, 3, 1, 8, 8), dtype=np.float32)
+    metadata = {"PhysicalSizeZ": 2.5, "PhysicalSizeY": 0.4, "PhysicalSizeX": 0.3}
+    captured = {}
+
+    def fake_register_stack_rigid_3d_from_main_wrapper(stack_arg, **kwargs):
+        captured["rot_spacing_zyx"] = kwargs["rot_spacing_zyx"]
+        captured["registration_settings"] = kwargs["registration_settings"]
+        return stack_arg, kwargs["registration_settings"]
+
+    monkeypatch.setattr(
+        registration_module,
+        "_register_stack_rigid_3d_from_main_wrapper",
+        fake_register_stack_rigid_3d_from_main_wrapper,
+    )
+
+    register_stack(
+        stack,
+        metadata=metadata,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="full_3d",
+        zreg=True,
+        rotreg=True,
+        rigid_3d_backend="simpleitk",
+        rot_spacing_zyx=(1.0, 1.1, 1.2),
+        verbose=False,
+        return_details=True,
+    )
+
+    assert captured["rot_spacing_zyx"] == pytest.approx((1.0, 1.1, 1.2))
+    assert captured["registration_settings"]["rot_spacing_source"] == "user"
 
 
 def test_projection_time_registration_can_estimate_z_shift_from_orthogonal_projections():

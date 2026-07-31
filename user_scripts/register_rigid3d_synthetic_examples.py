@@ -76,6 +76,7 @@ maybe_open_in_napari(stack_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk, fnam
 
 registered_3d_rigid_simpleitk, details_3d_rigid_simpleitk = register_stack(
     stack_3d_rigid_simpleitk,
+    metadata=metadata_3d_rigid_simpleitk,  # OMIO metadata provides PhysicalSizeZ/Y/X for rigid 3D spacing
     registration_channel=0,  # channel used to estimate the 3D rigid transform
     registration_stack=0,  # reference time point
     method="phase_cross_correlation",  # translational/coarse pre-estimation method
@@ -83,7 +84,7 @@ registered_3d_rigid_simpleitk, details_3d_rigid_simpleitk = register_stack(
     zreg=True,  # estimate and apply Z shifts
     rotreg=True,  # enable rotation correction
     rigid_3d_backend="simpleitk",  # "phase_cross_correlation", "simpleitk", or "points"
-    rot_spacing_zyx=(1.0, 1.0, 1.0),  # physical spacing in Z/Y/X; set real microscope spacing here
+    # rot_spacing_zyx=(1.0, 1.0, 1.0),  # optional override; default uses OMIO PhysicalSizeZ/Y/X
     rot_init_iterations=2,  # iterations of orthogonal-projection rotation pre-estimation
     rot_metric="correlation",  # "correlation" or "mutual_information"
     rot_shrink_factors=(4, 2, 1),  # multi-resolution pyramid shrink factors
@@ -150,6 +151,7 @@ maybe_open_in_napari(stack_3d_rigid_points, metadata_3d_rigid_points, fname="Spa
 
 registered_3d_rigid_points, details_3d_rigid_points = register_stack(
     stack_3d_rigid_points,
+    metadata=metadata_3d_rigid_points,  # OMIO metadata provides PhysicalSizeZ/Y/X for rigid 3D spacing
     registration_channel=0,  # channel used to detect points and estimate the transform
     registration_stack=0,  # reference time point
     method="phase_cross_correlation",  # coarse translation pre-estimation
@@ -223,6 +225,7 @@ maybe_open_in_napari(
 
 registered_3d_rigid_points_simpleitk, details_3d_rigid_points_simpleitk = register_stack(
     stack_3d_rigid_points_simpleitk,
+    metadata=metadata_3d_rigid_points_simpleitk,  # OMIO metadata provides PhysicalSizeZ/Y/X for rigid 3D spacing
     registration_channel=0,  # channel used to estimate the dense SimpleITK transform
     registration_stack=0,  # reference time point
     method="phase_cross_correlation",  # coarse translation pre-estimation
@@ -230,7 +233,7 @@ registered_3d_rigid_points_simpleitk, details_3d_rigid_points_simpleitk = regist
     zreg=True,  # estimate and apply Z shifts
     rotreg=True,  # enable 3D rotation correction
     rigid_3d_backend="simpleitk",  # "phase_cross_correlation", "simpleitk", or "points"
-    rot_spacing_zyx=(1.0, 1.0, 1.0),  # physical spacing in Z/Y/X; set real microscope spacing here
+    # rot_spacing_zyx=(1.0, 1.0, 1.0),  # optional override; default uses OMIO PhysicalSizeZ/Y/X
     rot_init_iterations=0,  # sparse puncta projections can give unstable polar-rotation pre-estimates
     rot_metric="correlation",  # "correlation" or "mutual_information"
     rot_shrink_factors=(2, 1),  # less aggressive pyramid works well for sparse puncta
