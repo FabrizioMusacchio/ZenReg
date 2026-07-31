@@ -40,6 +40,9 @@ save_stack(
 
 ZenReg writes registered OME-TIFF files together with optional CSV, YAML, and PNG report sidecars so registration settings and quality-control outputs remain reproducible and easy to share.
 
+![img](figures/synthetic_2d_t_xy_before_after_registration_c0_t0_t1_max.png)
+*Example image registration before and after ZenReg*
+
 ## What ZenReg is for
 ZenReg is built for common microscopy registration tasks:
 
