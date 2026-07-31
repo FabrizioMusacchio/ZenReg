@@ -11,9 +11,9 @@ jobs:
     env:
       MPLBACKEND: Agg
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-      ZENREG_OMIO_RUNTIME_DIR: ${{ runner.temp }}/zenreg-omio-runtime
-      XDG_CACHE_HOME: ${{ runner.temp }}/xdg-cache
-      MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
+      ZENREG_OMIO_RUNTIME_DIR: /tmp/zenreg-omio-runtime
+      XDG_CACHE_HOME: /tmp/zenreg-xdg-cache
+      MPLCONFIGDIR: /tmp/zenreg-matplotlib
 
     steps:
       - name: Check out repository
