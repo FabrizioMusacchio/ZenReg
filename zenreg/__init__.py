@@ -8,6 +8,10 @@ Author: Fabrizio Musacchio
 Date: June 2026
 """
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from pathlib import Path
+import tomllib
+
 from .batch import BatchImageRecord, DEFAULT_IMAGE_EXTENSIONS, iter_bids_like_image_files
 from .compute import available_cpu_count, print_available_compute
 from .filters import apply_filters, max_z_project, z_project
@@ -88,4 +92,20 @@ __all__ = [
     "z_project",
 ]
 
-__version__ = "0.0.2"
+def _resolve_version() -> str:
+    """Resolve the ZenReg version from ``pyproject.toml`` or package metadata."""
+
+    pyproject_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    if pyproject_path.exists():
+        try:
+            with pyproject_path.open("rb") as handle:
+                return str(tomllib.load(handle)["project"]["version"])
+        except (KeyError, OSError, tomllib.TOMLDecodeError):
+            pass
+    try:
+        return _pkg_version("zenreg")
+    except PackageNotFoundError:
+        return "0.0.0+unknown"
+
+
+__version__ = _resolve_version()
