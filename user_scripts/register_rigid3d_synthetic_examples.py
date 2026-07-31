@@ -36,7 +36,7 @@ from zenreg import (
     crop_stack,
     load_expected_rigid_corrections,
     load_stack,
-    maybe_open_in_napari,
+    open_in_napari,
     print_available_compute,
     print_rigid_comparison,
     register_stack,
@@ -74,7 +74,7 @@ expected_shifts_3d_rigid_simpleitk, expected_rotations_3d_rigid_simpleitk = load
     registration_stack=0,
 )
 print(f"Dense SimpleITK stack shape: {stack_3d_rigid_simpleitk.shape} (TZCYX)")
-maybe_open_in_napari(stack_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk, fname="Dense 3D rigid raw", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(stack_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk, fname="Dense 3D rigid raw", enabled=OPEN_IN_NAPARI)
 
 registered_3d_rigid_simpleitk, details_3d_rigid_simpleitk = register_stack(
     stack_3d_rigid_simpleitk,
@@ -131,11 +131,11 @@ save_stack(
     metadata=metadata_3d_rigid_simpleitk,
     registration_details=details_3d_rigid_simpleitk,
 )
-maybe_open_in_napari(
+open_in_napari(
     registered_3d_rigid_simpleitk,
     metadata_3d_rigid_simpleitk,
     fname="Dense 3D rigid registered SimpleITK",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
 
 print(f"Shape of raw dense stack:        {stack_3d_rigid_simpleitk.shape} (TZCYX)")
@@ -150,7 +150,7 @@ expected_shifts_3d_rigid_points, expected_rotations_3d_rigid_points = load_expec
     registration_stack=0,
 )
 print(f"Sparse points stack shape: {stack_3d_rigid_points.shape} (TZCYX)")
-maybe_open_in_napari(stack_3d_rigid_points, metadata_3d_rigid_points, fname="Sparse 3D puncta raw", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(stack_3d_rigid_points, metadata_3d_rigid_points, fname="Sparse 3D puncta raw", enabled=OPEN_IN_NAPARI)
 
 registered_3d_rigid_points, details_3d_rigid_points = register_stack(
     stack_3d_rigid_points,
@@ -204,11 +204,11 @@ save_stack(
     metadata=metadata_3d_rigid_points,
     registration_details=details_3d_rigid_points,
 )
-maybe_open_in_napari(
+open_in_napari(
     registered_3d_rigid_points,
     metadata_3d_rigid_points,
     fname="Sparse 3D puncta registered points",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
 # %% 3) SPARSE 3D+t PUNCTA: SIMPLEITK FULL 6-DOF RIGID REGISTRATION
 stack_3d_rigid_points_simpleitk, metadata_3d_rigid_points_simpleitk = load_stack(
@@ -220,11 +220,11 @@ expected_shifts_3d_rigid_points_simpleitk, expected_rotations_3d_rigid_points_si
     registration_stack=0,
 )
 print(f"Sparse points stack shape: {stack_3d_rigid_points_simpleitk.shape} (TZCYX)")
-maybe_open_in_napari(
+open_in_napari(
     stack_3d_rigid_points_simpleitk,
     metadata_3d_rigid_points_simpleitk,
     fname="Sparse 3D puncta raw",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
 
 registered_3d_rigid_points_simpleitk, details_3d_rigid_points_simpleitk = register_stack(
@@ -282,10 +282,10 @@ save_stack(
     metadata=metadata_3d_rigid_points_simpleitk,
     registration_details=details_3d_rigid_points_simpleitk,
 )
-maybe_open_in_napari(
+open_in_napari(
     registered_3d_rigid_points_simpleitk,
     metadata_3d_rigid_points_simpleitk,
     fname="Sparse 3D puncta registered SimpleITK",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
 # %% END

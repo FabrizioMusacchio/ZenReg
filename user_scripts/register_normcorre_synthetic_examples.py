@@ -48,7 +48,7 @@ from zenreg import (
     load_expected_time_registration_rotations,
     load_expected_time_registration_shifts,
     load_stack,
-    maybe_open_in_napari,
+    open_in_napari,
     plot_normcorre_patch_overlay,
     print_caiman_patch_summary,
     print_available_compute,
@@ -241,7 +241,7 @@ stack_2d_t_xy, metadata_2d_t_xy = load_stack(
 )
 expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")
 print(f"2D+t global XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
-maybe_open_in_napari(stack_2d_t_xy, metadata_2d_t_xy, fname="2D+t global XY", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(stack_2d_t_xy, metadata_2d_t_xy, fname="2D+t global XY", enabled=OPEN_IN_NAPARI)
 
 registered_2d_t_xy_phase, details_2d_t_xy_phase = register_stack(
     stack_2d_t_xy,
@@ -392,9 +392,9 @@ save_stack(
 #     registration_details=details_2d_t_xy_caiman,
 # )
 
-maybe_open_in_napari(registered_2d_t_xy_phase, metadata_2d_t_xy, fname="2D+t global XY phase cross", open_in_napari=OPEN_IN_NAPARI)
-maybe_open_in_napari(registered_2d_t_xy_normcorre, metadata_2d_t_xy, fname="2D+t global XY ZenReg NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
-# maybe_open_in_napari(registered_2d_t_xy_caiman, metadata_2d_t_xy, fname="2D+t global XY CaImAn NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(registered_2d_t_xy_phase, metadata_2d_t_xy, fname="2D+t global XY phase cross", enabled=OPEN_IN_NAPARI)
+open_in_napari(registered_2d_t_xy_normcorre, metadata_2d_t_xy, fname="2D+t global XY ZenReg NoRMCorre", enabled=OPEN_IN_NAPARI)
+# open_in_napari(registered_2d_t_xy_caiman, metadata_2d_t_xy, fname="2D+t global XY CaImAn NoRMCorre", enabled=OPEN_IN_NAPARI)
 # %% 2) 2D+t: LOCAL IN-FRAME MOTION
 stack_2d_t_local, metadata_2d_t_local = load_stack(
     STACK_2D_T_LOCAL_PATH,
@@ -460,8 +460,8 @@ save_stack(
     registration_details=details_2d_t_local,
 )
 
-maybe_open_in_napari(stack_2d_t_local, metadata_2d_t_local, fname="2D+t local", open_in_napari=OPEN_IN_NAPARI)
-maybe_open_in_napari(registered_2d_t_local, metadata_2d_t_local, fname="2D+t local NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(stack_2d_t_local, metadata_2d_t_local, fname="2D+t local", enabled=OPEN_IN_NAPARI)
+open_in_napari(registered_2d_t_local, metadata_2d_t_local, fname="2D+t local NoRMCorre", enabled=OPEN_IN_NAPARI)
 
 # Optional CaImAn comparison; requires ``mamba install -y caiman`` and uncommented imports above.
 # registered_2d_t_local_caiman, details_2d_t_local_caiman = run_caiman_normcorre_2d_t(
@@ -508,11 +508,11 @@ maybe_open_in_napari(registered_2d_t_local, metadata_2d_t_local, fname="2D+t loc
 #     metadata=metadata_2d_t_local,
 #     registration_details=details_2d_t_local_caiman,
 # )
-# maybe_open_in_napari(
+# open_in_napari(
 #     registered_2d_t_local_caiman,
 #     metadata_2d_t_local,
 #     fname="2D+t local CaImAn NoRMCorre",
-#     open_in_napari=OPEN_IN_NAPARI,
+#     enabled=OPEN_IN_NAPARI,
 # )
 # %% 3) 2D+t: GLOBAL XY TRANSLATION PLUS LIGHT ROTATION
 stack_2d_t_trans_rot, metadata_2d_t_trans_rot = load_stack(
@@ -536,7 +536,7 @@ print(
     f"Strongest rotation-correction frame: t={rotation_event_frame_2d_t}, "
     f"expected correction={expected_2d_t_trans_rot_deg[rotation_event_frame_2d_t]:.3f} deg"
 )
-maybe_open_in_napari(stack_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(stack_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation", enabled=OPEN_IN_NAPARI)
 
 plot_normcorre_patch_overlay(
     stack_2d_t_trans_rot,
@@ -601,7 +601,7 @@ save_stack(
     registration_details=details_2d_t_trans_rot,
 )
 
-maybe_open_in_napari(registered_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(registered_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="2D+t translation+rotation NoRMCorre", enabled=OPEN_IN_NAPARI)
 
 # Optional CaImAn comparison; requires ``mamba install -y caiman`` and uncommented imports above.
 # registered_2d_t_trans_rot_caiman, details_2d_t_trans_rot_caiman = run_caiman_normcorre_2d_t(
@@ -653,11 +653,11 @@ maybe_open_in_napari(registered_2d_t_trans_rot, metadata_2d_t_trans_rot, fname="
 #     metadata=metadata_2d_t_trans_rot,
 #     registration_details=details_2d_t_trans_rot_caiman,
 # )
-# maybe_open_in_napari(
+# open_in_napari(
 #     registered_2d_t_trans_rot_caiman,
 #     metadata_2d_t_trans_rot,
 #     fname="2D+t translation+rotation CaImAn NoRMCorre",
-#     open_in_napari=OPEN_IN_NAPARI,
+#     enabled=OPEN_IN_NAPARI,
 # )
 # %% 4) 2D+t: PIECEWISE XY TRANSLATION, PHASE CROSS VS NoRMCorre
 stack_2d_t_piecewise_xy, metadata_2d_t_piecewise_xy = load_stack(
@@ -833,24 +833,24 @@ save_stack(
 #     metadata=metadata_2d_t_piecewise_xy,
 #     registration_details=details_2d_t_piecewise_caiman,
 # )
-maybe_open_in_napari(stack_2d_t_piecewise_xy, metadata_2d_t_piecewise_xy, fname="2D+t piecewise XY", open_in_napari=OPEN_IN_NAPARI)
-maybe_open_in_napari(
+open_in_napari(stack_2d_t_piecewise_xy, metadata_2d_t_piecewise_xy, fname="2D+t piecewise XY", enabled=OPEN_IN_NAPARI)
+open_in_napari(
     registered_2d_t_piecewise_phase,
     metadata_2d_t_piecewise_xy,
     fname="2D+t piecewise XY phase cross",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
-maybe_open_in_napari(
+open_in_napari(
     registered_2d_t_piecewise_normcorre,
     metadata_2d_t_piecewise_xy,
     fname="2D+t piecewise XY NoRMCorre",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
-# maybe_open_in_napari(
+# open_in_napari(
 #     registered_2d_t_piecewise_caiman,
 #     metadata_2d_t_piecewise_xy,
 #     fname="2D+t piecewise XY CaImAn NoRMCorre",
-#     open_in_napari=OPEN_IN_NAPARI,
+#     enabled=OPEN_IN_NAPARI,
 # )
 # %% 5) 3D+t: GLOBAL ZYX TRANSLATION
 stack_3d_t_zyx, metadata_3d_t_zyx = load_stack(
@@ -914,8 +914,8 @@ save_stack(
     registration_details=details_3d_t_zyx,
 )
 
-maybe_open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t global ZYX NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
-maybe_open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t global ZYX NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t global ZYX NoRMCorre", enabled=OPEN_IN_NAPARI)
+open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t global ZYX NoRMCorre", enabled=OPEN_IN_NAPARI)
 # %% 6) 3D+t: TRANSLATION PLUS ROTATION AROUND Z
 stack_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z = load_stack(
     STACK_3D_T_TRANS_ROT_Z_PATH,
@@ -997,8 +997,8 @@ save_stack(
     registration_details=details_3d_t_trans_rot_z,
 )
 
-maybe_open_in_napari(stack_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z, fname="3D+t Z-rotation", open_in_napari=OPEN_IN_NAPARI)
-maybe_open_in_napari(registered_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z, fname="3D+t Z-rotation NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(stack_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z, fname="3D+t Z-rotation", enabled=OPEN_IN_NAPARI)
+open_in_napari(registered_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z, fname="3D+t Z-rotation NoRMCorre", enabled=OPEN_IN_NAPARI)
 # %% 7) 3D+t: TRANSLATION PLUS ROTATION AROUND X
 stack_3d_t_trans_rot_x, metadata_3d_t_trans_rot_x = load_stack(
     STACK_3D_T_TRANS_ROT_X_PATH,
@@ -1079,7 +1079,7 @@ save_stack(
     metadata=metadata_3d_t_trans_rot_x,
     registration_details=details_3d_t_trans_rot_x,
 )
-maybe_open_in_napari(registered_3d_t_trans_rot_x, metadata_3d_t_trans_rot_x, fname="3D+t X-rotation NoRMCorre", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(registered_3d_t_trans_rot_x, metadata_3d_t_trans_rot_x, fname="3D+t X-rotation NoRMCorre", enabled=OPEN_IN_NAPARI)
 
 # %% 8) 3D+t: ALL-AXIS ROTATION AROUND STACK CENTER
 stack_3d_t_trans_rot_all_center, metadata_3d_t_trans_rot_all_center = load_stack(
@@ -1161,11 +1161,11 @@ save_stack(
     metadata=metadata_3d_t_trans_rot_all_center,
     registration_details=details_3d_t_trans_rot_all_center,
 )
-maybe_open_in_napari(
+open_in_napari(
     registered_3d_t_trans_rot_all_center,
     metadata_3d_t_trans_rot_all_center,
     fname="3D+t all-axis center NoRMCorre",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
 
 # %% 9) 3D+t: ALL-AXIS ROTATION AROUND OFF-CENTER POINT
@@ -1248,11 +1248,11 @@ save_stack(
     metadata=metadata_3d_t_trans_rot_all_offcenter,
     registration_details=details_3d_t_trans_rot_all_offcenter,
 )
-maybe_open_in_napari(
+open_in_napari(
     registered_3d_t_trans_rot_all_offcenter,
     metadata_3d_t_trans_rot_all_offcenter,
     fname="3D+t all-axis off-center NoRMCorre",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
 
 # %% 10) 3D+t: ALL-AXIS ROTATION AROUND OUTSIDE POINT
@@ -1335,11 +1335,11 @@ save_stack(
     metadata=metadata_3d_t_trans_rot_all_outside,
     registration_details=details_3d_t_trans_rot_all_outside,
 )
-maybe_open_in_napari(
+open_in_napari(
     registered_3d_t_trans_rot_all_outside,
     metadata_3d_t_trans_rot_all_outside,
     fname="3D+t all-axis outside NoRMCorre",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
 
 # %% END

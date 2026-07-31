@@ -43,7 +43,7 @@ from zenreg import (
     load_expected_time_registration_rotations,
     load_expected_time_registration_shifts,
     load_stack,
-    maybe_open_in_napari,
+    open_in_napari,
     print_available_compute,
     print_shift_comparison,
     register_stack,
@@ -83,7 +83,7 @@ expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, regis
 print(f"2D+t XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
 show_timepoints(stack_2d_t_xy, title="2D+t XY before registration", channel=0, projection_method="max")
 
-maybe_open_in_napari(stack_2d_t_xy, metadata_2d_t_xy, fname="2D+t XY before registration", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(stack_2d_t_xy, metadata_2d_t_xy, fname="2D+t XY before registration", enabled=OPEN_IN_NAPARI)
 
 registered_2d_t_xy, details_2d_t_xy = register_stack(
     stack_2d_t_xy,
@@ -115,7 +115,7 @@ registered_2d_t_xy, details_2d_t_xy = register_stack(
 )
 print_shift_comparison("2D+t XY time registration", details_2d_t_xy["time_shifts_yx"], expected_2d_t_xy)
 show_timepoints(registered_2d_t_xy, title="2D+t XY after registration", channel=0, projection_method="max")
-maybe_open_in_napari(registered_2d_t_xy, metadata_2d_t_xy, fname="2D+t XY after registration", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(registered_2d_t_xy, metadata_2d_t_xy, fname="2D+t XY after registration", enabled=OPEN_IN_NAPARI)
 save_stack(
     OUTPUT_DIR / "synthetic_2d_t_xy_registered.ome.tif",
     registered_2d_t_xy,
@@ -256,7 +256,7 @@ expected_3d_t_zyx = load_expected_time_registration_shifts(GT_3D_T_ZYX_PATH, reg
 print(f"3D+t ZYX stack shape: {stack_3d_t_zyx.shape} (TZCYX)")
 show_timepoints(stack_3d_t_zyx, title="3D+t ZYX before full 3D registration", channel=0, projection_method="max")
 
-maybe_open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX before full 3D registration", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(stack_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX before full 3D registration", enabled=OPEN_IN_NAPARI)
 
 registered_3d_t_zyx, details_3d_t_zyx = register_stack(
     stack_3d_t_zyx,
@@ -302,7 +302,7 @@ save_stack(
     registration_details=details_3d_t_zyx,
 )
 
-maybe_open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX after full 3D registration", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(registered_3d_t_zyx, metadata_3d_t_zyx, fname="3D+t ZYX after full 3D registration", enabled=OPEN_IN_NAPARI)
 # %% 6) 3D+t: FULL 3D TRANSLATION PLUS XY-PLANE ROTATION ONLY
 stack_3d_t_trans_rot_z, metadata_3d_t_trans_rot_z = load_stack(
     STACK_3D_T_TRANS_ROT_Z_PATH,
@@ -317,11 +317,11 @@ show_timepoints(
     title="3D+t ZYX translation + XY-plane rotation before registration",
     channel=0,
     projection_method="max")
-maybe_open_in_napari(
+open_in_napari(
     stack_3d_t_trans_rot_z,
     metadata_3d_t_trans_rot_z,
     fname="3D+t translation + XY rotation before registration",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
 
 registered_3d_t_trans_rot_z, details_3d_t_trans_rot_z = register_stack(
@@ -374,11 +374,11 @@ save_stack(
     registered_3d_t_trans_rot_z,
     metadata=metadata_3d_t_trans_rot_z,
     registration_details=details_3d_t_trans_rot_z)
-maybe_open_in_napari(
+open_in_napari(
     registered_3d_t_trans_rot_z,
     metadata_3d_t_trans_rot_z,
     fname="3D+t translation + XY rotation after registration",
-    open_in_napari=OPEN_IN_NAPARI,
+    enabled=OPEN_IN_NAPARI,
 )
 
 # %% 7) 2D+t: GLOBAL XY ROTATION
@@ -399,7 +399,7 @@ show_timepoints(
     title="2D+t rotation before registration",
     channel=0,
     projection_method="max")
-maybe_open_in_napari(stack_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation before registration", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(stack_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation before registration", enabled=OPEN_IN_NAPARI)
 
 
 registered_2d_t_rot_xy, details_2d_t_rot_xy = register_stack(
@@ -450,7 +450,7 @@ save_stack(
     metadata=metadata_2d_t_rot_xy,
     registration_details=details_2d_t_rot_xy)
 
-maybe_open_in_napari(registered_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation after registration", open_in_napari=OPEN_IN_NAPARI)
+open_in_napari(registered_2d_t_rot_xy, metadata_2d_t_rot_xy, fname="2D+t rotation after registration", enabled=OPEN_IN_NAPARI)
 # %% 8) 2D+t: DISK-BACKED OMIO MEMMAP INPUT
 # To force a fresh start, clear any pre-existing OMIO cache in the local scratch folder.
 # Skip this cleanup line after a kernel restart if you want OMIO to reuse the existing cache.

@@ -495,16 +495,18 @@ def print_residual_mae_summary(
         )
 
 
-def maybe_open_in_napari(
+def open_in_napari(
     stack,
     metadata,
     *,
     fname: str,
-    open_in_napari: bool = False,
+    enabled: bool = True,
 ) -> None:
-    """Open a stack in Napari when requested by an example script."""
+    """Open a stack in Napari when enabled by an example script."""
 
-    if open_in_napari:
-        import omio as om
+    if not enabled:
+        return
 
-        om.open_in_napari(stack, metadata, fname=fname)
+    import omio as om
+
+    om.open_in_napari(stack, metadata, fname=fname)

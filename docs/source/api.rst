@@ -45,6 +45,7 @@ Tutorial and plotting helpers
    :toctree: generated
 
    zenreg.plot_normcorre_patch_overlay
+   zenreg.open_in_napari
    zenreg.show_before_after
    zenreg.show_timepoints
    zenreg.show_slices

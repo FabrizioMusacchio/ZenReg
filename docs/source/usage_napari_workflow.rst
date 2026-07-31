@@ -8,25 +8,25 @@ tuning registration settings.
 Open raw and registered stacks
 ------------------------------
 
-The tutorial helper ``maybe_open_in_napari`` opens a stack only when
-``open_in_napari=True``. This keeps scripts safe for headless runs while making
+The tutorial helper ``open_in_napari`` opens a stack only when
+``enabled=True``. This keeps scripts safe for headless runs while making
 interactive inspection one switch away.
 
 .. code-block:: python
 
    from pathlib import Path
-   from zenreg import load_stack, maybe_open_in_napari, register_stack, save_stack
+   from zenreg import load_stack, open_in_napari, register_stack, save_stack
 
    OPEN_IN_NAPARI = True
 
    path = Path("example_data/synthetic_data/synthetic_3d_t_zyx.ome.tif")
    image, metadata = load_stack(path, return_metadata=True)
 
-   maybe_open_in_napari(
+   open_in_napari(
        image,
        metadata,
        fname          = "raw 3D+t stack",
-       open_in_napari = OPEN_IN_NAPARI)
+       enabled        = OPEN_IN_NAPARI)
 
    registered, details = register_stack(
        image,
@@ -38,11 +38,11 @@ interactive inspection one switch away.
        return_shifts          = True,
        return_details         = True)
 
-   maybe_open_in_napari(
+   open_in_napari(
        registered,
        metadata,
        fname          = "registered 3D+t stack",
-       open_in_napari = OPEN_IN_NAPARI)
+       enabled        = OPEN_IN_NAPARI)
 
    save_stack(
        "example_data/synthetic_data/registered/napari_checked_registered.ome.tif",
@@ -87,11 +87,11 @@ continuous integration, Read the Docs, or HPC nodes:
 
    OPEN_IN_NAPARI = False
 
-   maybe_open_in_napari(
+   open_in_napari(
        registered,
        metadata,
        fname          = "registered stack",
-       open_in_napari = OPEN_IN_NAPARI)
+       enabled        = OPEN_IN_NAPARI)
 
 The function simply returns without opening napari when the switch is false.
 
