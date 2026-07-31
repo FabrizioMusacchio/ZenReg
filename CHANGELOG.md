@@ -4,7 +4,8 @@ See here for a detailed list of changes made in each release of *ZenReg*. Please
 
 Each release is also archived on Zenodo for long-term preservation and citation purposes:
 
-[![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.20787509-blue)](https://doi.org/10.5281/zenodo.20787509)
+[![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue)](https://doi.org/10.5281/zenodo.21727826)
+
 
 ## 🚀 v0.0.3 - Dummy release for Zenodo
 

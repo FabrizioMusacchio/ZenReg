@@ -208,7 +208,7 @@ Suggested citation:
 
 
   Musacchio, F. (2026). ZenReg: Fast and memory-efficient microscopy image
-  registration for Python. https://doi.org/10.5281/zenodo.20787509
+  registration for Python. https://doi.org/10.5281/zenodo.21727826
 
 .. raw:: html
 
