@@ -165,6 +165,17 @@ patch layout. ZenReg provides a helper function for this:
        projection_range     = (0, 1))
 
 
+.. figure:: _static/synthetic_2d_t_xy_normcorre_patch_overlay_t0_c0_max_z0-1.png
+   :alt: Example NoRMCorre patch layout for synthetic 2D+t data.
+   :align: center
+   :figwidth: 100%
+
+   Example NoRMCorre patch layout for synthetic 2D+t data. The background is a
+   maximum-intensity Z projection of the first time point. The orange grid shows
+   the patch layout with stride 32 and overlap 16. The effective patch size is
+   48x48 pixels. 
+
+
 Memory-efficient workflow
 -------------------------
 
