@@ -60,7 +60,7 @@ html_theme_options = {
     "sticky_navigation": True,
 }
 html_static_path = ["_static"]
-html_logo = "_static/ZenReg_logo_square_transparent.png"
+html_logo = "_static/ZenReg_logo_square2_transparent.png"
 html_css_files = ["custom.css"]
 
 mathjax_path = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
