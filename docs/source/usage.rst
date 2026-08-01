@@ -15,6 +15,7 @@ keeping the examples small enough for local experimentation.
    usage_2d_t
    usage_memory_efficient
    usage_preprocessing
+   usage_multichannel
    usage_projection_strategies
    usage_napari_workflow
    usage_assessing_results
@@ -28,11 +29,11 @@ Recommended order
 
 Start with the synthetic dataset page, then run the 2D+t tutorial. Read the
 memory-efficient workflow page before working with large files, server-hosted
-data, or local scratch caches. The optional preprocessing and projection
-strategy pages explain how to stabilize and choose registration images. The
-napari workflow page shows how to inspect results interactively, and the
-assessment page explains ZenReg's report files and quantitative QC outputs. The
-3D+t and intra-stack pages use the same
+data, or local scratch caches. The optional preprocessing, multi-channel, and
+projection strategy pages explain how to stabilize and choose registration
+images. The napari workflow page shows how to inspect results interactively,
+and the assessment page explains ZenReg's report files and quantitative QC
+outputs. The 3D+t and intra-stack pages use the same
 ``load_stack -> register_stack -> save_stack`` pattern, but add z-aware
 settings. The full 3D rigid tutorial introduces SimpleITK and point-based 6-DOF
 registration. The batch tutorial shows how to wrap the same calls in a
