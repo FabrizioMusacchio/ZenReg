@@ -446,18 +446,31 @@ def _effective_zero_clip_mask_strategy(
         return "relaxed" if rigid_3d else "greedy"
     return zero_clip_mask_strategy
 
-def _resolve_projection_range_alias(
+def _resolve_registration_z_range_alias(
     *,
+    registration_z_range: tuple[int, int] | Sequence[int] | None,
     zrange: tuple[int, int] | Sequence[int] | None,
     projection_range: tuple[int, int] | Sequence[int] | None,
 ):
-    """Resolve preferred projection_range while keeping zrange compatible."""
+    """Resolve preferred registration_z_range while keeping older aliases compatible."""
 
-    if projection_range is None:
-        return zrange
-    if zrange is not None and tuple(zrange) != tuple(projection_range):
-        raise ValueError("Use either zrange or projection_range, not conflicting values for both.")
-    return projection_range
+    provided = [
+        ("registration_z_range", registration_z_range),
+        ("projection_range", projection_range),
+        ("zrange", zrange),
+    ]
+    active = [(name, value) for name, value in provided if value is not None]
+    if not active:
+        return None
+    reference_name, reference_value = active[0]
+    reference_tuple = tuple(reference_value)
+    for name, value in active[1:]:
+        if tuple(value) != reference_tuple:
+            raise ValueError(
+                "Use only one Z-range argument or provide matching values. "
+                f"Got conflicting {reference_name}={reference_tuple!r} and {name}={tuple(value)!r}."
+            )
+    return reference_value
 
 def _normalize_registration_template_time_range(
     registration_template_time_range: tuple[int, int] | Sequence[int] | None,
@@ -1499,7 +1512,7 @@ def _correct_intra_stack_z_drift_impl(
         ``nc_template_update_method``, ``nc_gSig_filt``,
         ``nc_shift_interpolation``, ``nc_border_nan``, ``nc_n_jobs``, and the
         ``nc_output_*`` memory-mapped output controls. Shared settings such as
-        ``registration_channel``, ``registration_stack``, ``projection_range``,
+        ``registration_channel``, ``registration_stack``, ``registration_z_range``,
         ``projection_method``, ``max_xy_shifts``, ``max_z_shifts``,
         ``phase_cross_correlation_upsample_factor``,
         ``phase_cross_correlation_normalization``, and ``transform_order`` are
@@ -2617,6 +2630,7 @@ def register_stack(
     time_reference_mode: str = "template",
     registration_template_time_range: tuple[int, int] | Sequence[int] | None = None,
     intra_stack: bool = False,
+    registration_z_range: tuple[int, int] | Sequence[int] | None = None,
     zrange: tuple[int, int] | Sequence[int] | None = None,
     projection_range: tuple[int, int] | Sequence[int] | None = None,
     projection_method: str = "max",
@@ -2744,12 +2758,18 @@ def register_stack(
     intra_stack : bool, optional
         If True, run intra-stack XY slice correction independently for each time
         point before optional time registration.
+    registration_z_range : tuple[int, int] or None, optional
+        Optional half-open Z range ``(start, stop)`` used to define the
+        registration signal. This selects slices along the canonical ``Z`` axis
+        for projection-based registration, full-3D translational registration,
+        rotation pre-estimation, and correlation reporting. ``None`` uses all
+        Z slices.
     zrange : tuple[int, int] or None, optional
-        Deprecated alias for ``projection_range``.
+        Deprecated alias for ``registration_z_range``.
     projection_range : tuple[int, int] or None, optional
-        Optional half-open Z range ``(start, stop)`` used for the registration
-        projection or full-3D registration volume. This selects slices along the
-        canonical ``Z`` axis, not a range across time.
+        Deprecated alias for ``registration_z_range``. The old name is kept for
+        compatibility, but ``registration_z_range`` is clearer because this
+        range is also used by full-3D registration paths, not only projections.
     projection_method : {"max", "mean", "median", "var", "std"}, optional
         Z-projection method used for shift estimation. ``"max"`` remains a
         good default for sparse spots or puncta. ``"mean"`` is often better
@@ -2927,7 +2947,11 @@ def register_stack(
         registration_template_time_range,
         stack.shape[0],
     )
-    zrange = _resolve_projection_range_alias(zrange=zrange, projection_range=projection_range)
+    zrange = _resolve_registration_z_range_alias(
+        registration_z_range=registration_z_range,
+        zrange=zrange,
+        projection_range=projection_range,
+    )
     projection_method = _normalize_projection_method(projection_method)
     registration_stack = _normalize_registration_stack(registration_stack, stack.shape[0])
     intra_stack_reference_mode = _normalize_intra_stack_reference_mode(intra_stack_reference_mode)
@@ -3026,7 +3050,7 @@ def register_stack(
         zero_clip_mask_strategy=zero_clip_mask_strategy,
         rigid_3d=bool(rotreg and rigid_3d_backend in {"simpleitk", "points"}),
     )
-    projection_range_setting = (
+    registration_z_range_setting = (
         None
         if zrange is None
         else tuple(int(v) for v in normalize_zrange(zrange, stack.shape[1], strict=True))
@@ -3035,6 +3059,7 @@ def register_stack(
         "registration_channel": int(registration_channel),
         "registration_stack": int(registration_stack),
         "registration_template_time_range": registration_template_time_range,
+        "registration_z_range": registration_z_range_setting,
         "method": method,
         "intra_stack": bool(intra_stack),
         "zreg": bool(zreg),
@@ -3066,7 +3091,8 @@ def register_stack(
         "rot_points_threshold_rel": float(rot_points_threshold_rel),
         "rot_points_iterations": int(rot_points_iterations),
         "rot_points_max_match_distance": float(rot_points_max_match_distance),
-        "projection_range": projection_range_setting,
+        "registration_z_range": registration_z_range_setting,
+        "projection_range": registration_z_range_setting,
         "registration_template_time_range": registration_template_time_range,
         "projection_method": projection_method,
         "filter_slices": bool(filter_slices),
@@ -3093,7 +3119,7 @@ def register_stack(
             registration_channel=int(registration_channel),
             registration_stack=int(registration_stack),
             method=method,
-            projection_range=projection_range_setting,
+            projection_range=registration_z_range_setting,
             projection_method=projection_method,
             rigid_3d_backend=rigid_3d_backend,
             zero_clip=bool(zero_clip),
@@ -3142,7 +3168,7 @@ def register_stack(
             time_registration_mode=time_registration_mode,
             time_reference_mode=time_reference_mode,
             intra_stack=bool(intra_stack),
-            projection_range=projection_range_setting,
+            projection_range=registration_z_range_setting,
             projection_method=projection_method,
             zreg=bool(zreg),
             zero_clip=bool(zero_clip),

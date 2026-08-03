@@ -115,8 +115,8 @@ time axis:
 Here, ``projection_method="median"`` is used to build the time template from
 ``t=0:20``. For 2D+t stacks the Z axis is a singleton, so the useful operation
 is the time aggregation. For 3D+t stacks, the same option first builds a ZYX
-template from the selected time points; ``projection_range`` still refers only
-to the Z axis.
+template from the selected time points; ``registration_z_range`` still refers
+only to the Z axis.
 
 pystackreg
 ----------

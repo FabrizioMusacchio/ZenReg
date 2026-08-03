@@ -113,7 +113,7 @@ on the selected ZYX volume and returns Z, Y, and X correction shifts.
        registration_stack     = 0,
        method                 = "phase_cross_correlation",
        time_registration_mode = "full_3d",
-       projection_range       = None,
+       registration_z_range   = None,
        zreg                   = True,
        max_xy_shifts          = (8, 8),
        max_z_shifts           = 4,
@@ -131,7 +131,7 @@ New options in this block:
      - Meaning
    * - ``time_registration_mode="full_3d"``
      - Register full ZYX volumes instead of YX projections. Default: ``"projection"``.
-   * - ``projection_range``
+   * - ``registration_z_range``
      - Optional half-open Z range used for registration. ``None`` (default) uses all
        slices.
    * - ``max_xy_shifts``

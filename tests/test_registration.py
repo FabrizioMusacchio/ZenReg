@@ -454,9 +454,16 @@ def test_zero_clip_crops_directional_zyx_translation_borders():
     }
 
 
-def test_projection_range_alias_matches_zrange():
+def test_registration_z_range_matches_legacy_aliases():
     stack = _two_timepoint_3d_stack((0.0, 2.0, -3.0))
 
+    _, shifts_registration_z_range = register_stack(
+        stack,
+        registration_channel=0,
+        registration_z_range=(1, stack.shape[1] - 1),
+        verbose=False,
+        return_shifts=True,
+    )
     _, shifts_zrange = register_stack(
         stack,
         registration_channel=0,
@@ -472,7 +479,21 @@ def test_projection_range_alias_matches_zrange():
         return_shifts=True,
     )
 
+    np.testing.assert_allclose(shifts_zrange, shifts_registration_z_range)
     np.testing.assert_allclose(shifts_projection_range, shifts_zrange)
+
+
+def test_registration_z_range_rejects_conflicting_aliases():
+    stack = _two_timepoint_3d_stack((0.0, 2.0, -3.0))
+
+    with pytest.raises(ValueError, match="conflicting registration_z_range"):
+        register_stack(
+            stack,
+            registration_channel=0,
+            registration_z_range=(1, stack.shape[1] - 1),
+            projection_range=(0, stack.shape[1]),
+            verbose=False,
+        )
 
 
 def test_synthetic_rotation_example_matches_rotation_gt():

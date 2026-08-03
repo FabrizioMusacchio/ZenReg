@@ -83,7 +83,7 @@ A practical interactive loop is:
 
 This is especially useful for:
 
-- choosing ``projection_method`` and ``projection_range``,
+- choosing ``projection_method`` and ``registration_z_range``,
 - deciding whether ``zreg=True`` is needed,
 - inspecting zero borders before enabling ``zero_clip`` or manual
   ``crop_stack``,

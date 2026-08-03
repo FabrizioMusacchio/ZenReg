@@ -6,11 +6,14 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue)](https://doi.org/10.5281/zenodo.21727826)
 
+--- 
+
 ## 🚧 Upcoming release
 
 Unreleased
 
-### Synthetic data and benchmarks
+### 🧩 Changes
+#### Synthetic data and benchmarks
 
 - Improved synthetic full 3D rigid benchmark data generation for dense
   structural volumes by adding richer volumetric texture and distributed
@@ -18,19 +21,27 @@ Unreleased
   and point-based backend comparisons better constrained and more
   representative for six-degree-of-freedom registration validation.
 
-### Registration controls
+#### Registration controls
 
 - Added `registration_template_time_range` to `register_stack` for building
   multi-frame registration templates from a half-open time range. This is
   especially useful for noisy 2D+t stacks where a template aggregated over
   several frames is more stable than a single reference frame.
+- Added `registration_z_range` as the clearer primary name for selecting the
+  Z-slice range used to build the registration signal. The older
+  `projection_range` and `zrange` names remain supported as compatibility
+  aliases.
 
+
+--- 
 
 ## 🚀 v0.0.3 - Dummy release for Zenodo
 
 July 31, 2026
 
 This is a dummy release to trigger Zenodo archiving. 
+
+--- 
 
 ## 🚀 v0.0.2 - First functional ZenReg release
 
@@ -72,8 +83,8 @@ platform.
 - Added explicit `registration_channel` and `registration_stack` controls.
 - Added configurable projection methods: `max`, `mean`, `median`, `var`, and
   `std`.
-- Added `projection_range` to control which Z slices contribute to projection
-  templates.
+- Added Z-range control for selecting which slices contribute to registration
+  templates and projection-based estimates.
 - Added optional Z registration with `zreg`.
 - Added optional rotation registration with `rotreg`.
 - Added optional correction limits with `max_xy_shifts`, `max_z_shifts`, and
@@ -126,9 +137,12 @@ platform.
   defaults.
 - Added project logo assets for the README and documentation.
 
+--- 
 
 ## 🚀 v0.0.0
 
 February 3, 2026
 
 Hollow project structure created and registered as a Python package.
+
+--- 

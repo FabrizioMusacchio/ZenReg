@@ -45,6 +45,7 @@ SETTING_KEYS = (
     "rot_points_threshold_rel",
     "rot_points_iterations",
     "rot_points_max_match_distance",
+    "registration_z_range",
     "projection_range",
     "projection_method",
     "filter_slices",
@@ -242,7 +243,7 @@ def _frame_correlations(registered_stack: np.ndarray, details: dict[str, Any]) -
         registration_channel=int(details.get("registration_channel", 0)),
         registration_stack=int(details.get("registration_stack", 0)),
         registration_template_time_range=details.get("registration_template_time_range"),
-        projection_range=details.get("projection_range"),
+        projection_range=details.get("registration_z_range", details.get("projection_range")),
         projection_method=str(details.get("projection_method", "max")),
         effective_time_registration_mode=str(details.get("effective_time_registration_mode", "projection")),
     )
@@ -362,11 +363,24 @@ def _write_shift_csv(
 def _projection_range_label(details: dict[str, Any], z_count: int) -> str:
     """Return a compact projection-range label for annotations."""
 
-    projection_range = details.get("projection_range")
+    if int(z_count) <= 1:
+        return f"Z_N={int(z_count)}"
+    projection_range = details.get("registration_z_range", details.get("projection_range"))
     if projection_range is None:
         return f"all slices (0:{z_count})"
     z_start, z_stop = normalize_zrange(projection_range, z_count, strict=True)
     return f"{z_start}:{z_stop}"
+
+def _template_time_label(details: dict[str, Any], time_count: int) -> str:
+    """Return a compact registration-template time label for annotations."""
+
+    template_time_range = details.get("registration_template_time_range")
+    if template_time_range is None:
+        return f"t={int(details.get('registration_stack', 0))}"
+    start, stop = (int(template_time_range[0]), int(template_time_range[1]))
+    if start == 0 and stop == int(time_count):
+        return f"all frames (0:{int(time_count)})"
+    return f"{start}:{stop}"
 
 def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) -> str:
     """Build the compact plot annotation."""
@@ -394,8 +408,9 @@ def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) 
                 f"rotreg={details.get('rotreg')}"
             ),
             (
+                f"template_t={_template_time_label(details, registered_stack.shape[0])} | "
                 f"projection={details.get('projection_method')} | "
-                f"projection_range={_projection_range_label(details, registered_stack.shape[1])}"
+                f"registration_z_range={_projection_range_label(details, registered_stack.shape[1])}"
             ),
             f"max_xy={max_xy} | max_z={max_z} | max_rot={max_rot}",
         ]
@@ -487,7 +502,7 @@ def _write_summary_plot(
             label="before",
         )
     ax_corr.plot(frames, correlations_after, marker="o", color="tab:purple", label="after")
-    ax_corr.set_ylabel("Pearson r")
+    ax_corr.set_ylabel("Pearson r vs template")
     ax_corr.set_xlabel("Frame")
     ax_corr.set_ylim(-1.05, 1.05)
     ax_corr.grid(True, alpha=0.25)

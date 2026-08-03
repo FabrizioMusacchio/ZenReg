@@ -2,7 +2,7 @@ import csv
 
 import numpy as np
 
-from zenreg.reporting import write_registration_outputs
+from zenreg.reporting import _projection_range_label, _settings_annotation, write_registration_outputs
 
 
 def test_write_registration_outputs_accepts_legacy_shift_array(tmp_path):
@@ -36,6 +36,7 @@ def test_write_registration_outputs_with_prefix_intra_stack_and_rotation(tmp_pat
         "time_registration_mode": "full_3d",
         "effective_time_registration_mode": "full_3d",
         "time_reference_mode": "template",
+        "registration_z_range": (0, 2),
         "projection_range": (0, 2),
         "projection_method": "mean",
         "zreg": True,
@@ -72,5 +73,35 @@ def test_write_registration_outputs_with_prefix_intra_stack_and_rotation(tmp_pat
     assert "intra_stack" in csv_text
     assert "rotation_x_deg" in csv_text
     assert "correlation_before_mean" in yaml_text
-    assert "projection_range: [0, 2]" in yaml_text
+    assert "registration_z_range: [0, 2]" in yaml_text
     assert paths["plot"].stat().st_size > 0
+
+
+def test_summary_annotation_labels_template_time_and_singleton_z():
+    registered = np.zeros((8, 1, 1, 8, 8), dtype=np.float32)
+    details = {
+        "registration_channel": 0,
+        "registration_stack": 0,
+        "registration_template_time_range": (0, 6),
+        "method": "phase_cross_correlation",
+        "time_registration_mode": "projection",
+        "effective_time_registration_mode": "projection",
+        "time_reference_mode": "template",
+        "projection_method": "median",
+        "intra_stack": False,
+        "zreg": False,
+        "rotreg": False,
+        "transform_backend": "skimage",
+        "transform_order": 1,
+    }
+
+    annotation = _settings_annotation(details, registered)
+
+    assert "template_t=0:6" in annotation
+    assert "projection=median" in annotation
+    assert "registration_z_range=Z_N=1" in annotation
+
+
+def test_projection_range_label_reports_all_slices_for_z_stacks():
+    assert _projection_range_label({"registration_z_range": None}, 5) == "all slices (0:5)"
+    assert _projection_range_label({"registration_z_range": (1, 4)}, 5) == "1:4"

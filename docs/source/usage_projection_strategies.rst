@@ -44,7 +44,7 @@ image:
 Restricting the projection range
 --------------------------------
 
-Use ``projection_range`` to restrict registration to a half-open Z interval
+Use ``registration_z_range`` to restrict registration to a half-open Z interval
 ``(z_start, z_stop)``:
 
 .. code-block:: python
@@ -56,13 +56,16 @@ Use ``projection_range`` to restrict registration to a half-open Z interval
        method                 = "phase_cross_correlation",
        time_registration_mode = "projection",
        projection_method      = "max",
-       projection_range       = (5, 25),
+       registration_z_range   = (5, 25),
        return_shifts          = True,
        return_details         = True)
 
 This is useful when only part of the stack contains stable registration signal,
 or when top/bottom slices are noisy, empty, saturated, or outside the specimen.
-``projection_range=None`` uses all available Z slices.
+``registration_z_range=None`` uses all available Z slices. Older examples may
+use ``projection_range`` or ``zrange`` for the same setting; both names remain
+accepted as compatibility aliases, but ``registration_z_range`` is the preferred
+name.
 
 Projection-based vs full 3D registration
 ----------------------------------------
@@ -110,6 +113,6 @@ Projection settings in reports
 
 When ``return_details=True`` and ``registration_details`` are passed to
 ``save_stack``, ZenReg records the selected ``projection_method`` and
-``projection_range`` in the YAML settings and annotates them in summary plots.
+``registration_z_range`` in the YAML settings and annotates them in summary plots.
 This makes projection choices visible for later quality control and
 reproducibility.
