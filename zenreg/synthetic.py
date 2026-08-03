@@ -170,15 +170,69 @@ def _base_2d_channels(
 ) -> list[np.ndarray]:
     """Create deterministic, structurally distinct 2D channel templates."""
 
+    scale_y = float(shape_yx[0]) / 128.0
+    scale_x = float(shape_yx[1]) / 128.0
+    margin_y = max(8.0, 0.08 * float(shape_yx[0]))
+    margin_x = max(8.0, 0.08 * float(shape_yx[1]))
+
+    def _scale_center(center_yx):
+        cy, cx = center_yx
+        return (
+            float(np.clip(cy * scale_y, margin_y, shape_yx[0] - margin_y)),
+            float(np.clip(cx * scale_x, margin_x, shape_yx[1] - margin_x)),
+        )
+
+    def _scale_sigma(sigma_yx):
+        sy, sx = sigma_yx
+        return (float(max(2.0, sy * scale_y)), float(max(2.0, sx * scale_x)))
+
+    centers0 = [(34, 40), (70, 58), (94, 96), (42, 92)]
+    sigmas0 = [(7, 10), (9, 7), (8, 9), (6, 6)]
+    centers1 = [(52, 28), (84, 44), (72, 102), (106, 72)]
+    sigmas1 = [(8, 8), (6, 11), (9, 8), (7, 7)]
+
+    target_spot_count = max(4, int(round(4 * np.prod(shape_yx) / float(128 * 128))))
+    extra_count = max(0, target_spot_count - 4)
+    if extra_count:
+        extra_centers0 = list(
+            zip(
+                rng.uniform(margin_y, shape_yx[0] - margin_y, extra_count),
+                rng.uniform(margin_x, shape_yx[1] - margin_x, extra_count),
+            )
+        )
+        extra_sigmas0 = list(
+            zip(
+                rng.uniform(0.04 * shape_yx[0], 0.08 * shape_yx[0], extra_count),
+                rng.uniform(0.04 * shape_yx[1], 0.08 * shape_yx[1], extra_count),
+            )
+        )
+        extra_centers1 = list(
+            zip(
+                rng.uniform(margin_y, shape_yx[0] - margin_y, extra_count),
+                rng.uniform(margin_x, shape_yx[1] - margin_x, extra_count),
+            )
+        )
+        extra_sigmas1 = list(
+            zip(
+                rng.uniform(0.035 * shape_yx[0], 0.075 * shape_yx[0], extra_count),
+                rng.uniform(0.035 * shape_yx[1], 0.075 * shape_yx[1], extra_count),
+            )
+        )
+    else:
+        extra_centers0 = []
+        extra_sigmas0 = []
+        extra_centers1 = []
+        extra_sigmas1 = []
+
     base0 = _gaussian_blob_grid(
         shape_yx,
-        centers=[(34, 40), (70, 58), (94, 96), (42, 92)],
-        sigmas=[(7, 10), (9, 7), (8, 9), (6, 6)],
+        centers=[_scale_center(center) for center in centers0] + extra_centers0,
+        sigmas=[_scale_sigma(sigma) for sigma in sigmas0] + extra_sigmas0,
     )
     base1 = _gaussian_blob_grid(
         shape_yx,
-        centers=[(52, 28), (84, 44), (72, 102), (106, 72)],
-        sigmas=[(8, 8), (6, 11), (9, 8), (7, 7)],
+        centers=[_scale_center(center) for center in centers1] + extra_centers1,
+        sigmas=[_scale_sigma(sigma) for sigma in sigmas1] + extra_sigmas1,
     )
     base_channels = [base0, base1]
     while len(base_channels) < channel_count:
@@ -248,34 +302,155 @@ def _base_3d_channels(
     channel_count: int,
     rng: np.random.Generator,
 ) -> list[np.ndarray]:
-    """Create deterministic 3D channel templates with real Z structure."""
+    """Create feature-rich 3D channel templates with distributed ZYX structure."""
 
-    z_positions = np.linspace(-1.0, 1.0, z_count, dtype=np.float32)
-    channels = [
-        np.zeros((z_count, *shape_yx), dtype=np.float32),
-        np.zeros((z_count, *shape_yx), dtype=np.float32),
-    ]
-    for z, z_pos in enumerate(z_positions):
-        axial_scale = 0.35 + 0.75 * np.exp(-(z_pos**2) / 0.55)
-        channels[0][z] = axial_scale * _gaussian_blob_grid(
-            shape_yx,
-            centers=[(36 + 5 * z_pos, 42), (76, 64 + 8 * z_pos), (92, 96)],
-            sigmas=[(7, 10), (9, 7), (8, 9)],
-        )
-        channels[1][z] = axial_scale * _gaussian_blob_grid(
-            shape_yx,
-            centers=[(54, 30 + 5 * z_pos), (86 + 4 * z_pos, 48), (78, 104)],
-            sigmas=[(8, 8), (6, 11), (9, 8)],
-        )
+    zz, yy, xx = np.indices((z_count, *shape_yx), dtype=np.float32)
+    scale_z = float(z_count) / 20.0
+    scale_y = float(shape_yx[0]) / 96.0
+    scale_x = float(shape_yx[1]) / 96.0
+    margin_z = max(2.0, 0.12 * float(z_count))
+    margin_y = max(8.0, 0.08 * float(shape_yx[0]))
+    margin_x = max(8.0, 0.08 * float(shape_yx[1]))
 
-    while len(channels) < channel_count:
-        random_volume = np.zeros((z_count, *shape_yx), dtype=np.float32)
-        for z, z_pos in enumerate(z_positions):
-            random_volume[z] = (0.2 + 0.6 * np.exp(-(z_pos**2) / 0.7)) * rng.random(
-                shape_yx,
-                dtype=np.float32,
+    def _add_blob(volume, center_zyx, sigma_zyx, amplitude):
+        cz, cy, cx = center_zyx
+        sz, sy, sx = sigma_zyx
+        volume += float(amplitude) * np.exp(
+            -(
+                ((zz - float(cz)) ** 2) / (2.0 * float(sz) ** 2)
+                + ((yy - float(cy)) ** 2) / (2.0 * float(sy) ** 2)
+                + ((xx - float(cx)) ** 2) / (2.0 * float(sx) ** 2)
             )
-        channels.append(random_volume)
+        )
+
+    def _add_oriented_blob(volume, center_zyx, sigma_zyx, euler_zyx_deg, amplitude):
+        cz, cy, cx = center_zyx
+        dz = zz - float(cz)
+        dy = yy - float(cy)
+        dx = xx - float(cx)
+        rotation = Rotation.from_euler("ZYX", euler_zyx_deg, degrees=True).as_matrix().astype(np.float32)
+        local_z = rotation[0, 0] * dz + rotation[1, 0] * dy + rotation[2, 0] * dx
+        local_y = rotation[0, 1] * dz + rotation[1, 1] * dy + rotation[2, 1] * dx
+        local_x = rotation[0, 2] * dz + rotation[1, 2] * dy + rotation[2, 2] * dx
+        sz, sy, sx = sigma_zyx
+        volume += float(amplitude) * np.exp(
+            -(
+                (local_z**2) / (2.0 * float(sz) ** 2)
+                + (local_y**2) / (2.0 * float(sy) ** 2)
+                + (local_x**2) / (2.0 * float(sx) ** 2)
+            )
+        )
+
+    def _scale_center(center_zyx):
+        cz, cy, cx = center_zyx
+        return (
+            float(np.clip(cz * scale_z, margin_z, z_count - 1 - margin_z)),
+            float(np.clip(cy * scale_y, margin_y, shape_yx[0] - margin_y)),
+            float(np.clip(cx * scale_x, margin_x, shape_yx[1] - margin_x)),
+        )
+
+    def _scale_sigma(sigma_zyx):
+        sz, sy, sx = sigma_zyx
+        return (
+            float(max(1.0, sz * scale_z)),
+            float(max(2.0, sy * scale_y)),
+            float(max(2.0, sx * scale_x)),
+        )
+
+    landmark_centers = [
+        (4, 24, 25),
+        (5, 66, 29),
+        (7, 34, 69),
+        (8, 76, 76),
+        (10, 48, 48),
+        (12, 27, 82),
+        (14, 72, 50),
+        (16, 43, 28),
+    ]
+    landmark_sigmas = [
+        (2.0, 6.0, 8.0),
+        (2.5, 8.0, 6.0),
+        (2.2, 7.0, 7.0),
+        (2.8, 8.0, 8.0),
+        (3.2, 12.0, 10.0),
+        (2.0, 6.0, 7.0),
+        (2.6, 9.0, 6.0),
+        (2.2, 7.0, 9.0),
+    ]
+    ridge_centers = [
+        (4.5, 24, 72),
+        (7.0, 74, 30),
+        (10.0, 45, 46),
+        (12.5, 24, 28),
+        (15.0, 69, 74),
+    ]
+    ridge_sigmas = [
+        (1.1, 2.8, 20.0),
+        (1.4, 3.2, 18.0),
+        (2.0, 4.0, 24.0),
+        (1.2, 2.6, 16.0),
+        (1.5, 3.0, 21.0),
+    ]
+    ridge_angles = [
+        (25.0, 18.0, -34.0),
+        (-42.0, 28.0, 21.0),
+        (68.0, -22.0, 15.0),
+        (-12.0, -35.0, 48.0),
+        (38.0, 16.0, 57.0),
+    ]
+
+    target_blob_count = max(18, int(round(np.prod((z_count, *shape_yx)) / float(20 * 96 * 96) * 32)))
+    channels: list[np.ndarray] = []
+    for channel in range(max(2, int(channel_count))):
+        volume = np.zeros((z_count, *shape_yx), dtype=np.float32)
+        for index, (center, sigma) in enumerate(zip(landmark_centers, landmark_sigmas, strict=True)):
+            jitter = rng.normal(0.0, [0.35, 2.5, 2.5])
+            channel_offset = np.asarray([0.15 * channel, 1.8 * channel, -1.5 * channel], dtype=np.float32)
+            _add_blob(
+                volume,
+                np.asarray(_scale_center(center), dtype=np.float32) + jitter + channel_offset,
+                _scale_sigma(sigma),
+                amplitude=0.45 + 0.08 * (index % 4),
+            )
+
+        for index, (center, sigma, angles) in enumerate(zip(ridge_centers, ridge_sigmas, ridge_angles, strict=True)):
+            jitter = rng.normal(0.0, [0.25, 1.8, 1.8])
+            channel_offset = np.asarray([0.1 * channel, -1.4 * channel, 1.6 * channel], dtype=np.float32)
+            _add_oriented_blob(
+                volume,
+                np.asarray(_scale_center(center), dtype=np.float32) + jitter + channel_offset,
+                _scale_sigma(sigma),
+                np.asarray(angles, dtype=np.float32) + np.asarray([2.0 * channel, -1.5 * channel, 1.0 * channel]),
+                amplitude=0.24 + 0.05 * (index % 3),
+            )
+
+        extra_count = max(0, target_blob_count - len(landmark_centers))
+        for _ in range(extra_count):
+            _add_blob(
+                volume,
+                (
+                    rng.uniform(margin_z, z_count - 1 - margin_z),
+                    rng.uniform(margin_y, shape_yx[0] - margin_y),
+                    rng.uniform(margin_x, shape_yx[1] - margin_x),
+                ),
+                (
+                    rng.uniform(1.2, max(1.6, 0.16 * z_count)),
+                    rng.uniform(max(3.0, 0.04 * shape_yx[0]), max(5.0, 0.10 * shape_yx[0])),
+                    rng.uniform(max(3.0, 0.04 * shape_yx[1]), max(5.0, 0.10 * shape_yx[1])),
+                ),
+                amplitude=rng.uniform(0.18, 0.75),
+            )
+
+        texture = gaussian_filter(
+            rng.random((z_count, *shape_yx), dtype=np.float32),
+            sigma=(max(0.8, 0.05 * z_count), max(2.0, 0.035 * shape_yx[0]), max(2.0, 0.035 * shape_yx[1])),
+        )
+        texture -= float(texture.min())
+        texture /= max(float(texture.max()), 1e-6)
+        volume += 0.08 * texture
+        volume -= float(volume.min())
+        volume /= max(float(volume.max()), 1e-6)
+        channels.append(volume.astype(np.float32, copy=False))
     return channels[:channel_count]
 
 def _add_noise_and_clip(
