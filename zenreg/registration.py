@@ -385,6 +385,47 @@ def _extract_registration_volume(
         return _apply_median_to_zyx(volume, int(median_kernel_size))
     return volume
 
+def _extract_registration_template_volume(
+    stack,
+    *,
+    registration_channel: int,
+    registration_stack: int,
+    registration_template_time_range: tuple[int, int] | None,
+    zrange: tuple[int, int] | Sequence[int] | None,
+    projection_method: str,
+    filter_slices: bool,
+    median_kernel_size: int,
+) -> np.ndarray:
+    """Build the reference registration-channel ``ZYX`` volume."""
+
+    if registration_template_time_range is None:
+        return _extract_registration_volume(
+            stack,
+            t=int(registration_stack),
+            registration_channel=registration_channel,
+            zrange=zrange,
+            filter_slices=filter_slices,
+            median_kernel_size=median_kernel_size,
+        )
+    start, stop = registration_template_time_range
+    volumes = [
+        _extract_registration_volume(
+            stack,
+            t=t,
+            registration_channel=registration_channel,
+            zrange=zrange,
+            filter_slices=filter_slices,
+            median_kernel_size=median_kernel_size,
+        )
+        for t in range(int(start), int(stop))
+    ]
+    template = _aggregate_along_axis(
+        np.stack(volumes, axis=0),
+        axis=0,
+        method=projection_method,
+    )
+    return np.asarray(template, dtype=np.float32)
+
 def _effective_zero_clip_mode(*, zero_clip: bool, zero_clip_mode: str, rotreg: bool) -> str:
     """Return the concrete zero-clipping mode for this registration run."""
 
@@ -417,6 +458,27 @@ def _resolve_projection_range_alias(
     if zrange is not None and tuple(zrange) != tuple(projection_range):
         raise ValueError("Use either zrange or projection_range, not conflicting values for both.")
     return projection_range
+
+def _normalize_registration_template_time_range(
+    registration_template_time_range: tuple[int, int] | Sequence[int] | None,
+    time_count: int,
+) -> tuple[int, int] | None:
+    """Validate an optional half-open time range used to build a registration template."""
+
+    if registration_template_time_range is None:
+        return None
+    if len(registration_template_time_range) != 2:
+        raise ValueError(
+            "registration_template_time_range must be None or a two-element "
+            "half-open time range (start, stop)."
+        )
+    start, stop = (int(registration_template_time_range[0]), int(registration_template_time_range[1]))
+    if start < 0 or stop > int(time_count) or start >= stop:
+        raise ValueError(
+            "registration_template_time_range must satisfy "
+            f"0 <= start < stop <= T. Got {(start, stop)!r} for T={int(time_count)}."
+        )
+    return (start, stop)
 
 def _clip_shift_yx(shift_yx: np.ndarray, max_xy_shifts: np.ndarray | None) -> np.ndarray:
     """Clip a ``YX`` correction shift to configured absolute limits."""
@@ -761,15 +823,20 @@ def _zero_clip_stack(
 def _project_zyx_to_yx(volume_zyx: np.ndarray, *, projection_method: str) -> np.ndarray:
     """Project one ``ZYX`` volume to ``YX`` using a validated method."""
 
-    if projection_method == "max":
-        return np.max(volume_zyx, axis=0)
-    if projection_method == "mean":
-        return np.mean(volume_zyx, axis=0)
-    if projection_method == "median":
-        return np.median(volume_zyx, axis=0)
-    if projection_method == "var":
-        return np.var(volume_zyx, axis=0)
-    return np.std(volume_zyx, axis=0)
+    return _aggregate_along_axis(volume_zyx, axis=0, method=projection_method)
+
+def _aggregate_along_axis(array: np.ndarray, *, axis: int, method: str) -> np.ndarray:
+    """Aggregate an array along one axis using ZenReg's projection methods."""
+
+    if method == "max":
+        return np.max(array, axis=axis)
+    if method == "mean":
+        return np.mean(array, axis=axis)
+    if method == "median":
+        return np.median(array, axis=axis)
+    if method == "var":
+        return np.var(array, axis=axis)
+    return np.std(array, axis=axis)
 
 def _pearson_correlation_flat(template: np.ndarray, image: np.ndarray) -> float:
     """Compute Pearson correlation for two registration-image vectors."""
@@ -801,11 +868,39 @@ def _registration_correlation_image_for_frame(
     projection = _project_zyx_to_yx(volume, projection_method=projection_method)
     return np.asarray(projection, dtype=np.float32).ravel()
 
+def _registration_correlation_template_image(
+    stack,
+    *,
+    registration_channel: int,
+    registration_stack: int,
+    registration_template_time_range: tuple[int, int] | None,
+    projection_range,
+    projection_method: str,
+    effective_time_registration_mode: str,
+) -> np.ndarray:
+    """Return the flattened template image used for registration-correlation reporting."""
+
+    template_volume = _extract_registration_template_volume(
+        stack,
+        registration_channel=registration_channel,
+        registration_stack=registration_stack,
+        registration_template_time_range=registration_template_time_range,
+        zrange=projection_range,
+        projection_method=projection_method,
+        filter_slices=False,
+        median_kernel_size=1,
+    )
+    if effective_time_registration_mode == "full_3d":
+        return template_volume.ravel()
+    projection = _project_zyx_to_yx(template_volume, projection_method=projection_method)
+    return np.asarray(projection, dtype=np.float32).ravel()
+
 def _compute_registration_frame_correlations(
     stack,
     *,
     registration_channel: int,
     registration_stack: int,
+    registration_template_time_range: tuple[int, int] | None,
     projection_range,
     projection_method: str,
     effective_time_registration_mode: str,
@@ -813,10 +908,11 @@ def _compute_registration_frame_correlations(
     """Compute framewise template correlations without materializing all frames."""
 
     registration_stack = int(np.clip(int(registration_stack), 0, stack.shape[0] - 1))
-    template = _registration_correlation_image_for_frame(
+    template = _registration_correlation_template_image(
         stack,
-        t=registration_stack,
         registration_channel=registration_channel,
+        registration_stack=registration_stack,
+        registration_template_time_range=registration_template_time_range,
         projection_range=projection_range,
         projection_method=projection_method,
         effective_time_registration_mode=effective_time_registration_mode,
@@ -1761,6 +1857,7 @@ def _register_stack_across_time(
     method: str,
     time_registration_mode: str,
     time_reference_mode: str,
+    registration_template_time_range: tuple[int, int] | None,
     zrange: tuple[int, int] | Sequence[int] | None,
     projection_method: str,
     filter_slices: bool,
@@ -1811,9 +1908,27 @@ def _register_stack_across_time(
             f"registration_stack={registration_stack}, projection_method='{projection_method}'"
         ),
     )
+    reference_template_volume = None
+    if registration_template_time_range is not None:
+        _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:build_time_template:start")
+        reference_template_volume = _extract_registration_template_volume(
+            stack,
+            registration_channel=registration_channel,
+            registration_stack=registration_stack,
+            registration_template_time_range=registration_template_time_range,
+            zrange=zrange,
+            projection_method=projection_method,
+            filter_slices=filter_slices,
+            median_kernel_size=median_kernel_size,
+        )
+        _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:build_time_template:end")
 
     def estimate_pair_shift(t: int) -> tuple[int, int, np.ndarray]:
-        if time_reference_mode == "template" and t == registration_stack:
+        if (
+            time_reference_mode == "template"
+            and registration_template_time_range is None
+            and t == registration_stack
+        ):
             return t, t, np.zeros(3, dtype=np.float32)
         if time_reference_mode == "previous" and t == 0:
             return t, t, np.zeros(3, dtype=np.float32)
@@ -1823,14 +1938,17 @@ def _register_stack_across_time(
             registration_stack=registration_stack,
             time_reference_mode=time_reference_mode,
         )
-        reference_volume = _extract_registration_volume(
-            stack,
-            t=reference_t,
-            registration_channel=registration_channel,
-            zrange=zrange,
-            filter_slices=filter_slices,
-            median_kernel_size=median_kernel_size,
-        )
+        if reference_template_volume is None:
+            reference_volume = _extract_registration_volume(
+                stack,
+                t=reference_t,
+                registration_channel=registration_channel,
+                zrange=zrange,
+                filter_slices=filter_slices,
+                median_kernel_size=median_kernel_size,
+            )
+        else:
+            reference_volume = reference_template_volume
         moving_volume = _extract_registration_volume(
             stack,
             t=t,
@@ -1930,6 +2048,7 @@ def _register_stack_rotations_across_time(
     registration_channel: int,
     registration_stack: int,
     time_reference_mode: str,
+    registration_template_time_range: tuple[int, int] | None,
     zrange: tuple[int, int] | Sequence[int] | None,
     projection_method: str,
     filter_slices: bool,
@@ -1980,8 +2099,34 @@ def _register_stack_rotations_across_time(
             )
         return projection
 
+    reference_template_projection = None
+    if registration_template_time_range is not None:
+        template_volume = _extract_registration_template_volume(
+            stack,
+            registration_channel=registration_channel,
+            registration_stack=registration_stack,
+            registration_template_time_range=registration_template_time_range,
+            zrange=zrange,
+            projection_method=projection_method,
+            filter_slices=filter_slices,
+            median_kernel_size=median_kernel_size,
+        )
+        reference_template_projection = _project_zyx_to_yx(
+            template_volume,
+            projection_method=projection_method,
+        ).astype(np.float32, copy=False)
+        if filter_projections:
+            reference_template_projection = median_filter(
+                reference_template_projection,
+                size=(int(median_kernel_size), int(median_kernel_size)),
+            )
+
     def estimate_pair_rotation(t: int) -> tuple[int, int, float]:
-        if time_reference_mode == "template" and t == registration_stack:
+        if (
+            time_reference_mode == "template"
+            and registration_template_time_range is None
+            and t == registration_stack
+        ):
             return t, t, 0.0
         if time_reference_mode == "previous" and t == 0:
             return t, t, 0.0
@@ -1991,8 +2136,13 @@ def _register_stack_rotations_across_time(
             registration_stack=registration_stack,
             time_reference_mode=time_reference_mode,
         )
+        reference_projection = (
+            build_projection(reference_t)
+            if reference_template_projection is None
+            else reference_template_projection
+        )
         detected_rotation_deg = _estimate_rotation_deg_from_projections(
-            build_projection(reference_t),
+            reference_projection,
             build_projection(t),
             max_rot_shifts=max_rot_shifts,
             phase_cross_correlation_upsample_factor=phase_cross_correlation_upsample_factor,
@@ -2269,6 +2419,7 @@ def _register_stack_normcorre_from_main_wrapper(
             stack,
             registration_channel=int(registration_channel),
             registration_stack=int(registration_stack),
+            registration_template_time_range=None,
             projection_range=projection_range,
             projection_method=projection_method,
             effective_time_registration_mode="full_3d" if is3d else "projection",
@@ -2443,6 +2594,7 @@ def _register_stack_rigid_3d_from_main_wrapper(
             stack,
             registration_channel=int(registration_channel),
             registration_stack=int(registration_stack),
+            registration_template_time_range=None,
             projection_range=projection_range,
             projection_method=projection_method,
             effective_time_registration_mode="full_3d",
@@ -2463,6 +2615,7 @@ def register_stack(
     method: str = "phase_cross_correlation",
     time_registration_mode: str = "projection",
     time_reference_mode: str = "template",
+    registration_template_time_range: tuple[int, int] | Sequence[int] | None = None,
     intra_stack: bool = False,
     zrange: tuple[int, int] | Sequence[int] | None = None,
     projection_range: tuple[int, int] | Sequence[int] | None = None,
@@ -2579,6 +2732,15 @@ def register_stack(
         ``"template"`` registers every time point to ``registration_stack``.
         ``"previous"`` registers each ``t`` to ``t-1`` and accumulates the
         correction shifts through time.
+    registration_template_time_range : tuple[int, int] or None, optional
+        Optional half-open time range ``(start, stop)`` used to build an
+        averaged registration template for ``time_reference_mode="template"``.
+        When set, the template is aggregated from the selected time points
+        using ``projection_method`` along the time axis. For 2D+t stacks this
+        creates a more stable YX template from multiple frames; for 3D+t stacks
+        it creates a ZYX template before optional Z projection. ``None``
+        preserves the default behavior of using ``registration_stack`` as a
+        single reference frame.
     intra_stack : bool, optional
         If True, run intra-stack XY slice correction independently for each time
         point before optional time registration.
@@ -2761,6 +2923,10 @@ def register_stack(
     rot_metric = normalize_rigid_3d_metric(rot_metric)
     time_registration_mode = _normalize_time_registration_mode(time_registration_mode)
     time_reference_mode = _normalize_time_reference_mode(time_reference_mode)
+    registration_template_time_range = _normalize_registration_template_time_range(
+        registration_template_time_range,
+        stack.shape[0],
+    )
     zrange = _resolve_projection_range_alias(zrange=zrange, projection_range=projection_range)
     projection_method = _normalize_projection_method(projection_method)
     registration_stack = _normalize_registration_stack(registration_stack, stack.shape[0])
@@ -2829,6 +2995,28 @@ def register_stack(
             stacklevel=2,
         )
         rotreg = False
+    if registration_template_time_range is not None and time_reference_mode != "template":
+        raise ValueError(
+            "registration_template_time_range requires time_reference_mode='template'. "
+            "Frame-to-frame registration with time_reference_mode='previous' uses the "
+            "previous time point as reference instead."
+        )
+    if registration_template_time_range is not None and method == "normcorre":
+        raise ValueError(
+            "registration_template_time_range is used by the standard registration backends. "
+            "For method='normcorre', use nc_template_init_mode and "
+            "nc_template_update_method instead."
+        )
+    if (
+        registration_template_time_range is not None
+        and rotreg
+        and rigid_3d_backend in {"simpleitk", "points"}
+    ):
+        raise ValueError(
+            "registration_template_time_range is not supported with full 3D rigid "
+            "registration backends. Use registration_stack as the explicit rigid "
+            "reference volume."
+        )
     effective_zero_clip_mode = _effective_zero_clip_mode(
         zero_clip=bool(zero_clip),
         zero_clip_mode=zero_clip_mode,
@@ -2846,6 +3034,7 @@ def register_stack(
     registration_settings = {
         "registration_channel": int(registration_channel),
         "registration_stack": int(registration_stack),
+        "registration_template_time_range": registration_template_time_range,
         "method": method,
         "intra_stack": bool(intra_stack),
         "zreg": bool(zreg),
@@ -2878,6 +3067,7 @@ def register_stack(
         "rot_points_iterations": int(rot_points_iterations),
         "rot_points_max_match_distance": float(rot_points_max_match_distance),
         "projection_range": projection_range_setting,
+        "registration_template_time_range": registration_template_time_range,
         "projection_method": projection_method,
         "filter_slices": bool(filter_slices),
         "filter_projections": bool(filter_projections),
@@ -3091,6 +3281,7 @@ def register_stack(
                 method=method,
                 time_registration_mode=time_registration_mode,
                 time_reference_mode=time_reference_mode,
+                registration_template_time_range=registration_template_time_range,
                 zrange=zrange,
                 projection_method=projection_method,
                 filter_slices=filter_slices,
@@ -3132,6 +3323,7 @@ def register_stack(
                     registration_channel=int(registration_channel),
                     registration_stack=registration_stack,
                     time_reference_mode=time_reference_mode,
+                    registration_template_time_range=registration_template_time_range,
                     zrange=zrange,
                     projection_method=projection_method,
                     filter_slices=filter_slices,
@@ -3222,6 +3414,7 @@ def register_stack(
             stack,
             registration_channel=int(registration_channel),
             registration_stack=int(registration_stack),
+            registration_template_time_range=registration_template_time_range,
             projection_range=zrange,
             projection_method=projection_method,
             effective_time_registration_mode=effective_time_registration_mode,

@@ -72,6 +72,40 @@ def test_registration_stack_selects_reference_timepoint():
     np.testing.assert_array_equal(estimated_shifts[registration_stack], np.zeros(2, dtype=np.float32))
 
 
+def test_registration_template_time_range_builds_2d_time_template():
+    stack, _ = create_2d_motion_distorted_stack(time_count=5, noise_sigma=0.0)
+
+    registered, details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        registration_template_time_range=(0, 3),
+        projection_method="mean",
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    assert registered.shape == stack.shape
+    assert details["registration_template_time_range"] == (0, 3)
+    assert details["projection_method"] == "mean"
+    assert details["time_shifts_zyx"].shape == (stack.shape[0], 3)
+
+
+def test_registration_template_time_range_rejects_previous_reference_mode():
+    stack, _ = create_2d_motion_distorted_stack(time_count=5, noise_sigma=0.0)
+
+    with pytest.raises(ValueError, match="registration_template_time_range requires"):
+        register_stack(
+            stack,
+            registration_channel=0,
+            method="phase_cross_correlation",
+            time_reference_mode="previous",
+            registration_template_time_range=(0, 3),
+            verbose=False,
+        )
+
+
 def test_z_project_supports_expected_projection_methods():
     stack = np.arange(2 * 3 * 1 * 4 * 5, dtype=np.float32).reshape(2, 3, 1, 4, 5)
 

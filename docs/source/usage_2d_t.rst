@@ -22,6 +22,7 @@ Use ``phase_cross_correlation`` for fast global translation correction:
        image,
        registration_channel   = 0,
        registration_stack     = 0,
+       registration_template_time_range = None,
        method                 = "phase_cross_correlation",
        time_registration_mode = "projection",
        time_reference_mode    = "template",
@@ -55,6 +56,10 @@ Options used here:
        channels.
    * - ``registration_stack``
      - Reference time point/template. Default: ``0``.
+   * - ``registration_template_time_range``
+     - Optional half-open time range ``(start, stop)`` used to build a
+       multi-frame registration template. ``None`` uses ``registration_stack``
+       as one reference frame. Default: ``None``.
    * - ``method``
      - Registration backend. Default:  ``"phase_cross_correlation"``.
    * - ``time_registration_mode``
@@ -65,7 +70,9 @@ Options used here:
        ``"previous"`` accumulates frame-to-frame corrections. Default: ``"template"``.
    * - ``projection_method``
      - Z projection used for registration. For 2D+t data, Z is usually a
-       singleton axis. Default:  ``"max"``.
+       singleton axis. If ``registration_template_time_range`` is set, the
+       same method is also used to aggregate the selected time points into the
+       template. Default:  ``"max"``.
    * - ``zreg``
      - Whether to estimate Z shifts. Default: ``False``.
    * - ``max_xy_shifts``
@@ -81,6 +88,35 @@ Options used here:
 
    With ZenReg's helper function ``zenreg.available_cpu_count()``, you can 
    check how many CPU workers are available for your system.
+
+Multi-frame templates
+---------------------
+
+For noisy 2D+t data, a single reference frame can be less stable than a
+template built from multiple time points. Use
+``registration_template_time_range`` to aggregate a half-open range along the
+time axis:
+
+.. code-block:: python
+
+   registered, details = register_stack(
+       image,
+       registration_channel              = 0,
+       registration_stack                = 0,
+       registration_template_time_range  = (0, 20),
+       method                            = "phase_cross_correlation",
+       time_registration_mode            = "projection",
+       time_reference_mode               = "template",
+       projection_method                 = "median",
+       zreg                              = False,
+       return_shifts                     = True,
+       return_details                    = True)
+
+Here, ``projection_method="median"`` is used to build the time template from
+``t=0:20``. For 2D+t stacks the Z axis is a singleton, so the useful operation
+is the time aggregation. For 3D+t stacks, the same option first builds a ZYX
+template from the selected time points; ``projection_range`` still refers only
+to the Z axis.
 
 pystackreg
 ----------
@@ -244,4 +280,3 @@ workflow. The selected method is used for the translational registration passes.
 The rotation estimate itself is always computed internally from polar-transformed
 projections using phase cross-correlation. ``method="normcorre"`` is currently
 not supported together with ``rotreg=True``.
-

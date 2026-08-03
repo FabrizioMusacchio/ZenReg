@@ -241,6 +241,7 @@ def _frame_correlations(registered_stack: np.ndarray, details: dict[str, Any]) -
         registered_stack,
         registration_channel=int(details.get("registration_channel", 0)),
         registration_stack=int(details.get("registration_stack", 0)),
+        registration_template_time_range=details.get("registration_template_time_range"),
         projection_range=details.get("projection_range"),
         projection_method=str(details.get("projection_method", "max")),
         effective_time_registration_mode=str(details.get("effective_time_registration_mode", "projection")),

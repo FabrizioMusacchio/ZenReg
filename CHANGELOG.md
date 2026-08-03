@@ -18,6 +18,13 @@ Unreleased
   and point-based backend comparisons better constrained and more
   representative for six-degree-of-freedom registration validation.
 
+### Registration controls
+
+- Added `registration_template_time_range` to `register_stack` for building
+  multi-frame registration templates from a half-open time range. This is
+  especially useful for noisy 2D+t stacks where a template aggregated over
+  several frames is more stable than a single reference frame.
+
 
 ## 🚀 v0.0.3 - Dummy release for Zenodo
 

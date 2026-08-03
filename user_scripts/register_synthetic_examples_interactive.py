@@ -91,6 +91,7 @@ registered_2d_t_xy, details_2d_t_xy = register_stack(
     stack_2d_t_xy,
     registration_channel=0,  # channel used to estimate shifts
     registration_stack=0,  # reference time point/template
+    registration_template_time_range=None,  # None or (t_start, t_stop) for a multi-frame time template
     method="phase_cross_correlation",  # "phase_cross_correlation" or "pystackreg"
     time_registration_mode="projection",  # "projection", "full_3d", or "none"
     time_reference_mode="template",  # "template" or "previous"
