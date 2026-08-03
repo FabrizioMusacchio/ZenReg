@@ -86,17 +86,41 @@ Use full 3D registration instead when:
 Quick projection previews
 -------------------------
 
-Before choosing a projection strategy, inspect a few projected time points:
+Before choosing a projection strategy, inspect the registration image or
+template that ZenReg would use for estimation:
 
 .. code-block:: python
 
-   from zenreg import show_timepoints, z_project
+   from zenreg import show_projection, show_timepoints, z_project
+
+   show_projection(
+       image,
+       title                            = "Template preview",
+       registration_channel             = 0,
+       registration_stack               = 0,
+       registration_template_time_range = "all",
+       registration_z_range             = (5, 25),
+       projection_method                = "max",
+       save_dir                         = "example_data/synthetic_data/registered/figures",
+       return_projection                = False)
+
+   projected_template = show_projection(
+       image,
+       title                            = "Returned template preview",
+       registration_channel             = 0,
+       registration_template_time_range = "all",
+       registration_z_range             = (5, 25),
+       projection_method                = "mean",
+       return_projection                = True)
 
    show_timepoints(
        image,
        title             = "Projection preview",
        channel           = 0,
+       reference_time    = 0,
+       moving_time       = 25,
        projection_method = "max",
+       projection_z_range = (5, 25),
        save_dir          = "example_data/synthetic_data/registered/figures")
 
    projected = z_project(
@@ -104,9 +128,11 @@ Before choosing a projection strategy, inspect a few projected time points:
        zrange            = (5, 25),
        projection_method = "mean")
 
-``show_timepoints`` is a tutorial helper for quick visual inspection and can
-save the preview figure when ``save_dir`` or ``save_path`` is provided.
-``z_project`` returns the projected array and can be used in custom scripts.
+``show_projection`` is useful for previewing a single reference-frame
+projection or a time-aggregated template. By default it only shows or saves the
+preview figure. Set ``return_projection=True`` when you also want the projected
+``YX`` image in Python. ``show_timepoints`` compares two projected time points
+and their residual. ``z_project`` returns projected arrays for custom scripts.
 
 Projection settings in reports
 ------------------------------

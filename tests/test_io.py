@@ -21,6 +21,7 @@ def test_omio_roundtrip_preserves_tzcyx_shape_and_metadata(tmp_path):
         tmp_path / "roundtrip.ome.tif",
         stack,
         metadata=metadata,
+        compression_level=1,
         overwrite=True,
         verbose=False,
     )

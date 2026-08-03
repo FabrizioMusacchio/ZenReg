@@ -13,22 +13,36 @@ Use ``phase_cross_correlation`` for fast global translation correction:
 .. code-block:: python
 
    from pathlib import Path
-   from zenreg import load_stack, register_stack, save_stack
+   from zenreg import load_stack, register_stack, save_stack, show_projection
 
    path = Path("example_data/synthetic_data/synthetic_2d_t_xy.ome.tif")
    image, metadata = load_stack(path, return_metadata=True)
 
+   show_projection(
+       image,
+       title                            = "2D+t all-frame template preview",
+       registration_channel             = 0,
+       registration_template_time_range = "all",
+       registration_z_range             = "all",
+       projection_method                = "max",
+       save_dir                         = "example_data/synthetic_data/registered/figures",
+       return_projection                = False)
+
    registered, details = register_stack(
        image,
        registration_channel   = 0,
-       registration_stack     = 0,
-       registration_template_time_range = None,
+       registration_template_time_range = "all",
        method                 = "phase_cross_correlation",
        time_registration_mode = "projection",
-       time_reference_mode    = "template",
        projection_method      = "max",
        zreg                   = False,
+       zero_clip              = False,
        max_xy_shifts          = (8, 8),
+       transform_backend      = "skimage",
+       transform_order        = 1,
+       filter_slices          = False,
+       filter_projections     = False,
+       median_kernel_size     = 3,
        n_jobs                 = 4,
        return_shifts          = True,
        return_details         = True)
@@ -37,7 +51,8 @@ Use ``phase_cross_correlation`` for fast global translation correction:
        "example_data/synthetic_data/registered/2d_t_xy_phase_registered.ome.tif",
        registered,
        metadata             = metadata,
-       registration_details = details)
+       registration_details = details,
+       compression_level    = 3)
 
 ``projection_method="max"`` is a good default for sparse spots or puncta.
 ``mean`` can be better for dense signals, while ``median`` is robust to
@@ -54,8 +69,6 @@ Options used here:
    * - ``registration_channel``
      - Channel used to estimate shifts. The correction is applied to all
        channels.
-   * - ``registration_stack``
-     - Reference time point/template. Default: ``0``.
    * - ``registration_template_time_range``
      - Optional half-open time range ``(start, stop)`` used to build a
        multi-frame registration template. Use ``"all"`` to aggregate all time
@@ -77,10 +90,35 @@ Options used here:
    * - ``zreg``
      - Whether to estimate Z shifts. Default: ``False``.
    * - ``max_xy_shifts``
-     - Optional absolute correction-shift limit as ``(max_y, max_x)``.  ``None`` means no XY clipping.
+     - Optional absolute correction-shift limit as ``(max_y, max_x)``.
+       ``None`` means no XY clipping. Use a value above the expected motion;
+       for very small drift, ``(2, 2)`` can be appropriate.
+   * - ``zero_clip``
+     - If ``True``, crop zero borders introduced by correction. ``False`` keeps
+       the original shape, which is useful for visual before/after comparison.
+       Default: ``False``.
+   * - ``transform_backend``
+     - Backend used to apply translations. Default: ``"skimage"``. Alternative:
+       ``"scipy"``.
+   * - ``transform_order``
+     - Interpolation order. ``1`` is a good default for intensity data;
+       ``0`` preserves sparse puncta or label-like images.
+   * - ``filter_slices``
+     - Median-filter Z slices before projection. For 2D+t data with ``Z=1``,
+       this is usually equivalent to filtering each frame before estimation.
+       Default: ``False``.
+   * - ``filter_projections``
+     - Median-filter projected registration images before shift estimation.
+       Default: ``False``.
+   * - ``median_kernel_size``
+     - Median-filter kernel size in pixels for ``filter_slices`` and
+       ``filter_projections``. Default: ``3``.
    * - ``n_jobs``
      - Number of CPU workers for independent frames/slices. ``-1`` uses all
        available workers. Default:  ``1``.
+   * - ``compression_level``
+     - OME-TIFF compression level forwarded to OMIO in ``save_stack``.
+       Default: ``3``.
    * - ``return_shifts`` / ``return_details``
      - Return detected shifts or the full reproducibility/details dictionary. Both are ``False`` unless requested.
 
@@ -90,35 +128,56 @@ Options used here:
    With ZenReg's helper function ``zenreg.available_cpu_count()``, you can 
    check how many CPU workers are available for your system.
 
-Multi-frame templates
----------------------
-
-For noisy 2D+t data, a single reference frame can be less stable than a
-template built from multiple time points. Use
-``registration_template_time_range`` to aggregate a half-open range along the
-time axis:
+ZenReg comes with a useful helper function ``show_projection`` to preview an
+intended registration template. This can help you decide whether to use a
+single reference frame or an aggregated multi-frame template, which projection
+method to use, and which registration channel to select:
 
 .. code-block:: python
 
-   registered, details = register_stack(
-       image,
-       registration_channel              = 0,
-       registration_stack                = 0,
-       registration_template_time_range  = (0, 20),
-       method                            = "phase_cross_correlation",
-       time_registration_mode            = "projection",
-       time_reference_mode               = "template",
-       projection_method                 = "median",
-       zreg                              = False,
-       return_shifts                     = True,
-       return_details                    = True)
+   from zenreg import show_projection
 
-Here, ``projection_method="median"`` is used to build the time template from
-``t=0:20``. For 2D+t stacks the Z axis is a singleton, so the useful operation
-is the time aggregation. For 3D+t stacks, the same option first builds a ZYX
-template from the selected time points; ``registration_z_range`` still refers
-only to the Z axis. To use every time point explicitly, set
-``registration_template_time_range="all"``.
+   show_projection(
+       image,
+       title                            = "Template preview",
+       registration_channel             = 0,
+       registration_stack               = 0,
+       registration_template_time_range = "all",
+       registration_z_range             = "all",
+       projection_method                = "max",
+       save_dir                         = "example_data/synthetic_data/registered/figures",
+       return_projection                = False)
+
+Options used by ``show_projection``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 36 64
+
+   * - Argument
+     - Meaning
+   * - ``registration_channel``
+     - Channel used for the preview image. Match this to the channel you plan
+       to use for registration.
+   * - ``registration_stack``
+     - Single time point to preview when
+       ``registration_template_time_range=None``. Default: ``0``.
+   * - ``registration_template_time_range``
+     - Time range used to aggregate a template preview. Use ``"all"`` for all
+       frames, ``(start, stop)`` for a half-open range, or ``None`` for only
+       ``registration_stack``.
+   * - ``registration_z_range``
+     - Z range used before projection. Use ``"all"`` for all available Z
+       slices or ``(z_start, z_stop)`` for a half-open range.
+   * - ``projection_method``
+     - Projection and aggregation method. Same options as registration:
+       ``"max"``, ``"mean"``, ``"median"``, ``"var"``, or ``"std"``.
+   * - ``save_dir`` / ``save_path``
+     - Save the preview figure. ``save_path`` uses an explicit filename;
+       ``save_dir`` lets ZenReg generate one from the settings.
+   * - ``return_projection``
+     - If ``True``, return the projected ``YX`` image. Default: ``False``, so
+       the helper only shows/saves the preview.
 
 pystackreg
 ----------
@@ -131,12 +190,18 @@ the same YX projections:
    registered, details = register_stack(
        image,
        registration_channel   = 0,
-       registration_stack     = 0,
+       registration_template_time_range = "all",
        method                 = "pystackreg",
        time_registration_mode = "projection",
        projection_method      = "max",
        zreg                   = False,
        max_xy_shifts          = (8, 8),
+       zero_clip              = False,
+       transform_backend      = "skimage",
+       transform_order        = 1,
+       filter_slices          = False,
+       filter_projections     = False,
+       median_kernel_size     = 3,
        return_shifts          = True,
        return_details         = True)
 
@@ -151,18 +216,27 @@ NoRMCorre is available through the same main wrapper:
    registered, details = register_stack(
        image,
        registration_channel   = 0,
-       registration_stack     = 0,
        method                 = "normcorre",
        time_registration_mode = "projection",
        projection_method      = "max",
+       zreg                   = False,
+       max_xy_shifts          = (8, 8),
+       zero_clip              = False,
+       transform_backend      = "skimage",
+       transform_order        = 1,
        nc_pw_rigid            = True,
        nc_strides             = (32, 32),
        nc_overlaps            = (16, 16),
        nc_max_deviation_rigid = 3,
-       max_xy_shifts          = (8, 8),
+       nc_template_init_mode  = "median",
+       nc_template_update_method = "caiman",
        nc_n_jobs              = 4,
        return_shifts          = True,
        return_details         = True)
+
+``registration_template_time_range`` is not used with ``method="normcorre"``.
+NoRMCorre builds and updates its own template through ``nc_template_init_mode``
+and ``nc_template_update_method``.
 
 New options in this block:
 
@@ -184,6 +258,13 @@ New options in this block:
      - Maximum local patch deviation around the global rigid shift. ``None`` (default) means not limited.
    * - ``nc_n_jobs``
      - Worker count used by the NoRMCorre backend.  Default:  ``1``.
+   * - ``nc_template_init_mode``
+     - Initial NoRMCorre template strategy. ``"median"`` uses a sparse
+       CaImAn-like sample across time; ``"registration_stack"`` uses one
+       explicit reference frame. Default: ``"registration_stack"``.
+   * - ``nc_template_update_method``
+     - Template update strategy after each NoRMCorre pass. ``"caiman"`` uses
+       chunk means followed by a median across chunks. Default: ``"caiman"``.
 
 Before choosing ``nc_strides`` and ``nc_overlaps``, it is useful to draw the
 patch layout. ZenReg provides a helper function for this:

@@ -28,10 +28,13 @@ The minimal pattern is:
        "example_data/synthetic_data/registered/synthetic_2d_t_xy_registered.ome.tif",
        registered,
        metadata             = metadata,
-       registration_details = details)
+       registration_details = details,
+       compression_level    = 3)
 
 Passing ``registration_details`` to ``save_stack`` activates ZenReg's report
-writer. For an output called ``image_registered.ome.tif``, ZenReg writes:
+writer. ``compression_level`` is forwarded to OMIO's OME-TIFF writer; the
+default is ``3``. For an output called ``image_registered.ome.tif``, ZenReg
+writes:
 
 .. list-table::
    :header-rows: 1
@@ -93,7 +96,9 @@ the raw detected shift exceeded a configured limit and was clipped before being
 applied. When rotation registration is enabled, rotation estimates are shown on
 a secondary axis as ``rotation_z``, ``rotation_y``, and/or ``rotation_x``
 depending on the selected backend. Rotation estimates that exceeded
-``max_rot_shifts`` are marked in the same way.
+``max_rot_shifts`` are marked in the same way. For long time series, ZenReg
+draws line traces without per-frame markers to keep the plot readable, while
+limit-exceeded estimates remain marked as small red points.
 
 The lower panel shows Pearson correlation between the registration template and
 each frame. When available, ZenReg plots both the pre-registration and

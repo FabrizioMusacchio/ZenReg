@@ -42,6 +42,7 @@ from zenreg import (
     register_stack,
     save_stack,
     show_before_after,
+    show_projection,
 )
 from zenreg.synthetic import write_example_dataset
 # %% DEFINE INPUT AND OUTPUT PATHS
@@ -71,6 +72,16 @@ expected_shifts_3d_rigid_simpleitk, expected_rotations_3d_rigid_simpleitk = load
     registration_stack=0)
 print(f"Dense SimpleITK stack shape: {stack_3d_rigid_simpleitk.shape} (TZCYX)")
 open_in_napari(stack_3d_rigid_simpleitk, metadata_3d_rigid_simpleitk, fname="Dense 3D rigid raw", enabled=OPEN_IN_NAPARI)
+# show_projection(
+#     stack_3d_rigid_simpleitk,
+#     title="Dense 3D rigid reference projection preview",
+#     registration_channel=0,
+#     registration_stack=0,
+#     registration_z_range="all",
+#     projection_method="max",
+#     save_dir=FIGURE_DIR,
+#     return_projection=False,
+# )
 
 registered_3d_rigid_simpleitk, details_3d_rigid_simpleitk = register_stack(
     stack_3d_rigid_simpleitk,

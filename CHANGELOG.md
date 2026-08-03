@@ -36,6 +36,18 @@ Unreleased
 - Added raw, pre-clipping shift and rotation estimates to registration details,
   CSV reports, and summary plots. Summary plots now mark limit-clipped estimates
   with red open markers and report maximum raw detected shifts/rotations.
+- Summary plots now suppress per-frame line markers for long time series to
+  keep large-frame reports readable; clipped estimates are still highlighted.
+- Documented user control over OMIO OME-TIFF compression via
+  `save_stack(compression_level=...)`.
+
+#### Tutorial and preview helpers
+
+- Extended `show_timepoints` with configurable `reference_time`,
+  `moving_time`, and `projection_z_range` arguments.
+- Added `show_projection` for previewing registration-style Z/time projections
+  and all-frame template images before running `register_stack`. Projection
+  arrays are returned only when `return_projection=True`.
 
 
 --- 
@@ -149,5 +161,3 @@ platform.
 February 3, 2026
 
 Hollow project structure created and registered as a Python package.
-
---- 

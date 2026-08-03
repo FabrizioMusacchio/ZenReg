@@ -14,6 +14,7 @@ from zenreg import (
     print_rigid_comparison,
     print_shift_comparison,
     show_before_after,
+    show_projection,
     show_residual_comparison,
     show_residual_comparison_multi,
     show_slices,
@@ -140,11 +141,50 @@ def test_show_timepoints_and_slices_write_pngs(tmp_path):
     stack[0, 0, 0, 4:8, 4:8] = 1.0
     stack[1, 1, 0, 5:9, 5:9] = 1.0
 
-    show_timepoints(stack, title="Timepoints test", save_dir=tmp_path)
+    show_timepoints(
+        stack,
+        title="Timepoints test",
+        moving_time=1,
+        projection_z_range=(0, 2),
+        save_dir=tmp_path,
+    )
     show_slices(stack, title="Slices test", save_dir=tmp_path, z0=0, z1=99)
 
-    assert (tmp_path / "timepoints_test_c0_max_timepoints.png").exists()
+    assert (tmp_path / "timepoints_test_c0_t0_t1_max_z0-2_timepoints.png").exists()
     assert (tmp_path / "slices_test_c0_z0_z2_slices.png").exists()
+
+
+def test_show_projection_returns_yx_and_writes_png(tmp_path):
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+    stack = np.zeros((3, 2, 2, 8, 9), dtype=np.float32)
+    stack[0, 0, 1, 2:4, 3:5] = 1.0
+    stack[1, 1, 1, 4:6, 5:7] = 2.0
+
+    result = show_projection(
+        stack,
+        title="Projection preview",
+        registration_channel=1,
+        registration_template_time_range=(0, 2),
+        registration_z_range="all",
+        projection_method="max",
+        save_dir=tmp_path,
+    )
+    projection = show_projection(
+        stack,
+        title="Projection preview returned",
+        registration_channel=1,
+        registration_template_time_range=(0, 2),
+        registration_z_range="all",
+        projection_method="max",
+        return_projection=True,
+    )
+
+    assert result is None
+    assert projection.shape == (8, 9)
+    assert float(np.max(projection)) == 2.0
+    assert (tmp_path / "projection_preview_c1_max_t0-2_zall_projection.png").exists()
 
 
 def test_show_timepoints_skips_single_timepoint(capsys):

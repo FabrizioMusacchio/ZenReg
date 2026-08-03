@@ -107,6 +107,7 @@ SETTING_KEYS = (
     "zero_clip_failed_reason",
     "stack_shape_tzcyx",
 )
+_SUMMARY_MARKER_FRAME_LIMIT = 250
 
 # %% HELPER FUNCTIONS
 def _as_details_dict(registration_details: dict[str, Any] | np.ndarray) -> dict[str, Any]:
@@ -560,6 +561,11 @@ def _add_shift_limits(ax_shift, details: dict[str, Any]) -> None:
         ax_shift.axhline(max_z, color="tab:green", linestyle="--", linewidth=0.8, alpha=0.45)
         ax_shift.axhline(-max_z, color="tab:green", linestyle="--", linewidth=0.8, alpha=0.45)
 
+def _summary_marker_for_frame_count(frame_count: int):
+    """Return sparse markers only for summary plots with manageable frame counts."""
+
+    return "o" if int(frame_count) <= _SUMMARY_MARKER_FRAME_LIMIT else None
+
 def _add_limit_exceeded_markers(ax, frames: np.ndarray, applied: np.ndarray, raw: np.ndarray, *, label: str) -> None:
     """Mark frames for which a raw estimate was clipped."""
 
@@ -572,16 +578,28 @@ def _add_limit_exceeded_markers(ax, frames: np.ndarray, applied: np.ndarray, raw
         return
     existing_labels = {legend_label for legend_label in ax.get_legend_handles_labels()[1]}
     marker_label = label if label not in existing_labels else "_nolegend_"
-    ax.scatter(
-        frames[exceeded],
-        applied[exceeded],
-        s=52,
-        facecolor="none",
-        edgecolor="red",
-        linewidth=1.5,
-        zorder=6,
-        label=marker_label,
-    )
+    if len(frames) > _SUMMARY_MARKER_FRAME_LIMIT:
+        ax.plot(
+            frames[exceeded],
+            applied[exceeded],
+            linestyle="none",
+            marker=".",
+            markersize=5,
+            color="red",
+            zorder=6,
+            label=marker_label,
+        )
+    else:
+        ax.scatter(
+            frames[exceeded],
+            applied[exceeded],
+            s=52,
+            facecolor="none",
+            edgecolor="red",
+            linewidth=1.5,
+            zorder=6,
+            label=marker_label,
+        )
 
 def _write_summary_plot(
     path: Path,
@@ -596,6 +614,7 @@ def _write_summary_plot(
 
     time_count = registered_stack.shape[0]
     frames = np.arange(time_count)
+    line_marker = _summary_marker_for_frame_count(time_count)
     shifts_zyx = _time_shifts_zyx(details, time_count)
     raw_shifts_zyx = _time_shifts_zyx_raw(details, time_count)
     rotations, rotation_labels = _rotation_shift_series_deg(details, time_count)
@@ -608,12 +627,12 @@ def _write_summary_plot(
         sharex=True,
         gridspec_kw={"height_ratios": [2.0, 1.2]},
     )
-    ax_shift.plot(frames, shifts_zyx[:, 1], marker="o", label="shift_y", color="tab:blue")
-    ax_shift.plot(frames, shifts_zyx[:, 2], marker="o", label="shift_x", color="tab:orange")
+    ax_shift.plot(frames, shifts_zyx[:, 1], marker=line_marker, label="shift_y", color="tab:blue")
+    ax_shift.plot(frames, shifts_zyx[:, 2], marker=line_marker, label="shift_x", color="tab:orange")
     _add_limit_exceeded_markers(ax_shift, frames, shifts_zyx[:, 1], raw_shifts_zyx[:, 1], label="limit exceeded")
     _add_limit_exceeded_markers(ax_shift, frames, shifts_zyx[:, 2], raw_shifts_zyx[:, 2], label="limit exceeded")
     if bool(details.get("zreg")) or np.any(np.abs(shifts_zyx[:, 0]) > 0):
-        ax_shift.plot(frames, shifts_zyx[:, 0], marker="o", label="shift_z", color="tab:green")
+        ax_shift.plot(frames, shifts_zyx[:, 0], marker=line_marker, label="shift_z", color="tab:green")
         _add_limit_exceeded_markers(ax_shift, frames, shifts_zyx[:, 0], raw_shifts_zyx[:, 0], label="limit exceeded")
     _add_shift_limits(ax_shift, details)
     ax_shift.set_ylabel("Detected correction shift [px]")
@@ -627,7 +646,7 @@ def _write_summary_plot(
             ax_rot.plot(
                 frames,
                 rotations[:, axis_index],
-                marker="s",
+                marker=line_marker,
                 label=label,
                 color=rotation_colors[axis_index % len(rotation_colors)],
                 alpha=0.75,
@@ -653,12 +672,12 @@ def _write_summary_plot(
         ax_corr.plot(
             frames,
             correlations_before,
-            marker="o",
+            marker=line_marker,
             color="0.45",
             alpha=0.75,
             label="before",
         )
-    ax_corr.plot(frames, correlations_after, marker="o", color="tab:purple", label="after")
+    ax_corr.plot(frames, correlations_after, marker=line_marker, color="tab:purple", label="after")
     ax_corr.set_ylabel("Pearson r vs template")
     ax_corr.set_xlabel("Frame")
     ax_corr.set_ylim(-1.05, 1.05)

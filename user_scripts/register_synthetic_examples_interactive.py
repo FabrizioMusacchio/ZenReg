@@ -49,6 +49,7 @@ from zenreg import (
     register_stack,
     save_stack,
     show_before_after,
+    show_projection,
     show_slices,
     show_timepoints,
 )
@@ -79,7 +80,70 @@ GT_3D_T_ZYX_PATH = EXAMPLE_DIR / "synthetic_3d_t_zyx_time_shifts_gt.csv"
 GT_2D_T_ROT_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_rot_xy_time_shifts_gt.csv"
 GT_2D_T_ROT_DEG_PATH = EXAMPLE_DIR / "synthetic_2d_t_rot_xy_time_rotations_gt.csv"
 GT_3D_T_TRANS_ROT_Z_PATH = EXAMPLE_DIR / "synthetic_3d_t_trans_rot_z_rigid_transform_gt.csv"
-# %% 1) 2D+t: GLOBAL XY TIME REGISTRATION RELATIVE TO t=0
+# %% 1a) 2D+t: GLOBAL XY TIME REGISTRATION WITH A MULTI-FRAME TEMPLATE
+stack_2d_t_xy, metadata_2d_t_xy = load_stack(STACK_2D_T_XY_PATH, return_metadata=True, verbose=False)
+expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")
+print(f"2D+t XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
+show_timepoints(stack_2d_t_xy, title="2D+t XY before registration", channel=0, projection_method="max", save_dir=FIGURE_DIR)
+# template_preview_2d_t_xy = show_projection(
+#     stack_2d_t_xy,
+#     title="2D+t all-frame template preview",
+#     registration_channel=0,
+#     registration_template_time_range="all",
+#     registration_z_range="all",
+#     projection_method="median",
+#     save_dir=FIGURE_DIR,
+#     return_projection=True,
+# )
+
+registered_2d_t_xy_time_template, details_2d_t_xy_time_template = register_stack(
+    stack_2d_t_xy,
+    registration_channel=0,  # channel used to estimate shifts
+    #registration_stack=0,  # reference index; kept for reporting/compatibility
+    registration_template_time_range="all",  # "all" or (t_start, t_stop) for a multi-frame time template
+    method="phase_cross_correlation",  # "phase_cross_correlation" or "pystackreg"
+    time_registration_mode="projection",  # "projection", "full_3d", or "none"
+    time_reference_mode="template",  # required for registration_template_time_range
+    projection_method="median",  # used to aggregate the selected time points
+    zreg=False,  # estimate/apply Z shifts during time registration
+    zero_clip=False,  # keep original shape for visual comparison
+    max_xy_shifts=(2,2),  # None or (max_y, max_x)
+    transform_backend="skimage",  # "skimage" or "scipy"
+    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
+    filter_slices=False,  # median-filter Z slices before projection
+    filter_projections=False,  # median-filter projections before shift estimation
+    median_kernel_size=3,  # median-filter kernel size in pixels
+    n_jobs=2,  # CPU worker threads for independent time points/slices
+    verbose=True,
+    return_shifts=True,
+    return_details=True)
+print_shift_comparison(
+    "2D+t XY time registration with all-frame template",
+    details_2d_t_xy_time_template["time_shifts_yx"],
+    expected_2d_t_xy)
+show_timepoints(
+    registered_2d_t_xy_time_template,
+    title="2D+t XY after registration with all-frame template",
+    channel=0,
+    projection_method="max",
+    save_dir=FIGURE_DIR)
+show_before_after(
+    stack_2d_t_xy,
+    registered_2d_t_xy_time_template,
+    title=STACK_2D_T_XY_PATH.name.split(".")[0] + "_time-template before/after registration",
+    channel=0,
+    save_dir=OUTPUT_DIR)
+open_in_napari(
+    registered_2d_t_xy_time_template,
+    metadata_2d_t_xy,
+    fname="2D+t XY after registration with all-frame template",
+    enabled=OPEN_IN_NAPARI)
+save_stack(
+    OUTPUT_DIR / "synthetic_2d_t_xy_time_template_registered.ome.tif",
+    registered_2d_t_xy_time_template,
+    metadata=metadata_2d_t_xy,
+    registration_details=details_2d_t_xy_time_template)
+# %% 1b) 2D+t: GLOBAL XY TIME REGISTRATION RELATIVE TO t=0 ONLY
 stack_2d_t_xy, metadata_2d_t_xy = load_stack(STACK_2D_T_XY_PATH, return_metadata=True, verbose=False)
 expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")
 print(f"2D+t XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
@@ -131,60 +195,6 @@ save_stack(
     registered_2d_t_xy,
     metadata=metadata_2d_t_xy,
     registration_details=details_2d_t_xy)
-# %% 1b) 2D+t: GLOBAL XY TIME REGISTRATION WITH A MULTI-FRAME TEMPLATE
-stack_2d_t_xy, metadata_2d_t_xy = load_stack(STACK_2D_T_XY_PATH, return_metadata=True, verbose=False)
-expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")
-print(f"2D+t XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
-show_timepoints(stack_2d_t_xy, title="2D+t XY before registration", channel=0, projection_method="max", save_dir=FIGURE_DIR)
-
-
-registered_2d_t_xy_time_template, details_2d_t_xy_time_template = register_stack(
-    stack_2d_t_xy,
-    registration_channel=0,  # channel used to estimate shifts
-    registration_stack=0,  # reference index; kept for reporting/compatibility
-    registration_template_time_range="all",  # "all" or (t_start, t_stop) for a multi-frame time template
-    method="phase_cross_correlation",  # "phase_cross_correlation" or "pystackreg"
-    time_registration_mode="projection",  # "projection", "full_3d", or "none"
-    time_reference_mode="template",  # required for registration_template_time_range
-    projection_method="median",  # used to aggregate the selected time points
-    zreg=False,  # estimate/apply Z shifts during time registration
-    zero_clip=False,  # keep original shape for visual comparison
-    max_xy_shifts=(2,2),  # None or (max_y, max_x)
-    transform_backend="skimage",  # "skimage" or "scipy"
-    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
-    filter_slices=False,  # median-filter Z slices before projection
-    filter_projections=False,  # median-filter projections before shift estimation
-    median_kernel_size=3,  # median-filter kernel size in pixels
-    n_jobs=2,  # CPU worker threads for independent time points/slices
-    verbose=True,
-    return_shifts=True,
-    return_details=True)
-print_shift_comparison(
-    "2D+t XY time registration with all-frame template",
-    details_2d_t_xy_time_template["time_shifts_yx"],
-    expected_2d_t_xy)
-show_timepoints(
-    registered_2d_t_xy_time_template,
-    title="2D+t XY after registration with all-frame template",
-    channel=0,
-    projection_method="max",
-    save_dir=FIGURE_DIR)
-show_before_after(
-    stack_2d_t_xy,
-    registered_2d_t_xy_time_template,
-    title=STACK_2D_T_XY_PATH.name.split(".")[0] + "_time-template before/after registration",
-    channel=0,
-    save_dir=OUTPUT_DIR)
-open_in_napari(
-    registered_2d_t_xy_time_template,
-    metadata_2d_t_xy,
-    fname="2D+t XY after registration with all-frame template",
-    enabled=OPEN_IN_NAPARI)
-save_stack(
-    OUTPUT_DIR / "synthetic_2d_t_xy_time_template_registered.ome.tif",
-    registered_2d_t_xy_time_template,
-    metadata=metadata_2d_t_xy,
-    registration_details=details_2d_t_xy_time_template)
 # %% 2) 3D: INTRA-STACK XY SLICE REGISTRATION
 stack_3d_z_xy, metadata_3d_z_xy = load_stack(STACK_3D_Z_XY_PATH, return_metadata=True, verbose=False)
 expected_3d_z_xy = load_expected_slice_registration_shifts(GT_3D_Z_XY_PATH)

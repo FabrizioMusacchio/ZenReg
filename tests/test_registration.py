@@ -54,6 +54,20 @@ def test_phase_cross_correlation_matches_synthetic_gt_default_reference():
     np.testing.assert_allclose(estimated_shifts, expected_shifts, atol=0.05)
 
 
+def test_2d_synthetic_shift_amplitudes_keep_default_and_allow_override():
+    _, default_shifts = create_2d_motion_distorted_stack(time_count=9, noise_sigma=0.0)
+    _, custom_shifts = create_2d_motion_distorted_stack(
+        time_count=9,
+        shift_amplitude_y=8.0,
+        shift_amplitude_x=6.0,
+        noise_sigma=0.0,
+    )
+
+    np.testing.assert_allclose(default_shifts, custom_shifts / 2.0, atol=1e-6)
+    np.testing.assert_allclose(np.max(default_shifts[:, 0]), 4.0, atol=1e-6)
+    np.testing.assert_allclose(np.min(default_shifts[:, 1]), -6.0, atol=1e-6)
+
+
 def test_registration_stack_selects_reference_timepoint():
     stack, applied_shifts = create_2d_motion_distorted_stack(noise_sigma=0.0)
     registration_stack = 3

@@ -182,13 +182,80 @@ def print_caiman_patch_summary(name: str, details: dict, *, t: int = 1) -> None:
     print(f"  patch min xy:           {patch_shifts_xy.min(axis=0)}")
     print(f"  patch max xy:           {patch_shifts_xy.max(axis=0)}")
 
-def _project_one_time(stack, *, t: int, channel: int, projection_method: str) -> np.ndarray:
+def _normalize_projection_range(range_value, extent: int, *, name: str) -> tuple[int, int]:
+    """Normalize ``None``/``"all"``/tuple ranges for tutorial projections."""
+
+    if range_value is None:
+        return 0, int(extent)
+    if isinstance(range_value, str):
+        if range_value.strip().lower() == "all":
+            return 0, int(extent)
+        raise ValueError(f"{name} must be None, 'all', or a half-open (start, stop) tuple.")
+    if len(range_value) != 2:
+        raise ValueError(f"{name} must be None, 'all', or a half-open (start, stop) tuple.")
+    start = max(0, min(int(range_value[0]), int(extent)))
+    stop = max(0, min(int(range_value[1]), int(extent)))
+    if stop < start:
+        start, stop = stop, start
+    if start == stop:
+        if start >= int(extent):
+            start = max(0, int(extent) - 1)
+            stop = int(extent)
+        else:
+            stop = min(int(extent), start + 1)
+    return start, stop
+
+def _format_range_for_filename(range_value, start: int, stop: int, *, prefix: str) -> str:
+    """Return a compact range label for generated tutorial filenames."""
+
+    if range_value is None or (isinstance(range_value, str) and range_value.strip().lower() == "all"):
+        return f"{prefix}all"
+    return f"{prefix}{int(start)}-{int(stop)}"
+
+def _project_one_time(
+    stack,
+    *,
+    t: int,
+    channel: int,
+    projection_method: str,
+    projection_z_range=None,
+) -> np.ndarray:
     """Project one time point/channel to YX without reading all time points."""
 
+    z_start, z_stop = _normalize_projection_range(
+        projection_z_range,
+        stack.shape[1],
+        name="projection_z_range",
+    )
     return z_project(
-        stack[int(t) : int(t) + 1, :, int(channel) : int(channel) + 1, :, :],
+        stack[int(t) : int(t) + 1, z_start:z_stop, int(channel) : int(channel) + 1, :, :],
         projection_method=projection_method,
     )[0, 0, 0]
+
+def _aggregate_projection_frames(frame_projections: list[np.ndarray], *, projection_method: str) -> np.ndarray:
+    """Aggregate already projected YX frames with a ZenReg projection method."""
+
+    method = str(projection_method).strip().lower()
+    if not frame_projections:
+        raise ValueError("At least one projected frame is required.")
+    if method == "max":
+        aggregate = np.asarray(frame_projections[0], dtype=np.float32).copy()
+        for projection in frame_projections[1:]:
+            aggregate = np.maximum(aggregate, np.asarray(projection, dtype=np.float32))
+        return aggregate
+    if method == "mean":
+        aggregate = np.zeros_like(np.asarray(frame_projections[0], dtype=np.float32), dtype=np.float32)
+        for projection in frame_projections:
+            aggregate += np.asarray(projection, dtype=np.float32)
+        return aggregate / float(len(frame_projections))
+    stacked = np.stack([np.asarray(projection, dtype=np.float32) for projection in frame_projections], axis=0)
+    if method == "median":
+        return np.median(stacked, axis=0).astype(np.float32, copy=False)
+    if method == "var":
+        return np.var(stacked, axis=0).astype(np.float32, copy=False)
+    if method == "std":
+        return np.std(stacked, axis=0).astype(np.float32, copy=False)
+    raise ValueError("projection_method must be one of 'max', 'mean', 'median', 'var', or 'std'.")
 
 def _slugify_for_filename(text: str) -> str:
     """Return a compact ASCII-ish filename slug for tutorial figures."""
@@ -210,12 +277,15 @@ def show_timepoints(
     *,
     title: str,
     channel: int = 0,
+    reference_time: int = 0,
+    moving_time: int = 1,
     projection_method: str = "max",
+    projection_z_range="all",
     save_path: str | Path | None = None,
     save_dir: str | Path | None = None,
     dpi: int = 200,
 ) -> None:
-    """Show and optionally save t=0, t=1, and their difference as Z projections.
+    """Show and optionally save two time points and their difference as Z projections.
 
     Parameters
     ----------
@@ -225,8 +295,14 @@ def show_timepoints(
         Figure title. Used to generate a filename when ``save_dir`` is given.
     channel : int, optional
         Channel to project.
+    reference_time, moving_time : int, optional
+        Time points to compare.
     projection_method : str, optional
         Z-projection method used for the quick-look images.
+    projection_z_range : "all", tuple[int, int], or None, optional
+        Z range used for the quick-look projections. ``"all"`` and ``None``
+        use all available Z slices. A tuple is interpreted as a half-open
+        ``(z_start, z_stop)`` interval.
     save_path : str, pathlib.Path, or None, optional
         Explicit output path for the figure. If provided, this takes precedence
         over ``save_dir``.
@@ -240,28 +316,55 @@ def show_timepoints(
     if stack.shape[0] < 2:
         print(f"Skipping timepoint quick view for {title!r}: T < 2.")
         return
+    reference_time = int(reference_time)
+    moving_time = int(moving_time)
+    if not 0 <= reference_time < stack.shape[0]:
+        raise ValueError(f"reference_time must be within 0 <= t < {stack.shape[0]}. Got {reference_time}.")
+    if not 0 <= moving_time < stack.shape[0]:
+        raise ValueError(f"moving_time must be within 0 <= t < {stack.shape[0]}. Got {moving_time}.")
+    z_start, z_stop = _normalize_projection_range(
+        projection_z_range,
+        stack.shape[1],
+        name="projection_z_range",
+    )
 
-    projection_t0 = _project_one_time(stack, t=0, channel=channel, projection_method=projection_method)
-    projection_t1 = _project_one_time(stack, t=1, channel=channel, projection_method=projection_method)
-    projection_diff = projection_t1 - projection_t0
+    projection_reference = _project_one_time(
+        stack,
+        t=reference_time,
+        channel=channel,
+        projection_method=projection_method,
+        projection_z_range=(z_start, z_stop),
+    )
+    projection_moving = _project_one_time(
+        stack,
+        t=moving_time,
+        channel=channel,
+        projection_method=projection_method,
+        projection_z_range=(z_start, z_stop),
+    )
+    projection_diff = projection_moving - projection_reference
 
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(1, 3, figsize=(10, 3), constrained_layout=True)
-    axes[0].imshow(projection_t0, cmap="gray")
-    axes[0].set_title("t=0")
-    axes[1].imshow(projection_t1, cmap="gray")
-    axes[1].set_title("t=1")
+    axes[0].imshow(projection_reference, cmap="gray")
+    axes[0].set_title(f"t={reference_time}")
+    axes[1].imshow(projection_moving, cmap="gray")
+    axes[1].set_title(f"t={moving_time}")
     max_abs_diff = max(float(np.max(np.abs(projection_diff))), 1e-6)
     axes[2].imshow(projection_diff, cmap="bwr", vmin=-max_abs_diff, vmax=max_abs_diff)
-    axes[2].set_title("t1 - t0")
+    axes[2].set_title(f"t{moving_time} - t{reference_time}")
     for ax in axes:
         ax.axis("off")
     fig.suptitle(title)
     if save_path is not None or save_dir is not None:
         if save_path is None:
             slug = _slugify_for_filename(title)
-            save_path = Path(save_dir) / f"{slug}_c{int(channel)}_{projection_method}_timepoints.png"
+            z_label = _format_range_for_filename(projection_z_range, z_start, z_stop, prefix="z")
+            save_path = (
+                Path(save_dir)
+                / f"{slug}_c{int(channel)}_t{reference_time}_t{moving_time}_{projection_method}_{z_label}_timepoints.png"
+            )
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(save_path, dpi=int(dpi), bbox_inches="tight")
@@ -269,6 +372,138 @@ def show_timepoints(
         plt.close(fig)
     else:
         plt.show()
+
+def show_projection(
+    stack,
+    *,
+    title: str = "ZenReg projection preview",
+    registration_channel: int = 0,
+    registration_stack: int = 0,
+    registration_template_time_range=None,
+    registration_z_range="all",
+    projection_method: str = "max",
+    save_path: str | Path | None = None,
+    save_dir: str | Path | None = None,
+    return_projection: bool = False,
+    dpi: int = 200,
+) -> np.ndarray | None:
+    """Show and optionally save a registration-style projection preview.
+
+    This helper is intended for interactive range and projection-method
+    selection before calling :func:`zenreg.register_stack`. It uses the same
+    argument names as the registration wrapper where possible. By default the
+    function only shows/saves the preview; set ``return_projection=True`` to
+    also return the projected ``YX`` image.
+
+    Parameters
+    ----------
+    stack : array-like
+        Canonical ``TZCYX`` stack.
+    title : str, optional
+        Figure title. Used to generate a filename when ``save_dir`` is given.
+    registration_channel : int, optional
+        Channel to project.
+    registration_stack : int, optional
+        Time point to preview when ``registration_template_time_range`` is
+        ``None``.
+    registration_template_time_range : "all", tuple[int, int], or None, optional
+        Optional time range to aggregate into a template preview. ``None`` uses
+        ``registration_stack`` only.
+    registration_z_range : "all", tuple[int, int], or None, optional
+        Z range used before projection. ``"all"`` and ``None`` use all
+        available Z slices.
+    projection_method : {"max", "mean", "median", "var", "std"}, optional
+        Projection/aggregation method.
+    save_path : str, pathlib.Path, or None, optional
+        Explicit output path for the figure. If provided, this takes precedence
+        over ``save_dir``.
+    save_dir : str, pathlib.Path, or None, optional
+        Output directory. When provided without ``save_path``, ZenReg creates a
+        deterministic PNG filename from the title and projection settings.
+    return_projection : bool, optional
+        If True, return the projected ``YX`` image. Default: ``False``.
+    dpi : int, optional
+        Figure resolution used for saving.
+
+    Returns
+    -------
+    numpy.ndarray or None
+        Projected ``YX`` image if ``return_projection=True``, otherwise
+        ``None``.
+    """
+
+    registration_channel = int(registration_channel)
+    if not 0 <= registration_channel < stack.shape[2]:
+        raise ValueError(
+            f"registration_channel must be within 0 <= c < {stack.shape[2]}. "
+            f"Got {registration_channel}."
+        )
+    z_start, z_stop = _normalize_projection_range(
+        registration_z_range,
+        stack.shape[1],
+        name="registration_z_range",
+    )
+
+    if registration_template_time_range is None:
+        t_start, t_stop = _normalize_projection_range(
+            (int(registration_stack), int(registration_stack) + 1),
+            stack.shape[0],
+            name="registration_stack",
+        )
+    else:
+        t_start, t_stop = _normalize_projection_range(
+            registration_template_time_range,
+            stack.shape[0],
+            name="registration_template_time_range",
+        )
+
+    projections = [
+        _project_one_time(
+            stack,
+            t=t,
+            channel=registration_channel,
+            projection_method=projection_method,
+            projection_z_range=(z_start, z_stop),
+        )
+        for t in range(t_start, t_stop)
+    ]
+    projection = _aggregate_projection_frames(projections, projection_method=projection_method)
+
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(1, 1, figsize=(4.2, 4.0), constrained_layout=True)
+    ax.imshow(projection, cmap="gray")
+    ax.set_title(title)
+    ax.axis("off")
+    if save_path is not None or save_dir is not None:
+        if save_path is None:
+            slug = _slugify_for_filename(title)
+            t_label = _format_range_for_filename(
+                registration_template_time_range,
+                t_start,
+                t_stop,
+                prefix="t",
+            )
+            z_label = _format_range_for_filename(
+                registration_z_range,
+                z_start,
+                z_stop,
+                prefix="z",
+            )
+            save_path = (
+                Path(save_dir)
+                / f"{slug}_c{registration_channel}_{projection_method}_{t_label}_{z_label}_projection.png"
+            )
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=int(dpi), bbox_inches="tight")
+    if plt.get_backend().lower() == "agg":
+        plt.close(fig)
+    else:
+        plt.show()
+    if return_projection:
+        return projection
+    return None
 
 def show_slices(
     stack,

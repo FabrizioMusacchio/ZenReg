@@ -117,13 +117,26 @@ helpers instead of opening napari:
 
 .. code-block:: python
 
-   from zenreg import show_before_after, show_slices, show_timepoints
+   from zenreg import show_before_after, show_projection, show_slices, show_timepoints
+
+   show_projection(
+       image,
+       title                            = "template preview",
+       registration_channel             = 0,
+       registration_template_time_range = "all",
+       registration_z_range             = "all",
+       projection_method                = "max",
+       save_dir                         = "example_data/synthetic_data/registered/figures",
+       return_projection                = False)
 
    show_timepoints(
        image,
        title             = "raw timepoints",
        channel           = 0,
+       reference_time    = 0,
+       moving_time       = 25,
        projection_method = "max",
+       projection_z_range = "all",
        save_dir          = "example_data/synthetic_data/registered/figures")
 
    show_before_after(
@@ -141,6 +154,6 @@ helpers instead of opening napari:
        z1       = 6,
        save_dir = "example_data/synthetic_data/registered/figures")
 
-``show_timepoints``, ``show_before_after``, and ``show_slices`` can save PNGs
-directly, which makes them convenient for building documentation figures from
-the same tutorial scripts used for testing.
+``show_projection``, ``show_timepoints``, ``show_before_after``, and
+``show_slices`` can save PNGs directly, which makes them convenient for building
+documentation figures from the same tutorial scripts used for testing.

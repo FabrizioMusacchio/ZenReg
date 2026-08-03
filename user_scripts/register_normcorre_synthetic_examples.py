@@ -58,6 +58,7 @@ from zenreg import (
     register_stack,
     save_stack,
     show_before_after,
+    show_projection,
     show_residual_comparison,
     show_residual_comparison_multi,
 )
@@ -242,6 +243,16 @@ stack_2d_t_xy, metadata_2d_t_xy = load_stack(
 expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")
 print(f"2D+t global XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
 open_in_napari(stack_2d_t_xy, metadata_2d_t_xy, fname="2D+t global XY", enabled=OPEN_IN_NAPARI)
+# show_projection(
+#     stack_2d_t_xy,
+#     title="2D+t NoRMCorre template preview",
+#     registration_channel=0,
+#     registration_template_time_range="all",
+#     registration_z_range="all",
+#     projection_method="max",
+#     save_dir=FIGURE_DIR,
+#     return_projection=False,
+# )
 
 registered_2d_t_xy_phase, details_2d_t_xy_phase = register_stack(
     stack_2d_t_xy,

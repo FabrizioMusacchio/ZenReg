@@ -720,11 +720,30 @@ def create_2d_motion_distorted_stack(
     time_count: int = 12,
     channel_count: int = 2,
     shape_yx: tuple[int, int] = (128, 128),
+    shift_amplitude_y: float = 4.0,
+    shift_amplitude_x: float = 3.0,
     noise_sigma: float = 0.035,
     random_state: int = 7,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Create a two-channel ``TZCYX`` stack with time-wise 2D translation artifacts.
+
+    Parameters
+    ----------
+    time_count : int, optional
+        Number of time points.
+    channel_count : int, optional
+        Number of channels. The same motion is applied to all channels.
+    shape_yx : tuple[int, int], optional
+        Lateral image shape.
+    shift_amplitude_y, shift_amplitude_x : float, optional
+        Amplitudes of the deterministic time-wise motion curve in Y and X,
+        respectively. Defaults reproduce the original ZenReg synthetic example
+        behavior.
+    noise_sigma : float, optional
+        Standard deviation of additive Gaussian noise.
+    random_state : int, optional
+        Seed for deterministic image content and noise.
 
     Returns
     -------
@@ -741,7 +760,11 @@ def create_2d_motion_distorted_stack(
         fill_value=0,
         verbose=False,
     )
-    shifts = _time_shifts_yx(time_count)
+    shifts = _time_shifts_yx(
+        time_count,
+        amplitude_y=float(shift_amplitude_y),
+        amplitude_x=float(shift_amplitude_x),
+    )
 
     for t in range(time_count):
         shift_y, shift_x = shifts[t]
