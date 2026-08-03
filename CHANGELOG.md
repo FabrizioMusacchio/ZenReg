@@ -6,6 +6,18 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue)](https://doi.org/10.5281/zenodo.21727826)
 
+## 🚧 Upcoming release
+
+Unreleased
+
+### Synthetic data and benchmarks
+
+- Improved synthetic full 3D rigid benchmark data generation for dense
+  structural volumes by adding richer volumetric texture and distributed
+  features across the field of view. This makes the SimpleITK dense backend
+  and point-based backend comparisons better constrained and more
+  representative for six-degree-of-freedom registration validation.
+
 
 ## 🚀 v0.0.3 - Dummy release for Zenodo
 
