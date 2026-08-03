@@ -308,9 +308,9 @@ def _base_3d_channels(
     scale_z = float(z_count) / 20.0
     scale_y = float(shape_yx[0]) / 96.0
     scale_x = float(shape_yx[1]) / 96.0
-    margin_z = max(2.0, 0.12 * float(z_count))
-    margin_y = max(8.0, 0.08 * float(shape_yx[0]))
-    margin_x = max(8.0, 0.08 * float(shape_yx[1]))
+    margin_z = min(max(1.0, 0.12 * float(z_count)), max(0.0, 0.5 * float(z_count - 1)))
+    margin_y = min(max(4.0, 0.08 * float(shape_yx[0])), max(0.0, 0.5 * float(shape_yx[0] - 1)))
+    margin_x = min(max(4.0, 0.08 * float(shape_yx[1])), max(0.0, 0.5 * float(shape_yx[1] - 1)))
 
     def _add_blob(volume, center_zyx, sigma_zyx, amplitude):
         cz, cy, cx = center_zyx
