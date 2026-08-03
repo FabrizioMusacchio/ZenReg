@@ -8,20 +8,12 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
-## 🚧 Upcoming release
+## 🚀 v0.0.4 - Template controls, reporting refinements, and tutorial helpers
 
-Unreleased
+August 3, 2026
 
-### 🧩 Changes
-#### Synthetic data and benchmarks
-
-- Improved synthetic full 3D rigid benchmark data generation for dense
-  structural volumes by adding richer volumetric texture and distributed
-  features across the field of view. This makes the SimpleITK dense backend
-  and point-based backend comparisons better constrained and more
-  representative for six-degree-of-freedom registration validation.
-
-#### Registration controls
+### ✨ New features
+#### Registration controls and outputs
 
 - Added `registration_template_time_range` to `register_stack` for building
   multi-frame registration templates from a half-open time range. This is
@@ -40,19 +32,39 @@ Unreleased
   one channel and a non-zero or out-of-range `registration_channel` is requested,
   ZenReg warns and falls back to channel `0`. Registration details and YAML
   reports now record the requested channel, used channel, and fallback reason.
+- Added user control over OMIO OME-TIFF compression via
+  `save_stack(compression_level=...)`.
+
+#### Tutorial and preview helpers
+
+- Added `show_projection` for previewing registration-style Z/time projections
+  and all-frame template images before running `register_stack`. Projection
+  arrays are returned only when `return_projection=True`.
+
+### 🧩 Changes and improvements
+#### Registration reports
+
 - Summary plots now suppress per-frame line markers for long time series to
   keep large-frame reports readable; clipped estimates are still highlighted.
-- Documented user control over OMIO OME-TIFF compression via
-  `save_stack(compression_level=...)`.
 
 #### Tutorial and preview helpers
 
 - Extended `show_timepoints` with configurable `reference_time`,
   `moving_time`, and `projection_z_range` arguments.
-- Added `show_projection` for previewing registration-style Z/time projections
-  and all-frame template images before running `register_stack`. Projection
-  arrays are returned only when `return_projection=True`.
 
+#### Synthetic data and benchmarks
+
+- Improved synthetic full 3D rigid benchmark data generation for dense
+  structural volumes by adding richer volumetric texture and distributed
+  features across the field of view. This makes the SimpleITK dense backend
+  and point-based backend comparisons better constrained and more
+  representative for six-degree-of-freedom registration validation.
+
+### 📚 Documentation
+
+- Expanded the multi-channel usage guide with the new single-channel fallback
+  behavior and the distinction between tolerant single-channel handling and
+  strict multi-channel validation.
 
 --- 
 
