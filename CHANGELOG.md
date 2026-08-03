@@ -65,6 +65,11 @@ August 3, 2026
 - Expanded the multi-channel usage guide with the new single-channel fallback
   behavior and the distinction between tolerant single-channel handling and
   strict multi-channel validation.
+- Expanded the contributor documentation and project Code of Conduct using the
+  more complete OMIO community documentation as a template. The contribution
+  guide now includes ZenReg-specific expectations for tests, documentation,
+  memory-aware development, and the API contract for adding new registration
+  backends.
 
 --- 
 
