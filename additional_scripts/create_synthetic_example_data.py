@@ -25,8 +25,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from zenreg.synthetic import write_example_dataset
-
-
 # %% MAIN
 def main() -> None:
     """Generate the default ZenReg synthetic example datasets."""
@@ -36,7 +34,6 @@ def main() -> None:
     print("Wrote ZenReg synthetic example data:")
     for label, path in paths.items():
         print(f"  {label}: {path}")
-
 # %% MAIN EXECUTION
 if __name__ == "__main__":
     main()
