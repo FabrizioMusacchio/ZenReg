@@ -78,6 +78,29 @@ def _resolve_rot_spacing_zyx(
         return metadata_spacing, source
     return (1.0, 1.0, 1.0), "default"
 
+def _resolve_registration_channel(
+    registration_channel: int,
+    channel_count: int,
+) -> tuple[int, int, bool, str | None]:
+    """Resolve the requested registration channel against the available channels."""
+
+    requested_channel = int(registration_channel)
+    if int(channel_count) < 1:
+        raise ValueError("Registration requires at least one channel.")
+    if 0 <= requested_channel < int(channel_count):
+        return requested_channel, requested_channel, False, None
+    if int(channel_count) == 1:
+        reason = (
+            f"registration_channel={requested_channel} was requested, but the "
+            "input stack has only one channel. Falling back to registration_channel=0."
+        )
+        warnings.warn(reason, RuntimeWarning, stacklevel=3)
+        return requested_channel, 0, True, reason
+    raise ValueError(
+        f"registration_channel must be between 0 and {int(channel_count) - 1}. "
+        f"Got {registration_channel!r}."
+    )
+
 def _normalize_registration_method(method: str) -> str:
     """Normalize and validate the requested registration backend."""
 
@@ -2369,6 +2392,7 @@ def _register_stack_normcorre_from_main_wrapper(
     verbose: bool,
     return_shifts: bool,
     return_details: bool,
+    registration_settings: dict,
 ):
     """Dispatch ``register_stack(method='normcorre')`` to the NoRMCorre module."""
 
@@ -2436,6 +2460,7 @@ def _register_stack_normcorre_from_main_wrapper(
         return_details=True,
     )
     _memory_mark(memory_tracker, "normcorre:end")
+    details.update(registration_settings)
     details["method"] = "normcorre"
     details["time_registration_mode"] = "full_3d" if is3d else "projection"
     details["effective_time_registration_mode"] = "full_3d" if is3d else "projection"
@@ -3029,11 +3054,12 @@ def register_stack(
     )
     if stack.shape[0] <= 1 and time_registration_mode != "none":
         raise ValueError("Registration requires T > 1.")
-    if not 0 <= int(registration_channel) < stack.shape[2]:
-        raise ValueError(
-            f"registration_channel must be between 0 and {stack.shape[2] - 1}. "
-            f"Got {registration_channel!r}."
-        )
+    (
+        registration_channel_requested,
+        registration_channel,
+        registration_channel_fallback,
+        registration_channel_fallback_reason,
+    ) = _resolve_registration_channel(registration_channel, stack.shape[2])
     if int(median_kernel_size) < 1:
         raise ValueError(f"median_kernel_size must be >= 1. Got {median_kernel_size!r}.")
     if int(phase_cross_correlation_upsample_factor) < 1:
@@ -3087,6 +3113,10 @@ def register_stack(
     )
     registration_settings = {
         "registration_channel": int(registration_channel),
+        "registration_channel_requested": int(registration_channel_requested),
+        "registration_channel_used": int(registration_channel),
+        "registration_channel_fallback": bool(registration_channel_fallback),
+        "registration_channel_fallback_reason": registration_channel_fallback_reason,
         "registration_stack": int(registration_stack),
         "registration_template_time_range": registration_template_time_range,
         "registration_z_range": registration_z_range_setting,
@@ -3236,6 +3266,7 @@ def register_stack(
             verbose=verbose,
             return_shifts=return_shifts,
             return_details=return_details,
+            registration_settings=registration_settings,
         )
         _memory_mark(memory_tracker, "register_stack:end")
         return result

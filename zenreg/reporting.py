@@ -19,6 +19,10 @@ from .registration import _compute_registration_frame_correlations
 # %% CONSTANTS
 SETTING_KEYS = (
     "registration_channel",
+    "registration_channel_requested",
+    "registration_channel_used",
+    "registration_channel_fallback",
+    "registration_channel_fallback_reason",
     "registration_stack",
     "registration_template_time_range",
     "method",

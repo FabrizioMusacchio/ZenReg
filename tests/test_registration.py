@@ -68,6 +68,40 @@ def test_2d_synthetic_shift_amplitudes_keep_default_and_allow_override():
     np.testing.assert_allclose(np.min(default_shifts[:, 1]), -6.0, atol=1e-6)
 
 
+def test_single_channel_invalid_registration_channel_falls_back_to_zero():
+    stack, applied_shifts = create_2d_motion_distorted_stack(channel_count=1, noise_sigma=0.0)
+
+    with pytest.warns(RuntimeWarning, match="only one channel"):
+        _, details = register_stack(
+            stack,
+            registration_channel=3,
+            method="phase_cross_correlation",
+            verbose=False,
+            return_shifts=True,
+            return_details=True,
+        )
+
+    expected_shifts = applied_shifts[0, :] - applied_shifts
+    np.testing.assert_allclose(details["time_shifts_yx"], expected_shifts, atol=0.05)
+    assert details["registration_channel"] == 0
+    assert details["registration_channel_requested"] == 3
+    assert details["registration_channel_used"] == 0
+    assert details["registration_channel_fallback"] is True
+    assert "only one channel" in details["registration_channel_fallback_reason"]
+
+
+def test_multi_channel_invalid_registration_channel_still_raises():
+    stack, _ = create_2d_motion_distorted_stack(channel_count=2, noise_sigma=0.0)
+
+    with pytest.raises(ValueError, match="registration_channel must be between"):
+        register_stack(
+            stack,
+            registration_channel=3,
+            method="phase_cross_correlation",
+            verbose=False,
+        )
+
+
 def test_registration_stack_selects_reference_timepoint():
     stack, applied_shifts = create_2d_motion_distorted_stack(noise_sigma=0.0)
     registration_stack = 3

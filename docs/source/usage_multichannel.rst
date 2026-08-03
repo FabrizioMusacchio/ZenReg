@@ -51,6 +51,13 @@ In this example, ZenReg estimates the motion from channel ``0``. If the input
 has two or more channels, channels ``1``, ``2``, and so on are shifted, rotated,
 or rigidly transformed using the same correction.
 
+For single-channel images, ZenReg falls back to channel ``0`` if a higher
+``registration_channel`` is requested accidentally. A runtime warning is shown,
+and the returned details record both ``registration_channel_requested`` and
+``registration_channel_used``. For true multi-channel stacks, invalid channel
+indices still raise an error because silently switching channels could register
+against the wrong biological signal.
+
 Choosing a registration channel
 -------------------------------
 
@@ -118,4 +125,3 @@ mechanical drift. In that case, run ZenReg separately for each channel or split
 the image before registration. This is not the default because independent
 per-channel registration can destroy real spatial relationships between
 channels and can bias downstream colocalization or morphology analyses.
-

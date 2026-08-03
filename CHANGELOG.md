@@ -36,6 +36,10 @@ Unreleased
 - Added raw, pre-clipping shift and rotation estimates to registration details,
   CSV reports, and summary plots. Summary plots now mark limit-clipped estimates
   with red open markers and report maximum raw detected shifts/rotations.
+- Added a single-channel safeguard for `register_stack`: if a stack has only
+  one channel and a non-zero or out-of-range `registration_channel` is requested,
+  ZenReg warns and falls back to channel `0`. Registration details and YAML
+  reports now record the requested channel, used channel, and fallback reason.
 - Summary plots now suppress per-frame line markers for long time series to
   keep large-frame reports readable; clipped estimates are still highlighted.
 - Documented user control over OMIO OME-TIFF compression via
