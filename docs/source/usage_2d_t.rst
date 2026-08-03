@@ -58,8 +58,9 @@ Options used here:
      - Reference time point/template. Default: ``0``.
    * - ``registration_template_time_range``
      - Optional half-open time range ``(start, stop)`` used to build a
-       multi-frame registration template. ``None`` uses ``registration_stack``
-       as one reference frame. Default: ``None``.
+       multi-frame registration template. Use ``"all"`` to aggregate all time
+       points. ``None`` uses ``registration_stack`` as one reference frame.
+       Default: ``None``.
    * - ``method``
      - Registration backend. Default:  ``"phase_cross_correlation"``.
    * - ``time_registration_mode``
@@ -116,7 +117,8 @@ Here, ``projection_method="median"`` is used to build the time template from
 ``t=0:20``. For 2D+t stacks the Z axis is a singleton, so the useful operation
 is the time aggregation. For 3D+t stacks, the same option first builds a ZYX
 template from the selected time points; ``registration_z_range`` still refers
-only to the Z axis.
+only to the Z axis. To use every time point explicitly, set
+``registration_template_time_range="all"``.
 
 pystackreg
 ----------

@@ -20,6 +20,7 @@ from .registration import _compute_registration_frame_correlations
 SETTING_KEYS = (
     "registration_channel",
     "registration_stack",
+    "registration_template_time_range",
     "method",
     "time_registration_mode",
     "effective_time_registration_mode",
@@ -218,6 +219,24 @@ def _time_shifts_zyx(details: dict[str, Any], time_count: int) -> np.ndarray:
             shifts[:, 1:] = shifts_yx
     return shifts
 
+def _time_shifts_zyx_raw(details: dict[str, Any], time_count: int) -> np.ndarray:
+    """Return raw time shifts as ``T, 3``; fall back to applied shifts."""
+
+    shifts_zyx_raw = details.get("time_shifts_zyx_raw")
+    if shifts_zyx_raw is not None:
+        shifts_zyx_raw = np.asarray(shifts_zyx_raw, dtype=np.float32)
+        if shifts_zyx_raw.shape == (time_count, 3):
+            return shifts_zyx_raw
+
+    shifts_yx_raw = details.get("time_shifts_yx_raw")
+    if shifts_yx_raw is not None:
+        shifts_yx_raw = np.asarray(shifts_yx_raw, dtype=np.float32)
+        if shifts_yx_raw.shape == (time_count, 2):
+            shifts = np.zeros((time_count, 3), dtype=np.float32)
+            shifts[:, 1:] = shifts_yx_raw
+            return shifts
+    return _time_shifts_zyx(details, time_count)
+
 def _rotation_shift_series_deg(details: dict[str, Any], time_count: int) -> tuple[np.ndarray, list[str]]:
     """Return per-frame rotation corrections and axis labels."""
 
@@ -234,6 +253,22 @@ def _rotation_shift_series_deg(details: dict[str, Any], time_count: int) -> tupl
     if rotations.shape != (time_count,):
         return np.empty((time_count, 0), dtype=np.float32), []
     return rotations[:, None], ["rotation_z"]
+
+def _rotation_shift_series_raw_deg(details: dict[str, Any], time_count: int) -> tuple[np.ndarray, list[str]]:
+    """Return raw per-frame rotation corrections; fall back to applied rotations."""
+
+    rotations_zyx = details.get("rotation_shifts_zyx_deg_raw")
+    if rotations_zyx is not None:
+        rotations_zyx = np.asarray(rotations_zyx, dtype=np.float32)
+        if rotations_zyx.shape == (time_count, 3):
+            return rotations_zyx, ["rotation_z", "rotation_y", "rotation_x"]
+
+    rotations = details.get("rotation_shifts_deg_raw")
+    if rotations is not None:
+        rotations = np.asarray(rotations, dtype=np.float32)
+        if rotations.shape == (time_count,):
+            return rotations[:, None], ["rotation_z"]
+    return _rotation_shift_series_deg(details, time_count)
 
 def _frame_correlations(registered_stack: np.ndarray, details: dict[str, Any]) -> np.ndarray:
     """Compute template-vs-registered Pearson correlations per time frame."""
@@ -279,6 +314,13 @@ def _nan_stat(values: np.ndarray, reducer) -> float:
         return float("nan")
     return float(reducer(values))
 
+def _limit_exceeded(applied: float, raw: float, *, atol: float = 1e-5) -> bool:
+    """Return True when a raw estimate was clipped before application."""
+
+    if not (np.isfinite(applied) and np.isfinite(raw)):
+        return False
+    return bool(abs(float(applied) - float(raw)) > float(atol))
+
 def _write_shift_csv(
     path: Path,
     details: dict[str, Any],
@@ -290,7 +332,9 @@ def _write_shift_csv(
     """Write frame-wise and optional intra-stack shifts to CSV."""
 
     shifts_zyx = _time_shifts_zyx(details, time_count)
+    raw_shifts_zyx = _time_shifts_zyx_raw(details, time_count)
     rotations, _ = _rotation_shift_series_deg(details, time_count)
+    raw_rotations, _ = _rotation_shift_series_raw_deg(details, time_count)
     fieldnames = [
         "scope",
         "frame",
@@ -298,12 +342,25 @@ def _write_shift_csv(
         "shift_z",
         "shift_y",
         "shift_x",
+        "shift_z_raw",
+        "shift_y_raw",
+        "shift_x_raw",
+        "shift_z_limit_exceeded",
+        "shift_y_limit_exceeded",
+        "shift_x_limit_exceeded",
         "intra_shift_y",
         "intra_shift_x",
         "rotation_z_deg",
         "rotation_y_deg",
         "rotation_x_deg",
         "rotation_deg",
+        "rotation_z_deg_raw",
+        "rotation_y_deg_raw",
+        "rotation_x_deg_raw",
+        "rotation_deg_raw",
+        "rotation_z_limit_exceeded",
+        "rotation_y_limit_exceeded",
+        "rotation_x_limit_exceeded",
         "pearson_correlation_before",
         "pearson_correlation_after",
         "pearson_correlation",
@@ -320,12 +377,31 @@ def _write_shift_csv(
                     "shift_z": _csv_value(shifts_zyx[t, 0]),
                     "shift_y": _csv_value(shifts_zyx[t, 1]),
                     "shift_x": _csv_value(shifts_zyx[t, 2]),
+                    "shift_z_raw": _csv_value(raw_shifts_zyx[t, 0]),
+                    "shift_y_raw": _csv_value(raw_shifts_zyx[t, 1]),
+                    "shift_x_raw": _csv_value(raw_shifts_zyx[t, 2]),
+                    "shift_z_limit_exceeded": str(_limit_exceeded(shifts_zyx[t, 0], raw_shifts_zyx[t, 0])),
+                    "shift_y_limit_exceeded": str(_limit_exceeded(shifts_zyx[t, 1], raw_shifts_zyx[t, 1])),
+                    "shift_x_limit_exceeded": str(_limit_exceeded(shifts_zyx[t, 2], raw_shifts_zyx[t, 2])),
                     "intra_shift_y": "",
                     "intra_shift_x": "",
                     "rotation_z_deg": _csv_value(rotations[t, 0]) if rotations.shape[1] >= 1 else "",
                     "rotation_y_deg": _csv_value(rotations[t, 1]) if rotations.shape[1] >= 2 else "",
                     "rotation_x_deg": _csv_value(rotations[t, 2]) if rotations.shape[1] >= 3 else "",
                     "rotation_deg": _csv_value(rotations[t, 0]) if rotations.shape[1] >= 1 else "",
+                    "rotation_z_deg_raw": _csv_value(raw_rotations[t, 0]) if raw_rotations.shape[1] >= 1 else "",
+                    "rotation_y_deg_raw": _csv_value(raw_rotations[t, 1]) if raw_rotations.shape[1] >= 2 else "",
+                    "rotation_x_deg_raw": _csv_value(raw_rotations[t, 2]) if raw_rotations.shape[1] >= 3 else "",
+                    "rotation_deg_raw": _csv_value(raw_rotations[t, 0]) if raw_rotations.shape[1] >= 1 else "",
+                    "rotation_z_limit_exceeded": str(_limit_exceeded(rotations[t, 0], raw_rotations[t, 0]))
+                    if rotations.shape[1] >= 1 and raw_rotations.shape[1] >= 1
+                    else "",
+                    "rotation_y_limit_exceeded": str(_limit_exceeded(rotations[t, 1], raw_rotations[t, 1]))
+                    if rotations.shape[1] >= 2 and raw_rotations.shape[1] >= 2
+                    else "",
+                    "rotation_x_limit_exceeded": str(_limit_exceeded(rotations[t, 2], raw_rotations[t, 2]))
+                    if rotations.shape[1] >= 3 and raw_rotations.shape[1] >= 3
+                    else "",
                     "pearson_correlation_before": _csv_value(correlations_before[t]),
                     "pearson_correlation_after": _csv_value(correlations_after[t]),
                     "pearson_correlation": _csv_value(correlations_after[t]),
@@ -348,12 +424,25 @@ def _write_shift_csv(
                         "shift_z": "",
                         "shift_y": "",
                         "shift_x": "",
+                        "shift_z_raw": "",
+                        "shift_y_raw": "",
+                        "shift_x_raw": "",
+                        "shift_z_limit_exceeded": "",
+                        "shift_y_limit_exceeded": "",
+                        "shift_x_limit_exceeded": "",
                         "intra_shift_y": _csv_value(intra_shifts[t, z, 0]),
                         "intra_shift_x": _csv_value(intra_shifts[t, z, 1]),
                         "rotation_z_deg": "",
                         "rotation_y_deg": "",
                         "rotation_x_deg": "",
                         "rotation_deg": "",
+                        "rotation_z_deg_raw": "",
+                        "rotation_y_deg_raw": "",
+                        "rotation_x_deg_raw": "",
+                        "rotation_deg_raw": "",
+                        "rotation_z_limit_exceeded": "",
+                        "rotation_y_limit_exceeded": "",
+                        "rotation_x_limit_exceeded": "",
                         "pearson_correlation_before": _csv_value(correlations_before[t]),
                         "pearson_correlation_after": _csv_value(correlations_after[t]),
                         "pearson_correlation": _csv_value(correlations_after[t]),
@@ -381,6 +470,37 @@ def _template_time_label(details: dict[str, Any], time_count: int) -> str:
     if start == 0 and stop == int(time_count):
         return f"all frames (0:{int(time_count)})"
     return f"{start}:{stop}"
+
+def _format_max_abs(values: np.ndarray) -> str:
+    """Format the maximum absolute finite value in a compact way."""
+
+    values = np.asarray(values, dtype=np.float32)
+    if values.size == 0 or not np.any(np.isfinite(values)):
+        return "n/a"
+    return f"{float(np.nanmax(np.abs(values))):.3g}"
+
+def _raw_estimate_label(details: dict[str, Any], time_count: int) -> str:
+    """Return compact max-raw-shift and rotation labels."""
+
+    labels = []
+    raw_shifts = _time_shifts_zyx_raw(details, time_count)
+    if raw_shifts.shape == (time_count, 3):
+        shift_parts = [
+            f"y={_format_max_abs(raw_shifts[:, 1])}",
+            f"x={_format_max_abs(raw_shifts[:, 2])}",
+        ]
+        if bool(details.get("zreg")) or np.any(np.abs(raw_shifts[:, 0]) > 0):
+            shift_parts.insert(0, f"z={_format_max_abs(raw_shifts[:, 0])}")
+        labels.append("max_raw_shift[" + ", ".join(shift_parts) + "]")
+
+    raw_rotations, rotation_labels = _rotation_shift_series_raw_deg(details, time_count)
+    if raw_rotations.shape[1] > 0:
+        rotation_parts = [
+            f"{label.replace('rotation_', '')}={_format_max_abs(raw_rotations[:, axis_index])}"
+            for axis_index, label in enumerate(rotation_labels)
+        ]
+        labels.append("max_raw_rot_deg[" + ", ".join(rotation_parts) + "]")
+    return " | ".join(labels) if labels else "max_raw=n/a"
 
 def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) -> str:
     """Build the compact plot annotation."""
@@ -412,6 +532,7 @@ def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) 
                 f"projection={details.get('projection_method')} | "
                 f"registration_z_range={_projection_range_label(details, registered_stack.shape[1])}"
             ),
+            _raw_estimate_label(details, registered_stack.shape[0]),
             f"max_xy={max_xy} | max_z={max_z} | max_rot={max_rot}",
         ]
     )
@@ -439,6 +560,29 @@ def _add_shift_limits(ax_shift, details: dict[str, Any]) -> None:
         ax_shift.axhline(max_z, color="tab:green", linestyle="--", linewidth=0.8, alpha=0.45)
         ax_shift.axhline(-max_z, color="tab:green", linestyle="--", linewidth=0.8, alpha=0.45)
 
+def _add_limit_exceeded_markers(ax, frames: np.ndarray, applied: np.ndarray, raw: np.ndarray, *, label: str) -> None:
+    """Mark frames for which a raw estimate was clipped."""
+
+    applied = np.asarray(applied, dtype=np.float32)
+    raw = np.asarray(raw, dtype=np.float32)
+    if applied.shape != raw.shape:
+        return
+    exceeded = np.isfinite(applied) & np.isfinite(raw) & (np.abs(applied - raw) > 1e-5)
+    if not np.any(exceeded):
+        return
+    existing_labels = {legend_label for legend_label in ax.get_legend_handles_labels()[1]}
+    marker_label = label if label not in existing_labels else "_nolegend_"
+    ax.scatter(
+        frames[exceeded],
+        applied[exceeded],
+        s=52,
+        facecolor="none",
+        edgecolor="red",
+        linewidth=1.5,
+        zorder=6,
+        label=marker_label,
+    )
+
 def _write_summary_plot(
     path: Path,
     registered_stack: np.ndarray,
@@ -453,7 +597,9 @@ def _write_summary_plot(
     time_count = registered_stack.shape[0]
     frames = np.arange(time_count)
     shifts_zyx = _time_shifts_zyx(details, time_count)
+    raw_shifts_zyx = _time_shifts_zyx_raw(details, time_count)
     rotations, rotation_labels = _rotation_shift_series_deg(details, time_count)
+    raw_rotations, _ = _rotation_shift_series_raw_deg(details, time_count)
 
     fig, (ax_shift, ax_corr) = plt.subplots(
         2,
@@ -464,8 +610,11 @@ def _write_summary_plot(
     )
     ax_shift.plot(frames, shifts_zyx[:, 1], marker="o", label="shift_y", color="tab:blue")
     ax_shift.plot(frames, shifts_zyx[:, 2], marker="o", label="shift_x", color="tab:orange")
+    _add_limit_exceeded_markers(ax_shift, frames, shifts_zyx[:, 1], raw_shifts_zyx[:, 1], label="limit exceeded")
+    _add_limit_exceeded_markers(ax_shift, frames, shifts_zyx[:, 2], raw_shifts_zyx[:, 2], label="limit exceeded")
     if bool(details.get("zreg")) or np.any(np.abs(shifts_zyx[:, 0]) > 0):
         ax_shift.plot(frames, shifts_zyx[:, 0], marker="o", label="shift_z", color="tab:green")
+        _add_limit_exceeded_markers(ax_shift, frames, shifts_zyx[:, 0], raw_shifts_zyx[:, 0], label="limit exceeded")
     _add_shift_limits(ax_shift, details)
     ax_shift.set_ylabel("Detected correction shift [px]")
     ax_shift.grid(True, alpha=0.25)
@@ -483,6 +632,14 @@ def _write_summary_plot(
                 color=rotation_colors[axis_index % len(rotation_colors)],
                 alpha=0.75,
             )
+            if raw_rotations.shape[1] > axis_index:
+                _add_limit_exceeded_markers(
+                    ax_rot,
+                    frames,
+                    rotations[:, axis_index],
+                    raw_rotations[:, axis_index],
+                    label="limit exceeded",
+                )
         max_rot = details.get("max_rot_shifts")
         if max_rot is not None:
             max_rot = float(max_rot)
@@ -519,7 +676,7 @@ def _write_summary_plot(
         family="monospace",
     )
     fig.suptitle("ZenReg registration report", fontsize=12)
-    fig.tight_layout(rect=(0, 0.16, 1, 0.95))
+    fig.tight_layout(rect=(0, 0.20, 1, 0.95))
     fig.savefig(path, dpi=180)
     plt.close(fig)
 
@@ -535,12 +692,14 @@ def _settings_payload(
     """Build the YAML settings payload."""
 
     settings = {key: _plain_value(details[key]) for key in SETTING_KEYS if key in details}
+    template_time_range = details.get("registration_template_time_range")
     return {
         "zenreg_report": {
             "output_image": str(output_image_path),
             "axes": CANONICAL_AXIS_ORDER,
             "registered_shape_tzcyx": tuple(int(v) for v in registered_stack.shape),
             "correlation_reference_frame": int(details.get("registration_stack", 0)),
+            "correlation_template_time_range": _plain_value(template_time_range),
             "correlation_mean": _nan_stat(correlations_after, np.nanmean),
             "correlation_min": _nan_stat(correlations_after, np.nanmin),
             "correlation_after_mean": _nan_stat(correlations_after, np.nanmean),

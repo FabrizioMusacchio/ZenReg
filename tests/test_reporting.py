@@ -50,8 +50,16 @@ def test_write_registration_outputs_with_prefix_intra_stack_and_rotation(tmp_pat
             [[0, 0, 0], [0.5, -1, 2], [-0.5, 1, -2]],
             dtype=np.float32,
         ),
+        "time_shifts_zyx_raw": np.asarray(
+            [[0, 0, 0], [0.5, -3, 2], [-0.5, 1, -2]],
+            dtype=np.float32,
+        ),
         "rotation_shifts_zyx_deg": np.asarray(
             [[0, 0, 0], [1, 2, 3], [-1, -2, -3]],
+            dtype=np.float32,
+        ),
+        "rotation_shifts_zyx_deg_raw": np.asarray(
+            [[0, 0, 0], [5, 2, 3], [-1, -2, -3]],
             dtype=np.float32,
         ),
         "intra_stack_shifts_yx": np.ones((3, 2, 2), dtype=np.float32),
@@ -72,6 +80,9 @@ def test_write_registration_outputs_with_prefix_intra_stack_and_rotation(tmp_pat
     yaml_text = paths["yaml"].read_text(encoding="utf-8")
     assert "intra_stack" in csv_text
     assert "rotation_x_deg" in csv_text
+    assert "shift_y_raw" in csv_text
+    assert "rotation_z_limit_exceeded" in csv_text
+    assert "True" in csv_text
     assert "correlation_before_mean" in yaml_text
     assert "registration_z_range: [0, 2]" in yaml_text
     assert paths["plot"].stat().st_size > 0

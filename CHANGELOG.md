@@ -26,11 +26,16 @@ Unreleased
 - Added `registration_template_time_range` to `register_stack` for building
   multi-frame registration templates from a half-open time range. This is
   especially useful for noisy 2D+t stacks where a template aggregated over
-  several frames is more stable than a single reference frame.
+  several frames is more stable than a single reference frame. The value
+  `"all"` now expands to all available time points while `None` keeps the
+  default single-reference-frame behavior.
 - Added `registration_z_range` as the clearer primary name for selecting the
   Z-slice range used to build the registration signal. The older
   `projection_range` and `zrange` names remain supported as compatibility
   aliases.
+- Added raw, pre-clipping shift and rotation estimates to registration details,
+  CSV reports, and summary plots. Summary plots now mark limit-clipped estimates
+  with red open markers and report maximum raw detected shifts/rotations.
 
 
 --- 

@@ -1537,6 +1537,8 @@ def register_stack_normcorre(
         "stack_shape_tzcyx": tuple(int(v) for v in stack.shape),
         "time_shifts_zyx": time_shifts_zyx,
         "time_shifts_yx": time_shifts_yx,
+        "time_shifts_zyx_raw": time_shifts_zyx.copy(),
+        "time_shifts_yx_raw": time_shifts_yx.copy(),
         "rigid_shifts": cumulative_rigid_shifts,
         "rigid_errors": rigid_errors,
         "last_correction_rigid_shifts": rigid_shifts,

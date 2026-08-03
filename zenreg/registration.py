@@ -473,16 +473,24 @@ def _resolve_registration_z_range_alias(
     return reference_value
 
 def _normalize_registration_template_time_range(
-    registration_template_time_range: tuple[int, int] | Sequence[int] | None,
+    registration_template_time_range: tuple[int, int] | Sequence[int] | str | None,
     time_count: int,
 ) -> tuple[int, int] | None:
     """Validate an optional half-open time range used to build a registration template."""
 
     if registration_template_time_range is None:
         return None
+    if isinstance(registration_template_time_range, str):
+        normalized = registration_template_time_range.strip().lower()
+        if normalized == "all":
+            return (0, int(time_count))
+        raise ValueError(
+            "registration_template_time_range must be None, 'all', or a "
+            "two-element half-open time range (start, stop)."
+        )
     if len(registration_template_time_range) != 2:
         raise ValueError(
-            "registration_template_time_range must be None or a two-element "
+            "registration_template_time_range must be None, 'all', or a two-element "
             "half-open time range (start, stop)."
         )
     start, stop = (int(registration_template_time_range[0]), int(registration_template_time_range[1]))
@@ -1204,7 +1212,6 @@ def _estimate_rotation_deg_from_projections(
     reference_projection: np.ndarray,
     moving_projection: np.ndarray,
     *,
-    max_rot_shifts: float | None,
     phase_cross_correlation_upsample_factor: int,
     phase_cross_correlation_normalization: str | None,
 ) -> float:
@@ -1227,7 +1234,7 @@ def _estimate_rotation_deg_from_projections(
         angle_deg -= 360.0
     if angle_deg <= -180.0:
         angle_deg += 360.0
-    return _clip_rotation_deg(angle_deg, max_rot_shifts)
+    return float(angle_deg)
 
 def _apply_translation_to_yx(
     image_yx: np.ndarray,
@@ -1792,8 +1799,8 @@ def _estimate_time_shift_from_projections(
     max_z_shifts: float | None,
     phase_cross_correlation_upsample_factor: int,
     phase_cross_correlation_normalization: str | None,
-) -> np.ndarray:
-    """Estimate a ``ZYX`` time-registration shift from projections."""
+) -> tuple[np.ndarray, np.ndarray]:
+    """Estimate raw and clipped ``ZYX`` time-registration shifts from projections."""
 
     reference_projection = _project_zyx_to_yx(
         reference_volume,
@@ -1815,8 +1822,6 @@ def _estimate_time_shift_from_projections(
         phase_cross_correlation_upsample_factor=phase_cross_correlation_upsample_factor,
         phase_cross_correlation_normalization=phase_cross_correlation_normalization,
     )
-    shift_yx = _clip_shift_yx(shift_yx, max_xy_shifts)
-
     shift_z = 0.0
     if zreg:
         shift_z = _estimate_z_shift_from_orthogonal_projections(
@@ -1830,11 +1835,13 @@ def _estimate_time_shift_from_projections(
             phase_cross_correlation_normalization=phase_cross_correlation_normalization,
         )
 
-    return _clip_shift_zyx(
-        np.asarray([shift_z, shift_yx[0], shift_yx[1]], dtype=np.float32),
+    raw_shift_zyx = np.asarray([shift_z, shift_yx[0], shift_yx[1]], dtype=np.float32)
+    clipped_shift_zyx = _clip_shift_zyx(
+        raw_shift_zyx,
         max_z_shifts=max_z_shifts,
         max_xy_shifts=max_xy_shifts,
     )
+    return raw_shift_zyx, clipped_shift_zyx
 
 def _estimate_time_shift_from_full_3d(
     reference_volume: np.ndarray,
@@ -1845,22 +1852,23 @@ def _estimate_time_shift_from_full_3d(
     max_z_shifts: float | None,
     phase_cross_correlation_upsample_factor: int,
     phase_cross_correlation_normalization: str | None,
-) -> np.ndarray:
-    """Estimate a ``ZYX`` time-registration shift from full 3D volumes."""
+) -> tuple[np.ndarray, np.ndarray]:
+    """Estimate raw and clipped ``ZYX`` time-registration shifts from full 3D volumes."""
 
-    shift_zyx = _estimate_full_3d_shift(
+    raw_shift_zyx = _estimate_full_3d_shift(
         reference_volume,
         moving_volume,
         phase_cross_correlation_upsample_factor=phase_cross_correlation_upsample_factor,
         phase_cross_correlation_normalization=phase_cross_correlation_normalization,
     )
     if not zreg:
-        shift_zyx[0] = 0.0
-    return _clip_shift_zyx(
-        shift_zyx,
+        raw_shift_zyx[0] = 0.0
+    clipped_shift_zyx = _clip_shift_zyx(
+        raw_shift_zyx,
         max_z_shifts=max_z_shifts,
         max_xy_shifts=max_xy_shifts,
     )
+    return raw_shift_zyx.astype(np.float32, copy=False), clipped_shift_zyx
 
 def _register_stack_across_time(
     stack,
@@ -1891,8 +1899,8 @@ def _register_stack_across_time(
     output_stage_name: str | None,
     memory_tracker=None,
     verbose: bool,
-) -> tuple[np.ndarray, np.ndarray, str]:
-    """Register a ``TZCYX`` stack across time and return applied ``TZYX`` shifts."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+    """Register a ``TZCYX`` stack across time and return raw/applied ``TZYX`` shifts."""
 
     effective_mode = time_registration_mode
     if time_registration_mode == "full_3d" and method != "phase_cross_correlation":
@@ -1911,6 +1919,7 @@ def _register_stack_across_time(
 
     output_dtype = _normalize_output_dtype(output_dtype)
     shifts_zyx = np.zeros((stack.shape[0], 3), dtype=np.float32)
+    raw_shifts_zyx = np.zeros_like(shifts_zyx)
     _print_verbose(
         verbose,
         (
@@ -1936,15 +1945,15 @@ def _register_stack_across_time(
         )
         _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:build_time_template:end")
 
-    def estimate_pair_shift(t: int) -> tuple[int, int, np.ndarray]:
+    def estimate_pair_shift(t: int) -> tuple[int, int, np.ndarray, np.ndarray]:
         if (
             time_reference_mode == "template"
             and registration_template_time_range is None
             and t == registration_stack
         ):
-            return t, t, np.zeros(3, dtype=np.float32)
+            return t, t, np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
         if time_reference_mode == "previous" and t == 0:
-            return t, t, np.zeros(3, dtype=np.float32)
+            return t, t, np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
 
         reference_t = _time_reference_index(
             t=t,
@@ -1971,7 +1980,7 @@ def _register_stack_across_time(
             median_kernel_size=median_kernel_size,
         )
         if effective_mode == "full_3d":
-            pair_shift_zyx = _estimate_time_shift_from_full_3d(
+            pair_raw_shift_zyx, pair_shift_zyx = _estimate_time_shift_from_full_3d(
                 reference_volume,
                 moving_volume,
                 zreg=zreg,
@@ -1981,7 +1990,7 @@ def _register_stack_across_time(
                 phase_cross_correlation_normalization=phase_cross_correlation_normalization,
             )
         else:
-            pair_shift_zyx = _estimate_time_shift_from_projections(
+            pair_raw_shift_zyx, pair_shift_zyx = _estimate_time_shift_from_projections(
                 reference_volume,
                 moving_volume,
                 method=method,
@@ -1995,7 +2004,7 @@ def _register_stack_across_time(
                 phase_cross_correlation_normalization=phase_cross_correlation_normalization,
             )
 
-        return t, reference_t, pair_shift_zyx
+        return t, reference_t, pair_raw_shift_zyx, pair_shift_zyx
 
     _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:estimate_shifts:start")
     pair_results = _parallel_map_ordered(
@@ -2005,8 +2014,10 @@ def _register_stack_across_time(
     )
     _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:estimate_shifts:end")
     pair_shifts = np.zeros_like(shifts_zyx)
+    pair_raw_shifts = np.zeros_like(shifts_zyx)
     reference_indices = np.zeros(stack.shape[0], dtype=np.int32)
-    for t, reference_t, pair_shift_zyx in pair_results:
+    for t, reference_t, pair_raw_shift_zyx, pair_shift_zyx in pair_results:
+        pair_raw_shifts[t, :] = pair_raw_shift_zyx
         pair_shifts[t, :] = pair_shift_zyx
         reference_indices[t] = int(reference_t)
 
@@ -2017,6 +2028,12 @@ def _register_stack_across_time(
             reference_t=reference_t,
             time_reference_mode=time_reference_mode,
         )
+        reference_raw_shift_zyx = _reference_shift_for_time(
+            raw_shifts_zyx,
+            reference_t=reference_t,
+            time_reference_mode=time_reference_mode,
+        )
+        raw_shifts_zyx[t, :] = reference_raw_shift_zyx + pair_raw_shifts[t, :]
         shifts_zyx[t, :] = _clip_shift_zyx(
             reference_shift_zyx + pair_shifts[t, :],
             max_z_shifts=max_z_shifts,
@@ -2053,7 +2070,7 @@ def _register_stack_across_time(
         registered[t, :, :, :, :] = registered_timepoint
     _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:apply_transforms:end")
 
-    return registered, shifts_zyx, effective_mode
+    return registered, shifts_zyx, raw_shifts_zyx, effective_mode
 
 def _register_stack_rotations_across_time(
     stack,
@@ -2079,11 +2096,12 @@ def _register_stack_rotations_across_time(
     output_stage_name: str | None,
     memory_tracker=None,
     verbose: bool,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Register in-plane XY rotations across time and return applied correction angles."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Register in-plane XY rotations across time and return raw/applied correction angles."""
 
     output_dtype = _normalize_output_dtype(output_dtype)
     angles_deg = np.zeros(stack.shape[0], dtype=np.float32)
+    raw_angles_deg = np.zeros_like(angles_deg)
     _print_verbose(
         verbose,
         (
@@ -2157,7 +2175,6 @@ def _register_stack_rotations_across_time(
         detected_rotation_deg = _estimate_rotation_deg_from_projections(
             reference_projection,
             build_projection(t),
-            max_rot_shifts=max_rot_shifts,
             phase_cross_correlation_upsample_factor=phase_cross_correlation_upsample_factor,
             phase_cross_correlation_normalization=phase_cross_correlation_normalization,
         )
@@ -2171,14 +2188,18 @@ def _register_stack_rotations_across_time(
     )
     _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:estimate_rotations:end")
     pair_rotations = np.zeros(stack.shape[0], dtype=np.float32)
+    pair_raw_rotations = np.zeros(stack.shape[0], dtype=np.float32)
     reference_indices = np.zeros(stack.shape[0], dtype=np.int32)
     for t, reference_t, detected_rotation_deg in pair_results:
-        pair_rotations[t] = float(detected_rotation_deg)
+        pair_raw_rotations[t] = float(detected_rotation_deg)
+        pair_rotations[t] = _clip_rotation_deg(float(detected_rotation_deg), max_rot_shifts)
         reference_indices[t] = int(reference_t)
 
     for t in range(stack.shape[0]):
         reference_t = int(reference_indices[t])
         reference_angle = float(angles_deg[reference_t]) if time_reference_mode == "previous" else 0.0
+        reference_raw_angle = float(raw_angles_deg[reference_t]) if time_reference_mode == "previous" else 0.0
+        raw_angles_deg[t] = reference_raw_angle - float(pair_raw_rotations[t])
         angles_deg[t] = _clip_rotation_deg(
             reference_angle - float(pair_rotations[t]),
             max_rot_shifts,
@@ -2206,7 +2227,7 @@ def _register_stack_rotations_across_time(
         registered[t, :, :, :, :] = registered_timepoint
     _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:apply_rotations:end")
 
-    return registered, angles_deg
+    return registered, angles_deg, raw_angles_deg
 
 def _return_registration_result(
     registered: np.ndarray,
@@ -2215,10 +2236,14 @@ def _return_registration_result(
     return_details: bool,
     compatible_time_shifts_yx: bool,
     time_shifts_zyx: np.ndarray | None,
+    time_shifts_zyx_raw: np.ndarray | None,
     intra_stack_shifts_yx: np.ndarray | None,
     rotation_shifts_deg: np.ndarray | None,
+    rotation_shifts_deg_raw: np.ndarray | None,
     translation_pass_shifts_zyx: list[np.ndarray],
+    translation_pass_shifts_zyx_raw: list[np.ndarray],
     rotation_pass_shifts_deg: list[np.ndarray],
+    rotation_pass_shifts_deg_raw: list[np.ndarray],
     zero_clip_bounds: dict[str, int] | None,
     zero_clip_failed_reason: str | None,
     zero_clip_mode: str,
@@ -2241,10 +2266,15 @@ def _return_registration_result(
     details = {
         "time_shifts_zyx": time_shifts_zyx,
         "time_shifts_yx": None if time_shifts_zyx is None else time_shifts_zyx[:, 1:],
+        "time_shifts_zyx_raw": time_shifts_zyx_raw,
+        "time_shifts_yx_raw": None if time_shifts_zyx_raw is None else time_shifts_zyx_raw[:, 1:],
         "intra_stack_shifts_yx": intra_stack_shifts_yx,
         "rotation_shifts_deg": rotation_shifts_deg,
+        "rotation_shifts_deg_raw": rotation_shifts_deg_raw,
         "translation_pass_shifts_zyx": translation_pass_shifts_zyx,
+        "translation_pass_shifts_zyx_raw": translation_pass_shifts_zyx_raw,
         "rotation_pass_shifts_deg": rotation_pass_shifts_deg,
+        "rotation_pass_shifts_deg_raw": rotation_pass_shifts_deg_raw,
         "zero_clip_bounds": zero_clip_bounds,
         "zero_clip_failed_reason": zero_clip_failed_reason,
         "zero_clip_mode": zero_clip_mode,
@@ -2628,7 +2658,7 @@ def register_stack(
     method: str = "phase_cross_correlation",
     time_registration_mode: str = "projection",
     time_reference_mode: str = "template",
-    registration_template_time_range: tuple[int, int] | Sequence[int] | None = None,
+    registration_template_time_range: tuple[int, int] | Sequence[int] | str | None = None,
     intra_stack: bool = False,
     registration_z_range: tuple[int, int] | Sequence[int] | None = None,
     zrange: tuple[int, int] | Sequence[int] | None = None,
@@ -2746,15 +2776,15 @@ def register_stack(
         ``"template"`` registers every time point to ``registration_stack``.
         ``"previous"`` registers each ``t`` to ``t-1`` and accumulates the
         correction shifts through time.
-    registration_template_time_range : tuple[int, int] or None, optional
+    registration_template_time_range : tuple[int, int], "all", or None, optional
         Optional half-open time range ``(start, stop)`` used to build an
         averaged registration template for ``time_reference_mode="template"``.
-        When set, the template is aggregated from the selected time points
-        using ``projection_method`` along the time axis. For 2D+t stacks this
-        creates a more stable YX template from multiple frames; for 3D+t stacks
-        it creates a ZYX template before optional Z projection. ``None``
-        preserves the default behavior of using ``registration_stack`` as a
-        single reference frame.
+        ``"all"`` expands to ``(0, T)``. When set, the template is aggregated
+        from the selected time points using ``projection_method`` along the time
+        axis. For 2D+t stacks this creates a more stable YX template from
+        multiple frames; for 3D+t stacks it creates a ZYX template before
+        optional Z projection. ``None`` preserves the default behavior of using
+        ``registration_stack`` as a single reference frame.
     intra_stack : bool, optional
         If True, run intra-stack XY slice correction independently for each time
         point before optional time registration.
@@ -3293,14 +3323,18 @@ def register_stack(
             zero_clip_stage_bounds.append(_crop_bounds_from_yx_shifts(intra_stack_shifts_yx))
 
     time_shifts_zyx = None
+    time_shifts_zyx_raw = None
     rotation_shifts_deg = None
+    rotation_shifts_deg_raw = None
     translation_pass_shifts_zyx = []
+    translation_pass_shifts_zyx_raw = []
     rotation_pass_shifts_deg = []
+    rotation_pass_shifts_deg_raw = []
     effective_time_registration_mode = time_registration_mode
     if time_registration_mode != "none":
         translation_pass_count = rotreg_iter + 1 if rotreg else 1
         for pass_index in range(translation_pass_count):
-            registered, pass_shifts_zyx, effective_time_registration_mode = _register_stack_across_time(
+            registered, pass_shifts_zyx, pass_shifts_zyx_raw, effective_time_registration_mode = _register_stack_across_time(
                 registered,
                 registration_channel=int(registration_channel),
                 registration_stack=registration_stack,
@@ -3330,6 +3364,7 @@ def register_stack(
                 verbose=verbose,
             )
             translation_pass_shifts_zyx.append(pass_shifts_zyx)
+            translation_pass_shifts_zyx_raw.append(pass_shifts_zyx_raw)
             if effective_zero_clip_mode == "mask":
                 def apply_time_mask(t: int) -> tuple[int, np.ndarray]:
                     return t, _apply_translation_to_mask_zyx(
@@ -3344,7 +3379,7 @@ def register_stack(
                 zero_clip_stage_bounds.append(_crop_bounds_from_zyx_shifts(pass_shifts_zyx))
 
             if rotreg and pass_index < rotreg_iter:
-                registered, pass_rotation_shifts_deg = _register_stack_rotations_across_time(
+                registered, pass_rotation_shifts_deg, pass_rotation_shifts_deg_raw = _register_stack_rotations_across_time(
                     registered,
                     registration_channel=int(registration_channel),
                     registration_stack=registration_stack,
@@ -3369,6 +3404,7 @@ def register_stack(
                     verbose=verbose,
                 )
                 rotation_pass_shifts_deg.append(pass_rotation_shifts_deg)
+                rotation_pass_shifts_deg_raw.append(pass_rotation_shifts_deg_raw)
                 if effective_zero_clip_mode == "mask":
                     def apply_rotation_mask(t: int) -> tuple[int, np.ndarray]:
                         return t, _apply_rotation_to_mask_zyx(
@@ -3384,8 +3420,10 @@ def register_stack(
                         zero_clip_mask_tzyx[t, :, :, :] = mask_volume
 
         time_shifts_zyx = np.sum(np.stack(translation_pass_shifts_zyx, axis=0), axis=0).astype(np.float32)
+        time_shifts_zyx_raw = np.sum(np.stack(translation_pass_shifts_zyx_raw, axis=0), axis=0).astype(np.float32)
         if rotation_pass_shifts_deg:
             rotation_shifts_deg = np.sum(np.stack(rotation_pass_shifts_deg, axis=0), axis=0).astype(np.float32)
+            rotation_shifts_deg_raw = np.sum(np.stack(rotation_pass_shifts_deg_raw, axis=0), axis=0).astype(np.float32)
 
     zero_clip_bounds = None
     zero_clip_failed_reason = None
@@ -3452,10 +3490,14 @@ def register_stack(
         return_details=return_details,
         compatible_time_shifts_yx=compatible_time_shifts_yx,
         time_shifts_zyx=time_shifts_zyx,
+        time_shifts_zyx_raw=time_shifts_zyx_raw,
         intra_stack_shifts_yx=intra_stack_shifts_yx,
         rotation_shifts_deg=rotation_shifts_deg,
+        rotation_shifts_deg_raw=rotation_shifts_deg_raw,
         translation_pass_shifts_zyx=translation_pass_shifts_zyx,
+        translation_pass_shifts_zyx_raw=translation_pass_shifts_zyx_raw,
         rotation_pass_shifts_deg=rotation_pass_shifts_deg,
+        rotation_pass_shifts_deg_raw=rotation_pass_shifts_deg_raw,
         zero_clip_bounds=zero_clip_bounds,
         zero_clip_failed_reason=zero_clip_failed_reason,
         zero_clip_mode=effective_zero_clip_mode,

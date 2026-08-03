@@ -92,6 +92,23 @@ def test_registration_template_time_range_builds_2d_time_template():
     assert details["time_shifts_zyx"].shape == (stack.shape[0], 3)
 
 
+def test_registration_template_time_range_all_uses_all_frames():
+    stack, _ = create_2d_motion_distorted_stack(time_count=5, noise_sigma=0.0)
+
+    _, details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        registration_template_time_range="all",
+        projection_method="mean",
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    assert details["registration_template_time_range"] == (0, stack.shape[0])
+
+
 def test_registration_template_time_range_rejects_previous_reference_mode():
     stack, _ = create_2d_motion_distorted_stack(time_count=5, noise_sigma=0.0)
 
@@ -104,6 +121,23 @@ def test_registration_template_time_range_rejects_previous_reference_mode():
             registration_template_time_range=(0, 3),
             verbose=False,
         )
+
+
+def test_raw_time_shifts_are_reported_before_limit_clipping():
+    stack = _two_timepoint_3d_stack((0.0, 4.0, -3.0))
+
+    _, details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        max_xy_shifts=(1, 1),
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    np.testing.assert_allclose(details["time_shifts_yx"][1], [-1.0, 1.0], atol=1e-6)
+    np.testing.assert_allclose(details["time_shifts_yx_raw"][1], [-4.0, 3.0], atol=0.05)
 
 
 def test_z_project_supports_expected_projection_methods():

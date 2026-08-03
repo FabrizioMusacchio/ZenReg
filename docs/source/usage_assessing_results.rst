@@ -88,9 +88,12 @@ Summary plots
 The registration summary plot is meant as a first quantitative health check.
 The upper panel shows detected correction shifts as a function of frame. If
 ``max_xy_shifts`` or ``max_z_shifts`` were set, dashed limit lines are drawn so
-that clipped estimates are easy to spot. When rotation registration is enabled,
-rotation estimates are shown on a secondary axis as ``rotation_z``,
-``rotation_y``, and/or ``rotation_x`` depending on the selected backend.
+that clipped estimates are easy to spot. Red open markers indicate frames where
+the raw detected shift exceeded a configured limit and was clipped before being
+applied. When rotation registration is enabled, rotation estimates are shown on
+a secondary axis as ``rotation_z``, ``rotation_y``, and/or ``rotation_x``
+depending on the selected backend. Rotation estimates that exceeded
+``max_rot_shifts`` are marked in the same way.
 
 The lower panel shows Pearson correlation between the registration template and
 each frame. When available, ZenReg plots both the pre-registration and
@@ -125,12 +128,23 @@ Important columns are:
    * - ``frame`` and ``z``
      - Time point and, for intra-stack rows, Z slice.
    * - ``shift_z``, ``shift_y``, ``shift_x``
-     - Detected time-registration correction shifts in pixels.
+     - Applied time-registration correction shifts in pixels. If maximum shift
+       limits were set, these values may be clipped.
+   * - ``shift_z_raw``, ``shift_y_raw``, ``shift_x_raw``
+     - Raw detected correction shifts before optional clipping.
+   * - ``shift_z_limit_exceeded``, ``shift_y_limit_exceeded``, ``shift_x_limit_exceeded``
+     - ``True`` when the corresponding raw shift exceeded a configured limit and
+       was clipped before application.
    * - ``intra_shift_y``, ``intra_shift_x``
      - Detected within-stack slice correction shifts.
    * - ``rotation_z_deg``, ``rotation_y_deg``, ``rotation_x_deg``
-     - Detected correction rotations in degrees when rotation registration was
+     - Applied correction rotations in degrees when rotation registration was
        enabled.
+   * - ``rotation_z_deg_raw``, ``rotation_y_deg_raw``, ``rotation_x_deg_raw``
+     - Raw detected rotations before optional clipping by ``max_rot_shifts``.
+   * - ``rotation_z_limit_exceeded``, ``rotation_y_limit_exceeded``, ``rotation_x_limit_exceeded``
+     - ``True`` when the corresponding raw rotation exceeded the configured
+       rotation limit.
    * - ``pearson_correlation_before``
      - Template-vs-frame Pearson correlation before applying the detected
        registration, when available.
@@ -162,7 +176,8 @@ Use it to answer questions such as:
 
 - Which channel and reference time point were used?
 - Was registration projection-based or full 3D?
-- Which projection method and projection range created the template?
+- Which projection method, registration Z range, and optional template time
+  range created the template?
 - Were Z shifts, rotations, zero clipping, or maximum shift limits enabled?
 - Which transform backend and interpolation order were used?
 
