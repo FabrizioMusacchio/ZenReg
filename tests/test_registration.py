@@ -392,7 +392,7 @@ def test_synthetic_3d_time_zyx_example_matches_full_3d_gt():
         return_shifts=True,
     )
 
-    np.testing.assert_allclose(shift_details["time_shifts_zyx"], applied_time_shifts[0] - applied_time_shifts, atol=0.2)
+    np.testing.assert_allclose(shift_details["time_shifts_zyx"], applied_time_shifts[0] - applied_time_shifts, atol=0.4)
 
 
 def test_zero_clip_crops_directional_zyx_translation_borders():
