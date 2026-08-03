@@ -1,4 +1,4 @@
-Contributing and Community Guidelines
+Contributing and community guidelines
 =====================================
 
 ZenReg is a research-oriented project and welcomes careful improvements,
