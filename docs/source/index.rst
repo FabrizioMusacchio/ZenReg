@@ -12,13 +12,59 @@ ZenReg documentation
    :target: https://github.com/FabrizioMusacchio/ZenReg/
    :alt: GitHub repository
 
+.. image:: https://img.shields.io/github/v/release/FabrizioMusacchio/ZenReg
+   :alt: GitHub Release
+
+.. image:: https://img.shields.io/pypi/v/zenreg.svg
+   :target: https://pypi.org/project/zenreg/
+   :alt: PyPI version
+
 .. image:: https://img.shields.io/badge/License-GPL%20v3-green.svg
    :target: https://github.com/FabrizioMusacchio/ZenReg
    :alt: GPLv3 License
 
+.. image:: https://github.com/FabrizioMusacchio/ZenReg/actions/workflows/zenreg_tests.yml/badge.svg
+   :alt: Tests
+
+.. image:: https://codecov.io/gh/FabrizioMusacchio/ZenReg/graph/badge.svg?token=OYTRL4WO0U 
+   :target: https://codecov.io/gh/FabrizioMusacchio/ZenReg
+   :alt: Codecov
+
+.. image:: https://img.shields.io/github/last-commit/FabrizioMusacchio/ZenReg
+   :target: https://github.com/FabrizioMusacchio/ZenReg/commits/main/
+   :alt: GitHub last commit
+
+.. image:: https://img.shields.io/github/issues/FabrizioMusacchio/ZenReg
+   :target: https://github.com/FabrizioMusacchio/ZenReg/issues
+   :alt: GitHub Issues Open
+
+.. image:: https://img.shields.io/github/issues-closed/FabrizioMusacchio/ZenReg?color=53c92e
+   :target: https://github.com/FabrizioMusacchio/ZenReg/issues?q=is%3Aissue%20state%3Aclosed
+   :alt: GitHub Issues Closed
+
+.. image:: https://img.shields.io/github/issues-pr/FabrizioMusacchio/ZenReg
+   :target: https://github.com/FabrizioMusacchio/ZenReg/pulls
+   :alt: GitHub Issues or Pull Requests
+
 .. image:: https://readthedocs.org/projects/zenreg/badge/?version=latest
    :target: https://zenreg.readthedocs.io/en/latest/?badge=latest
    :alt: Documentation Status
+
+.. image:: https://img.shields.io/github/languages/code-size/fabriziomusacchio/ZenReg
+   :alt: GitHub code size in bytes
+
+.. image:: https://img.shields.io/pypi/dm/zenreg?logo=pypy&label=PiPY%20downloads&color=blue
+   :target: https://pypistats.org/packages/zenreg
+   :alt: PyPI Downloads
+
+.. image:: https://static.pepy.tech/personalized-badge/zenreg?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLUE&left_text=PiPY+total+downloads
+   :target: https://pepy.tech/projects/zenreg
+   :alt: PyPI Total Downloads
+
+.. image:: https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue
+   :target: https://doi.org/10.5281/zenodo.21727826
+   :alt: Zenodo Archive
+
 
 ZenReg is a Python package for fast, memory-efficient, and modular microscopy
 image registration. 
