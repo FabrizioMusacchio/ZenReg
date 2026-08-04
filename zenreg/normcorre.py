@@ -1416,7 +1416,8 @@ def register_stack_normcorre(
                     f"ZenReg NoRMCorre {mode_label}: correction "
                     f"{correction_index + 1}/{correction_iterations}, "
                     f"template pass {iteration + 1}/{n_iterations}, "
-                    f"{len(patch_grid.slices)} patches, n_jobs={n_jobs}"
+                    f"{len(patch_grid.slices)} patches, n_jobs={n_jobs}",
+                    flush=True,
                 )
 
             worker_kwargs = {

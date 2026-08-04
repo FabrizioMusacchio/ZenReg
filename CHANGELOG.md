@@ -15,13 +15,16 @@ Unreleased
 ### ✨ New features
 #### Registration reports
 
-- Added `write_registration_summary_plot` for writing only the ZenReg
-  registration summary PNG after `register_stack`, without saving the full registered image or CSV/YAML sidecars.
+- Added `write_registration_summary_plot` for writing only the ZenReg registration summary PNG after `register_stack`, without saving the full registered image or CSV/YAML sidecars.
 
 ### 🧩 Changes and improvements
 #### Registration reports
 
 - Summary plot annotations now list the registered image dimensions in canonical `TZCYX` order as the first entry.
+
+#### Interactive execution
+
+- Added `tqdm`-based progress bars for long `register_stack` loops when `verbose=True`, including shift estimation, transform application, rotation correction, and zero-clip mask/crop steps. Verbose messages are now flushed immediately to improve feedback in VS Code and Jupyter-style interactive sessions.
 
 --- 
 

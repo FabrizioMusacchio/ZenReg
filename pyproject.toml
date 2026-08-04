@@ -35,6 +35,7 @@ dependencies = [
   "pystackreg",
   "omio-microscopy>=0.2.6",
   "matplotlib",
+  "tqdm",
   "ipykernel"
 ]
 

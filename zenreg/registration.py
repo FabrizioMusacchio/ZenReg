@@ -232,25 +232,54 @@ def _normalize_n_jobs(n_jobs: int | None) -> int:
         return max(cpu_count + 1 + n_jobs, 1)
     return n_jobs
 
-def _parallel_map_ordered(function, items, *, n_jobs: int):
+def _progress_iter(iterable, *, total: int, enabled: bool, desc: str | None):
+    """Wrap an iterable in tqdm when progress display is enabled and available."""
+
+    if not enabled:
+        return iterable
+    try:
+        from tqdm.auto import tqdm
+    except ImportError:
+        return iterable
+    return tqdm(
+        iterable,
+        total=int(total),
+        desc=desc,
+        leave=False,
+        dynamic_ncols=True,
+    )
+
+def _parallel_map_ordered(function, items, *, n_jobs: int, progress: bool = False, desc: str | None = None):
     """Map ``function`` over ``items`` while preserving input order."""
 
     items = list(items)
     if int(n_jobs) <= 1 or len(items) <= 1:
-        return [function(item) for item in items]
+        return [function(item) for item in _progress_iter(items, total=len(items), enabled=progress, desc=desc)]
     with ThreadPoolExecutor(max_workers=int(n_jobs)) as executor:
-        return list(executor.map(function, items))
+        return list(
+            _progress_iter(
+                executor.map(function, items),
+                total=len(items),
+                enabled=progress,
+                desc=desc,
+            )
+        )
 
-def _iter_map_ordered(function, items, *, n_jobs: int):
+def _iter_map_ordered(function, items, *, n_jobs: int, progress: bool = False, desc: str | None = None):
     """Yield mapped results in input order without storing all outputs first."""
 
     items = list(items)
     if int(n_jobs) <= 1 or len(items) <= 1:
-        for item in items:
+        for item in _progress_iter(items, total=len(items), enabled=progress, desc=desc):
             yield function(item)
         return
     with ThreadPoolExecutor(max_workers=int(n_jobs)) as executor:
-        yield from executor.map(function, items)
+        yield from _progress_iter(
+            executor.map(function, items),
+            total=len(items),
+            enabled=progress,
+            desc=desc,
+        )
 
 def _normalize_zero_clip_mode(zero_clip_mode: str) -> str:
     """Normalize and validate the zero-clipping strategy."""
@@ -813,6 +842,7 @@ def _zero_clip_stack(
     output_memmap_name: str | None = None,
     output_dtype=np.float32,
     n_jobs: int = 1,
+    progress: bool = False,
 ):
     """Crop zero-fill borders from a registered ``TZCYX`` stack."""
 
@@ -860,7 +890,13 @@ def _zero_clip_stack(
         )
         return int(t), chunk
 
-    for t, chunk in _iter_map_ordered(copy_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
+    for t, chunk in _iter_map_ordered(
+        copy_timepoint,
+        range(stack.shape[0]),
+        n_jobs=n_jobs,
+        progress=progress,
+        desc="ZenReg zero-clip crop",
+    ):
         cropped[t, :, :, :, :] = chunk
     return cropped
 
@@ -1456,7 +1492,7 @@ def _print_verbose(verbose: bool, message: str) -> None:
     """Print a progress message only when verbose mode is enabled."""
 
     if verbose:
-        print(message)
+        print(message, flush=True)
 
 def _memory_mark(memory_tracker, step: str) -> None:
     """Record an optional memory profiling marker."""
@@ -1620,6 +1656,8 @@ def _correct_intra_stack_z_drift_impl(
             lambda index: (int(index), np.asarray(stack[int(index)], dtype=output_dtype)),
             range(stack.shape[0]),
             n_jobs=n_jobs,
+            progress=verbose,
+            desc="ZenReg intra-stack copy",
         ):
             corrected[t, :, :, :, :] = frame
         _memory_mark(memory_tracker, "intra_stack:end")
@@ -1672,7 +1710,13 @@ def _correct_intra_stack_z_drift_impl(
         output_memmap_name=output_memmap_name,
         stage_name=output_stage_name,
     )
-    for t, corrected_frame, shifts_t in _iter_map_ordered(process_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
+    for t, corrected_frame, shifts_t in _iter_map_ordered(
+        process_timepoint,
+        range(stack.shape[0]),
+        n_jobs=n_jobs,
+        progress=verbose,
+        desc="ZenReg intra-stack correction",
+    ):
         shifts[t, :, :] = shifts_t
         for z, shift_yx in enumerate(shifts_t):
             _print_verbose(
@@ -1764,7 +1808,13 @@ def correct_intra_stack_z_drift(
             )
 
         tasks = [(t, z) for t in range(corrected_stack.shape[0]) for z in range(corrected_stack.shape[1])]
-        for t, z, corrected_slice in _iter_map_ordered(apply_clipped_slice, tasks, n_jobs=n_jobs):
+        for t, z, corrected_slice in _iter_map_ordered(
+            apply_clipped_slice,
+            tasks,
+            n_jobs=n_jobs,
+            progress=verbose,
+            desc="ZenReg intra-stack clipped apply",
+        ):
             corrected_stack[t, z, :, :, :] = corrected_slice
     return (corrected_stack, shifts) if return_shifts else corrected_stack
 
@@ -2034,6 +2084,8 @@ def _register_stack_across_time(
         estimate_pair_shift,
         range(stack.shape[0]),
         n_jobs=n_jobs,
+        progress=verbose,
+        desc=f"ZenReg {output_stage_name or 'time'} estimate shifts",
     )
     _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:estimate_shifts:end")
     pair_shifts = np.zeros_like(shifts_zyx)
@@ -2089,7 +2141,13 @@ def _register_stack_across_time(
         ).astype(output_dtype, copy=False)
 
     _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:apply_transforms:start")
-    for t, registered_timepoint in _iter_map_ordered(apply_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
+    for t, registered_timepoint in _iter_map_ordered(
+        apply_timepoint,
+        range(stack.shape[0]),
+        n_jobs=n_jobs,
+        progress=verbose,
+        desc=f"ZenReg {output_stage_name or 'time'} apply transforms",
+    ):
         registered[t, :, :, :, :] = registered_timepoint
     _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:apply_transforms:end")
 
@@ -2208,6 +2266,8 @@ def _register_stack_rotations_across_time(
         estimate_pair_rotation,
         range(stack.shape[0]),
         n_jobs=n_jobs,
+        progress=verbose,
+        desc=f"ZenReg {output_stage_name or 'rotation'} estimate rotations",
     )
     _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:estimate_rotations:end")
     pair_rotations = np.zeros(stack.shape[0], dtype=np.float32)
@@ -2246,7 +2306,13 @@ def _register_stack_rotations_across_time(
         ).astype(output_dtype, copy=False)
 
     _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:apply_rotations:start")
-    for t, registered_timepoint in _iter_map_ordered(apply_timepoint, range(stack.shape[0]), n_jobs=n_jobs):
+    for t, registered_timepoint in _iter_map_ordered(
+        apply_timepoint,
+        range(stack.shape[0]),
+        n_jobs=n_jobs,
+        progress=verbose,
+        desc=f"ZenReg {output_stage_name or 'rotation'} apply rotations",
+    ):
         registered[t, :, :, :, :] = registered_timepoint
     _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:apply_rotations:end")
 
@@ -2620,6 +2686,7 @@ def _register_stack_rigid_3d_from_main_wrapper(
                 output_memmap_name=output_memmap_name,
                 output_dtype=output_dtype,
                 n_jobs=rot_n_jobs,
+                progress=verbose,
             )
             _memory_mark(memory_tracker, "zero_clip:crop:end")
         except ValueError as exc:
@@ -3335,7 +3402,13 @@ def register_stack(
                     )
 
                 tasks = [(t, z) for t in range(stack.shape[0]) for z in range(stack.shape[1])]
-                for t, z, corrected_slice in _iter_map_ordered(apply_clipped_intra_slice, tasks, n_jobs=n_jobs):
+                for t, z, corrected_slice in _iter_map_ordered(
+                    apply_clipped_intra_slice,
+                    tasks,
+                    n_jobs=n_jobs,
+                    progress=verbose,
+                    desc="ZenReg intra-stack clipped apply",
+                ):
                     registered[t, z, :, :, :] = corrected_slice
                 intra_stack_shifts_yx = clipped_intra_stack_shifts_yx
         if effective_zero_clip_mode == "mask":
@@ -3348,7 +3421,13 @@ def register_stack(
                 )
 
             tasks = [(t, z) for t in range(stack.shape[0]) for z in range(stack.shape[1])]
-            for t, z, mask_plane in _parallel_map_ordered(apply_intra_mask, tasks, n_jobs=n_jobs):
+            for t, z, mask_plane in _parallel_map_ordered(
+                apply_intra_mask,
+                tasks,
+                n_jobs=n_jobs,
+                progress=verbose,
+                desc="ZenReg zero-clip intra mask",
+            ):
                 zero_clip_mask_tzyx[t, z, :, :] = mask_plane
         elif effective_zero_clip_mode == "shift":
             zero_clip_stage_bounds.append(_crop_bounds_from_yx_shifts(intra_stack_shifts_yx))
@@ -3404,7 +3483,13 @@ def register_stack(
                         transform_backend=transform_backend,
                     )
 
-                for t, mask_volume in _parallel_map_ordered(apply_time_mask, range(stack.shape[0]), n_jobs=n_jobs):
+                for t, mask_volume in _parallel_map_ordered(
+                    apply_time_mask,
+                    range(stack.shape[0]),
+                    n_jobs=n_jobs,
+                    progress=verbose,
+                    desc="ZenReg zero-clip time mask",
+                ):
                     zero_clip_mask_tzyx[t, :, :, :] = mask_volume
             elif effective_zero_clip_mode == "shift":
                 zero_clip_stage_bounds.append(_crop_bounds_from_zyx_shifts(pass_shifts_zyx))
@@ -3447,6 +3532,8 @@ def register_stack(
                         apply_rotation_mask,
                         range(stack.shape[0]),
                         n_jobs=n_jobs,
+                        progress=verbose,
+                        desc="ZenReg zero-clip rotation mask",
                     ):
                         zero_clip_mask_tzyx[t, :, :, :] = mask_volume
 
@@ -3481,6 +3568,7 @@ def register_stack(
                 output_memmap_name=output_memmap_name,
                 output_dtype=output_dtype,
                 n_jobs=n_jobs,
+                progress=verbose,
             )
             _memory_mark(memory_tracker, "zero_clip:crop:end")
         except ValueError as exc:

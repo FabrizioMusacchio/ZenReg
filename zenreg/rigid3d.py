@@ -751,7 +751,7 @@ def register_stack_rigid_3d(
     transform_details: list[dict[str, Any] | None] = [None] * stack.shape[0]
 
     if verbose:
-        print(f"ZenReg rigid 3D registration: backend={backend}, n_jobs={int(n_jobs)}")
+        print(f"ZenReg rigid 3D registration: backend={backend}, n_jobs={int(n_jobs)}", flush=True)
 
     worker_kwargs = {
         "fixed_zyx": fixed_zyx,
@@ -793,7 +793,8 @@ def register_stack_rigid_3d(
                 rotation = details["rotation_zyx_deg"]
                 print(
                     f"t={int(t)} shift_zyx=({shift[0]:.3f}, {shift[1]:.3f}, {shift[2]:.3f}) "
-                    f"rot_zyx_deg=({rotation[0]:.3f}, {rotation[1]:.3f}, {rotation[2]:.3f})"
+                    f"rot_zyx_deg=({rotation[0]:.3f}, {rotation[1]:.3f}, {rotation[2]:.3f})",
+                    flush=True,
                 )
     else:
         with ThreadPoolExecutor(max_workers=int(n_jobs)) as executor:
@@ -810,7 +811,8 @@ def register_stack_rigid_3d(
                     rotation = details["rotation_zyx_deg"]
                     print(
                         f"t={int(t)} shift_zyx=({shift[0]:.3f}, {shift[1]:.3f}, {shift[2]:.3f}) "
-                        f"rot_zyx_deg=({rotation[0]:.3f}, {rotation[1]:.3f}, {rotation[2]:.3f})"
+                        f"rot_zyx_deg=({rotation[0]:.3f}, {rotation[1]:.3f}, {rotation[2]:.3f})",
+                        flush=True,
                     )
 
     shifts_zyx = np.stack([details["shift_zyx"] for details in transform_details], axis=0).astype(np.float32)
