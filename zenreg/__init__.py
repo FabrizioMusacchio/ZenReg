@@ -28,7 +28,7 @@ from .normcorre import plot_normcorre_patch_overlay, register_stack_normcorre
 from .profiling import MemoryTracker, profile_memory
 from .rigid3d import register_stack_rigid_3d
 from .registration import correct_intra_stack_z_drift, register_stack
-from .reporting import write_registration_outputs
+from .reporting import write_registration_outputs, write_registration_summary_plot
 from .tutorial import (
     load_csv_table,
     load_expected_rigid_corrections,
@@ -91,6 +91,7 @@ __all__ = [
     "show_timepoints",
     "update_stack_metadata",
     "write_registration_outputs",
+    "write_registration_summary_plot",
     "z_project",
 ]
 

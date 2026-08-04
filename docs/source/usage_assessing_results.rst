@@ -107,6 +107,23 @@ stabilizes these values, but the plot should be interpreted together with the
 images: high correlation can still hide local errors, projection artefacts, or
 unwanted cropping.
 
+For large stacks, it is often useful to inspect the summary plot before spending
+time writing the full registered OME-TIFF. Use
+``write_registration_summary_plot`` directly after ``register_stack``:
+
+.. code-block:: python
+
+   from zenreg import write_registration_summary_plot
+
+   write_registration_summary_plot(
+       "example_data/synthetic_data/registered/"
+       "synthetic_2d_t_xy_preview_registration_summary.png",
+       registered,
+       details)
+
+This writes only the PNG summary plot. It does not save the registered image
+and does not write the CSV or YAML sidecars.
+
 .. figure:: _static/synthetic_2d_t_xy_registered_registration_summary.png
    :alt: ZenReg registration summary plot with detected shifts and correlations
    :align: center

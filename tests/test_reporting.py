@@ -2,7 +2,12 @@ import csv
 
 import numpy as np
 
-from zenreg.reporting import _projection_range_label, _settings_annotation, write_registration_outputs
+from zenreg.reporting import (
+    _projection_range_label,
+    _settings_annotation,
+    write_registration_outputs,
+    write_registration_summary_plot,
+)
 
 
 def test_write_registration_outputs_accepts_legacy_shift_array(tmp_path):
@@ -24,6 +29,34 @@ def test_write_registration_outputs_accepts_legacy_shift_array(tmp_path):
     assert rows[1]["shift_y"] == "-1.5"
     assert rows[1]["shift_x"] == "2"
     assert "registration_settings:" in paths["yaml"].read_text(encoding="utf-8")
+
+
+def test_write_registration_summary_plot_only_writes_png(tmp_path):
+    registered = np.zeros((2, 1, 1, 8, 8), dtype=np.float32)
+    registered[:, 0, 0, 2:6, 2:6] = 1.0
+    details = {
+        "registration_channel": 0,
+        "registration_stack": 0,
+        "method": "phase_cross_correlation",
+        "time_registration_mode": "projection",
+        "effective_time_registration_mode": "projection",
+        "time_reference_mode": "template",
+        "projection_method": "max",
+        "time_shifts_zyx": np.asarray([[0, 0, 0], [0, -1, 2]], dtype=np.float32),
+        "pearson_correlations_before": np.asarray([1.0, 0.5], dtype=np.float32),
+    }
+
+    plot_path = write_registration_summary_plot(
+        tmp_path / "preview" / "registration_summary.png",
+        registered,
+        details,
+    )
+
+    assert plot_path == tmp_path / "preview" / "registration_summary.png"
+    assert plot_path.exists()
+    assert plot_path.stat().st_size > 0
+    assert not (tmp_path / "preview" / "registration_shifts.csv").exists()
+    assert not (tmp_path / "preview" / "registration_settings.yaml").exists()
 
 
 def test_write_registration_outputs_with_prefix_intra_stack_and_rotation(tmp_path):
@@ -108,6 +141,7 @@ def test_summary_annotation_labels_template_time_and_singleton_z():
 
     annotation = _settings_annotation(details, registered)
 
+    assert "shape_TZCYX=(8, 1, 1, 8, 8)" in annotation
     assert "template_t=0:6" in annotation
     assert "projection=median" in annotation
     assert "registration_z_range=Z_N=1" in annotation

@@ -8,6 +8,23 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
+## 🚧 v0.0.5 - Upcoming release
+
+Unreleased
+
+### ✨ New features
+#### Registration reports
+
+- Added `write_registration_summary_plot` for writing only the ZenReg
+  registration summary PNG after `register_stack`, without saving the full registered image or CSV/YAML sidecars.
+
+### 🧩 Changes and improvements
+#### Registration reports
+
+- Summary plot annotations now list the registered image dimensions in canonical `TZCYX` order as the first entry.
+
+--- 
+
 ## 🚀 v0.0.4 - Template controls, reporting refinements, and tutorial helpers
 
 August 3, 2026

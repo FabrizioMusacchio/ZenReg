@@ -521,6 +521,7 @@ def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) 
     max_rot = details.get("max_rot_shifts")
     return "\n".join(
         [
+            f"shape_TZCYX={tuple(int(v) for v in registered_stack.shape)}",
             (
                 f"method={details.get('method')} | "
                 f"time={details.get('time_registration_mode')}"
@@ -734,6 +735,46 @@ def _settings_payload(
         },
         "registration_settings": settings,
     }
+
+def write_registration_summary_plot(
+    path: str | Path,
+    registered_stack,
+    registration_details: dict[str, Any] | np.ndarray,
+) -> Path:
+    """
+    Write only the ZenReg registration summary plot.
+
+    This is a lightweight preview helper for checking registration results after
+    ``register_stack(...)`` and before committing time to saving a large
+    registered image. It uses the same summary-plot implementation as
+    ``save_stack(..., registration_details=...)`` but does not write an OME-TIFF,
+    CSV table, or YAML settings sidecar.
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Output ``.png`` path for the summary plot.
+    registered_stack : array-like
+        Registered image stack in canonical ``TZCYX`` order.
+    registration_details : dict or array-like
+        Details returned by ``register_stack(..., return_shifts=True,
+        return_details=True)``. A legacy ``T, 2`` shift array is accepted, but a
+        full details dictionary gives richer annotations.
+
+    Returns
+    -------
+    pathlib.Path
+        Path of the written summary plot.
+    """
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    registered_stack = ensure_tzcyx_stack(registered_stack)
+    details = _as_details_dict(registration_details)
+    correlations_after = _frame_correlations(registered_stack, details)
+    correlations_before = _pre_frame_correlations(details, registered_stack.shape[0])
+    _write_summary_plot(path, registered_stack, details, correlations_after, correlations_before)
+    return path
 
 def write_registration_outputs(
     output_image_path: str | Path,

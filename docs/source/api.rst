@@ -50,6 +50,7 @@ Tutorial and plotting helpers
    zenreg.show_projection
    zenreg.show_timepoints
    zenreg.show_slices
+   zenreg.write_registration_summary_plot
    zenreg.print_shift_comparison
    zenreg.print_rigid_comparison
 
