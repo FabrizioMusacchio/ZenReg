@@ -8,9 +8,9 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
-## 🚧 v0.0.5 - Upcoming release
+## 🚧 v0.0.5 - New registration reports and interactive progress bar
 
-Unreleased
+August 4, 2026
 
 ### ✨ New features
 #### Registration reports
