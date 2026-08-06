@@ -19,7 +19,7 @@ Date: July 2026
 from __future__ import annotations
 
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1446,22 +1446,25 @@ def register_stack_normcorre(
                 "block_size": block_size,
             }
 
+            def _store_frame_result(result) -> None:
+                t, corrected_frame, rigid_shift, rigid_error, patch_shifts, patch_errors = result
+                registered[t] = corrected_frame
+                rigid_shifts[t] = rigid_shift
+                rigid_errors[t] = rigid_error
+                patch_shifts_all[t] = patch_shifts
+                patch_errors_all[t] = patch_errors
+
             if n_jobs == 1:
-                results = [_process_frame(t, working_stack, **worker_kwargs) for t in range(time_count)]
+                for t in range(time_count):
+                    _store_frame_result(_process_frame(t, working_stack, **worker_kwargs))
             else:
                 with ThreadPoolExecutor(max_workers=n_jobs) as executor:
                     futures = [
                         executor.submit(_process_frame, t, working_stack, **worker_kwargs)
                         for t in range(time_count)
                     ]
-                    results = [future.result() for future in futures]
-
-            for t, corrected_frame, rigid_shift, rigid_error, patch_shifts, patch_errors in results:
-                registered[t] = corrected_frame
-                rigid_shifts[t] = rigid_shift
-                rigid_errors[t] = rigid_error
-                patch_shifts_all[t] = patch_shifts
-                patch_errors_all[t] = patch_errors
+                    for future in as_completed(futures):
+                        _store_frame_result(future.result())
 
             if iteration < n_iterations - 1:
                 template = _update_template_from_registered(
