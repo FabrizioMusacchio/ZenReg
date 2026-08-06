@@ -2471,7 +2471,14 @@ def _register_stack_normcorre_from_main_wrapper(
     if rotreg:
         raise ValueError("method='normcorre' does not support rotreg=True; use register_stack rotation correction instead.")
     if zero_clip:
-        raise ValueError("method='normcorre' does not support zero_clip=True yet.")
+        warnings.warn(
+            "method='normcorre' does not support zero_clip=True yet. "
+            "Continuing with zero_clip disabled for this run; crop the result "
+            "after registration if needed.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        zero_clip = False
     if filter_slices or filter_projections:
         raise ValueError(
             "method='normcorre' does not use filter_slices/filter_projections. "
@@ -2531,6 +2538,14 @@ def _register_stack_normcorre_from_main_wrapper(
     details["time_registration_mode"] = "full_3d" if is3d else "projection"
     details["effective_time_registration_mode"] = "full_3d" if is3d else "projection"
     details["zreg"] = bool(is3d)
+    details["zero_clip_requested"] = bool(registration_settings.get("zero_clip_requested", False))
+    details["zero_clip"] = False
+    details["zero_clip_effective"] = False
+    details["zero_clip_ignored_reason"] = (
+        "method='normcorre' does not support zero_clip=True yet."
+        if details["zero_clip_requested"]
+        else None
+    )
     details["max_xy_shifts"] = None if max_xy_shifts is None else tuple(float(v) for v in max_xy_shifts)
     details["max_z_shifts"] = None if max_z_shifts is None else float(max_z_shifts)
     details["phase_cross_correlation_upsample_factor"] = int(phase_cross_correlation_upsample_factor)
@@ -2876,7 +2891,10 @@ def register_stack(
         axis. For 2D+t stacks this creates a more stable YX template from
         multiple frames; for 3D+t stacks it creates a ZYX template before
         optional Z projection. ``None`` preserves the default behavior of using
-        ``registration_stack`` as a single reference frame.
+        ``registration_stack`` as a single reference frame. With
+        ``method="normcorre"``, this setting is ignored with a warning because
+        NoRMCorre uses ``nc_template_init_mode`` and
+        ``nc_template_update_method`` for template construction and updates.
     intra_stack : bool, optional
         If True, run intra-stack XY slice correction independently for each time
         point before optional time registration.
@@ -2912,6 +2930,8 @@ def register_stack(
         sparse detected 3D peaks and is intended for puncta/spot-like data.
     zero_clip : bool, optional
         If True, crop zero-fill borders introduced by registration correction.
+        With ``method="normcorre"``, this is currently ignored with a warning
+        because NoRMCorre-compatible zero clipping is not implemented yet.
     zero_clip_mode : {"auto", "shift", "mask"}, optional
         Strategy used for ``zero_clip=True``. ``"shift"`` derives crop widths
         direction-wise from the largest applied translation corrections.
@@ -3065,11 +3085,12 @@ def register_stack(
     nc_niter_rig : int, optional
         Number of rigid pre-alignment iterations before piecewise NoRMCorre
         patch correction.
-    nc_template_init_mode : {"registration_stack", "median"}, optional
+    nc_template_init_mode : {"registration_stack", "median", "rigid_median"}, optional
         Initial NoRMCorre template strategy. ``"registration_stack"`` uses the
         selected reference time point. ``"median"`` uses a CaImAn-like sparse
-        temporal sample and median template.
-    nc_template_update_method : {"caiman", "mean", "median", "none"}, optional
+        temporal sample and median template. ``"rigid_median"`` first
+        rigid-aligns that sparse sample before computing the median template.
+    nc_template_update_method : {"caiman", "mean", "median"}, optional
         NoRMCorre template update strategy. ``"caiman"`` computes chunk means
         and takes a median across chunks, following the batch NoRMCorre idea.
     nc_splits : int, optional
@@ -3267,12 +3288,25 @@ def register_stack(
             "Frame-to-frame registration with time_reference_mode='previous' uses the "
             "previous time point as reference instead."
         )
+    registration_template_time_range_requested = registration_template_time_range
+    registration_template_time_range_ignored_reason = None
     if registration_template_time_range is not None and method == "normcorre":
-        raise ValueError(
-            "registration_template_time_range is used by the standard registration backends. "
-            "For method='normcorre', use nc_template_init_mode and "
-            "nc_template_update_method instead."
+        registration_template_time_range_ignored_reason = (
+            "method='normcorre' uses NoRMCorre's own template initialization "
+            "and update strategy instead of registration_template_time_range."
         )
+        warnings.warn(
+            "registration_template_time_range was provided, but method='normcorre' "
+            "does not use this setting. Continuing by ignoring "
+            "registration_template_time_range and using nc_template_init_mode="
+            f"{nc_template_init_mode!r} with nc_template_update_method="
+            f"{nc_template_update_method!r}. For a CaImAn-like adaptive template "
+            "workflow, use nc_template_init_mode='median' or 'rigid_median' with "
+            "nc_template_update_method='caiman'.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        registration_template_time_range = None
     if (
         registration_template_time_range is not None
         and rotreg
@@ -3305,11 +3339,14 @@ def register_stack(
         "registration_channel_fallback_reason": registration_channel_fallback_reason,
         "registration_stack": int(registration_stack),
         "registration_template_time_range": registration_template_time_range,
+        "registration_template_time_range_requested": registration_template_time_range_requested,
+        "registration_template_time_range_ignored_reason": registration_template_time_range_ignored_reason,
         "registration_z_range": registration_z_range_setting,
         "method": method,
         "intra_stack": bool(intra_stack),
         "zreg": bool(zreg),
         "zero_clip": bool(zero_clip),
+        "zero_clip_requested": bool(zero_clip),
         "zero_clip_mask_strategy": effective_zero_clip_mask_strategy,
         "zero_clip_mask_min_fraction": float(zero_clip_mask_min_fraction),
         "n_jobs": int(n_jobs),
@@ -3340,6 +3377,8 @@ def register_stack(
         "registration_z_range": registration_z_range_setting,
         "projection_range": registration_z_range_setting,
         "registration_template_time_range": registration_template_time_range,
+        "registration_template_time_range_requested": registration_template_time_range_requested,
+        "registration_template_time_range_ignored_reason": registration_template_time_range_ignored_reason,
         "projection_method": projection_method,
         "filter_slices": bool(filter_slices),
         "filter_projections": bool(filter_projections),

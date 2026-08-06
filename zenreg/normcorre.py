@@ -8,6 +8,10 @@ patch shifts to a dense displacement field, update templates from corrected
 time chunks, and apply the resulting field to every channel of the frame. It
 supports 2D+t and full 3D+t stacks without requiring the full CaImAn suite.
 
+TODO: implement NoRMCorre-compatible zero clipping for the registered output.
+For now, ``register_stack(method="normcorre", zero_clip=True)`` warns and
+continues without zero clipping.
+
 Author: Fabrizio Musacchio
 Date: July 2026
 """

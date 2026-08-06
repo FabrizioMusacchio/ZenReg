@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from scipy.ndimage import map_coordinates, shift as ndi_shift
 
 from zenreg import plot_normcorre_patch_overlay, register_stack, register_stack_normcorre
@@ -136,6 +137,51 @@ def test_register_stack_dispatches_to_normcorre_backend():
     assert details["method"] == "normcorre"
     assert details["nc_pw_rigid"] is False
     np.testing.assert_allclose(details["time_shifts_yx"], applied[0] - applied, atol=0.12)
+
+
+def test_register_stack_normcorre_ignores_template_time_range_with_warning():
+    applied = np.asarray([[0.0, 0.0], [2.0, -3.0], [-1.5, 2.5]], dtype=np.float32)
+    stack = _two_channel_2d_stack(applied)
+
+    with pytest.warns(RuntimeWarning, match="registration_template_time_range was provided"):
+        registered, details = register_stack(
+            stack,
+            registration_channel=0,
+            method="normcorre",
+            time_registration_mode="projection",
+            registration_template_time_range=(0, 2),
+            nc_pw_rigid=False,
+            verbose=False,
+            return_details=True,
+        )
+
+    assert registered.shape == stack.shape
+    assert details["registration_template_time_range"] is None
+    assert details["registration_template_time_range_requested"] == (0, 2)
+    assert "method='normcorre'" in details["registration_template_time_range_ignored_reason"]
+
+
+def test_register_stack_normcorre_ignores_zero_clip_with_warning():
+    applied = np.asarray([[0.0, 0.0], [2.0, -3.0], [-1.5, 2.5]], dtype=np.float32)
+    stack = _two_channel_2d_stack(applied)
+
+    with pytest.warns(RuntimeWarning, match="does not support zero_clip=True yet"):
+        registered, details = register_stack(
+            stack,
+            registration_channel=0,
+            method="normcorre",
+            time_registration_mode="projection",
+            zero_clip=True,
+            nc_pw_rigid=False,
+            verbose=False,
+            return_details=True,
+        )
+
+    assert registered.shape == stack.shape
+    assert details["zero_clip_requested"] is True
+    assert details["zero_clip"] is False
+    assert details["zero_clip_effective"] is False
+    assert "zero_clip=True" in details["zero_clip_ignored_reason"]
 
 
 def test_normcorre_correction_iterations_accumulate_residual_shifts():

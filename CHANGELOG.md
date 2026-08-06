@@ -8,6 +8,36 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
+## 🚧 v0.0.6 - Unreleased
+
+### 🧩 Changes and improvements
+#### NoRMCorre wrapper behavior
+
+- `register_stack(method="normcorre")` now warns and ignores
+  `registration_template_time_range` instead of raising an error, because
+  NoRMCorre uses its own `nc_template_init_mode` and
+  `nc_template_update_method` template workflow.
+- `register_stack(method="normcorre", zero_clip=True)` now warns and continues
+  with zero clipping disabled until NoRMCorre-compatible zero clipping is
+  implemented.
+- Registration details now record requested/effective NoRMCorre behavior for
+  ignored `registration_template_time_range` and `zero_clip` settings.
+
+#### Documentation
+
+- Expanded the `register_stack()` docstring so every public parameter is
+  documented explicitly, including NoRMCorre-specific `nc_*` options and full
+  3D rigid `rot_*` options.
+- Added NoRMCorre guidance to the 2D+t RTD usage example for choosing
+  `nc_strides`, `nc_overlaps`, and `nc_max_deviation_rigid`, including how
+  these settings differ from global `max_xy_shifts`.
+- Clarified NoRMCorre template behavior in the 2D+t RTD usage example,
+  including CaImAn-like `nc_template_init_mode="median"` /
+  `"rigid_median"` and `nc_template_update_method="caiman"` workflows.
+
+
+--- 
+
 ## 🚀 v0.0.5 - New registration reports and interactive progress bar
 
 August 4, 2026

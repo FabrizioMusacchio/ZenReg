@@ -234,9 +234,20 @@ NoRMCorre is available through the same main wrapper:
        return_shifts          = True,
        return_details         = True)
 
-``registration_template_time_range`` is not used with ``method="normcorre"``.
-NoRMCorre builds and updates its own template through ``nc_template_init_mode``
-and ``nc_template_update_method``.
+``registration_template_time_range`` is ignored with a warning when
+``method="normcorre"``. NoRMCorre builds and updates its own template through
+``nc_template_init_mode`` and ``nc_template_update_method``.
+
+For a CaImAn-like adaptive template workflow, leave
+``registration_template_time_range`` unset and use
+``nc_template_init_mode="median"`` or ``"rigid_median"`` together with
+``nc_template_update_method="caiman"``. ``"median"`` creates the initial
+template from a sparse sample of frames across time; ``"rigid_median"`` first
+rigid-aligns that sample before taking the median. The ``"caiman"`` update then
+updates the template from corrected time chunks during NoRMCorre passes. If you
+want a fixed explicit reference frame instead, use
+``nc_template_init_mode="registration_stack"`` and set ``registration_stack`` to
+the desired time point.
 
 New options in this block:
 
@@ -265,10 +276,13 @@ New options in this block:
    * - ``nc_template_init_mode``
      - Initial NoRMCorre template strategy. ``"median"`` uses a sparse
        CaImAn-like sample across time; ``"registration_stack"`` uses one
-       explicit reference frame. Default: ``"registration_stack"``.
+       explicit reference frame; ``"rigid_median"`` rigid-aligns the sparse
+       sample before taking the median. Default: ``"registration_stack"``.
    * - ``nc_template_update_method``
      - Template update strategy after each NoRMCorre pass. ``"caiman"`` uses
-       chunk means followed by a median across chunks. Default: ``"caiman"``.
+       corrected chunk means followed by a median across chunks. ``"mean"`` or
+       ``"median"`` update from all corrected frames directly. Default:
+       ``"caiman"``.
 
 Before choosing ``nc_strides`` and ``nc_overlaps``, it is useful to draw the
 patch layout. ZenReg provides a helper function for this:
