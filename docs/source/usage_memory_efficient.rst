@@ -109,6 +109,47 @@ The final cleanup is optional. Keep the cache if you expect to run another
 registration on the same input soon; clean it when you are done or when local
 scratch space is limited.
 
+Memory-efficient napari inspection
+----------------------------------
+
+For large disk-backed results, opening the registered stack in napari should
+also avoid materializing the full array in RAM. ZenReg's ``open_in_napari``
+helper forwards additional keyword arguments to OMIO's napari bridge, so you
+can choose OMIO's Zarr opening mode explicitly:
+
+.. code-block:: python
+
+   from zenreg import open_in_napari
+
+   open_in_napari(
+       registered,
+       metadata,
+       fname      = "large_timeseries_registered",
+       enabled    = True,
+       zarr_mode  = "zarr_nodask")
+
+Use this after a memory-mapped ``register_stack`` call when ``registered`` is a
+disk-backed Zarr array. The exact available ``zarr_mode`` values are provided
+by OMIO, but ``"zarr_nodask"`` is useful when you want napari to read directly
+from the Zarr-backed array without an additional Dask layer. This keeps the
+inspection workflow aligned with the registration workflow: data are pulled
+from disk in chunks as napari needs them, rather than copied into a dense NumPy
+array before display.
+
+For scripts that may run on servers or headless machines, keep an explicit
+switch:
+
+.. code-block:: python
+
+   OPEN_IN_NAPARI = False
+
+   open_in_napari(
+       registered,
+       metadata,
+       fname      = "large_timeseries_registered",
+       enabled    = OPEN_IN_NAPARI,
+       zarr_mode  = "zarr_nodask")
+
 Options used here:
 
 .. list-table::

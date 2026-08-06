@@ -783,13 +783,17 @@ def open_in_napari(
     *,
     fname: str,
     enabled: bool = True,
+    **kwargs,
 ) -> None:
-    """Open a stack in Napari when enabled by an example script."""
+    """Open a stack in Napari when enabled by an example script.
+
+    Additional keyword arguments are forwarded to ``omio.open_in_napari``.
+    """
 
     if not enabled:
         return
 
     import omio as om
 
-    om.open_in_napari(stack, metadata, fname=fname)
+    om.open_in_napari(stack, metadata, fname=fname, **kwargs)
 # %% END

@@ -25,7 +25,15 @@ This release improves the documentation for NoRMCorre usage and reduces peak RAM
 - Expanded the `register_stack()` docstring so every public parameter is documented explicitly, including NoRMCorre-specific `nc_*` options and full 3D rigid `rot_*` options.
 - Added NoRMCorre guidance to the 2D+t RTD usage example for choosing `nc_strides`, `nc_overlaps`, and `nc_max_deviation_rigid`, including how these settings differ from global `max_xy_shifts`.
 - Clarified NoRMCorre template behavior in the 2D+t RTD usage example, including CaImAn-like `nc_template_init_mode="median"` / `"rigid_median"` and `nc_template_update_method="caiman"` workflows.
+- Added memory-efficient napari inspection guidance to the RTD memory workflow,
+  Napari workflow, and assessing-results pages, including
+  `open_in_napari(..., zarr_mode="zarr_nodask")`.
 
+#### Tutorial helpers
+
+- `open_in_napari` now forwards additional keyword arguments to
+  `omio.open_in_napari`, enabling OMIO-specific options such as
+  `zarr_mode="zarr_nodask"`.
 
 --- 
 

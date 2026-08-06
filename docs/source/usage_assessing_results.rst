@@ -203,6 +203,69 @@ Use it to answer questions such as:
 - Were Z shifts, rotations, zero clipping, or maximum shift limits enabled?
 - Which transform backend and interpolation order were used?
 
+Visual inspection with Napari
+-----------------------------
+
+Quantitative reports should be paired with direct visual inspection. Napari is
+useful for checking whether residual motion is spatially structured, whether
+zero-filled borders or cropping are acceptable, whether Z planes remain
+plausibly aligned, and whether a registration that improves the global
+correlation still leaves local errors.
+
+Open raw and registered stacks as separate layers and compare them by toggling
+visibility, changing blending modes, and stepping through time and Z:
+
+.. code-block:: python
+
+   from zenreg import open_in_napari
+
+   OPEN_IN_NAPARI = True
+
+   open_in_napari(
+       image,
+       metadata,
+       fname   = "raw stack",
+       enabled = OPEN_IN_NAPARI)
+
+   open_in_napari(
+       registered,
+       metadata,
+       fname   = "registered stack",
+       enabled = OPEN_IN_NAPARI)
+
+For large files, use the same memory-aware principle during inspection that you
+used during registration. If ``image`` or ``registered`` is backed by an OMIO
+Zarr cache, pass OMIO's Zarr opening mode through ZenReg's helper:
+
+.. code-block:: python
+
+   image, metadata = load_stack(
+       "large_timeseries.ome.tif",
+       return_metadata = True,
+       use_memmap      = True,
+       memmap_folder   = "local_omio_cache",
+       memmap_reuse    = True)
+
+   registered, details = register_stack(
+       image,
+       registration_channel = 0,
+       method               = "phase_cross_correlation",
+       output_use_memmap    = True,
+       output_memmap_folder = "local_omio_cache",
+       return_details       = True)
+
+   open_in_napari(
+       registered,
+       metadata,
+       fname     = "registered stack",
+       enabled   = OPEN_IN_NAPARI,
+       zarr_mode = "zarr_nodask")
+
+With ``zarr_mode="zarr_nodask"``, OMIO opens the Zarr-backed array directly for
+napari, so the viewer can request data as needed instead of forcing a full
+dense copy before display. This matters for large time series and for workflows
+where the input file lives on a server but the OMIO cache is local.
+
 Practical interpretation
 ------------------------
 

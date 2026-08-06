@@ -68,6 +68,29 @@ Metadata matters here: OMIO provides canonical ``TZCYX`` image data and a
 matching metadata dictionary. Passing both to napari preserves the intended
 axis interpretation and physical metadata whenever OMIO can provide it.
 
+Memory-mapped napari layers
+---------------------------
+
+When raw or registered stacks are disk-backed Zarr arrays, keep the napari
+inspection path memory-aware as well. ``open_in_napari`` forwards additional
+keyword arguments to OMIO, including OMIO's Zarr opening mode:
+
+.. code-block:: python
+
+   open_in_napari(
+       registered,
+       metadata,
+       fname     = "registered 3D+t stack",
+       enabled   = OPEN_IN_NAPARI,
+       zarr_mode = "zarr_nodask")
+
+Use this after loading with ``load_stack(..., use_memmap=True)`` or after
+registering with ``output_use_memmap=True``. With ``zarr_mode="zarr_nodask"``,
+napari reads from the Zarr-backed array directly instead of first converting the
+full stack to a dense NumPy array. This is especially useful for large
+time-lapse stacks, remote-file workflows with a local OMIO cache, and
+interactive parameter tuning where the same cached stack is opened repeatedly.
+
 Recommended inspection pattern
 ------------------------------
 
