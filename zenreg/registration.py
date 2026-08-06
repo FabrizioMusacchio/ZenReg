@@ -2959,15 +2959,51 @@ def register_stack(
         Number of translation-rotation refinement iterations for ``rotreg=True``.
         ``1`` runs translation, rotation, translation. Values > 1 repeat the
         rotation and final translation pattern.
-    rot_* : optional
-        Full-3D rigid registration settings used with
-        ``rigid_3d_backend="simpleitk"`` or ``"points"``. ``rot_spacing_zyx``
-        gives physical Z/Y/X spacing and is important for anisotropic stacks. If
-        left as ``None``, ZenReg uses OMIO ``metadata`` physical sizes when
-        available, otherwise it falls back to unit spacing. ``rot_init_iterations``
-        controls iterative orthogonal-projection pre-estimation. ``rot_metric``
-        is ``"correlation"`` or ``"mutual_information"`` for SimpleITK.
-        ``rot_points_*`` settings apply only to the sparse point-cloud backend.
+    rot_spacing_zyx : tuple[float, float, float] or None, optional
+        Physical voxel spacing in ``(z, y, x)`` used by full 3D rigid
+        registration. This is important for anisotropic stacks. If ``None``,
+        ZenReg uses OMIO metadata physical sizes when available and otherwise
+        falls back to unit spacing.
+    rot_init_iterations : int, optional
+        Number of orthogonal-projection initialization passes before full 3D
+        rigid refinement. Higher values can improve the coarse rotation
+        starting point but add runtime.
+    rot_metric : {"correlation", "mutual_information"}, optional
+        Similarity metric used by the SimpleITK full 3D rigid backend.
+        ``"correlation"`` is suitable for same-modality volumes.
+    rot_shrink_factors : sequence[int], optional
+        Multi-resolution shrink factors for the SimpleITK backend, ordered from
+        coarse to fine.
+    rot_smoothing_sigmas : sequence[float], optional
+        Gaussian smoothing sigmas for each SimpleITK pyramid level, ordered from
+        coarse to fine.
+    rot_iterations : int, optional
+        Maximum SimpleITK optimizer iterations.
+    rot_learning_rate : float, optional
+        SimpleITK optimizer learning rate.
+    rot_min_step : float, optional
+        SimpleITK optimizer minimum step length / convergence scale.
+    rot_sampling_percentage : float or None, optional
+        Optional fraction of voxels sampled by the SimpleITK metric. ``None``
+        uses dense metric evaluation.
+    rot_cval : float, optional
+        Constant fill value used outside the transformed volume for full 3D
+        rigid correction.
+    rot_n_jobs : int, optional
+        Worker count for independent time points in full 3D rigid registration.
+        ``1`` inherits the global ``n_jobs`` value.
+    rot_points_max_points : int, optional
+        Maximum number of detected 3D peaks used by the sparse point backend.
+    rot_points_min_distance : int, optional
+        Minimum distance in pixels between detected peaks for the sparse point
+        backend.
+    rot_points_threshold_rel : float, optional
+        Relative peak-detection threshold for the sparse point backend.
+    rot_points_iterations : int, optional
+        Number of ICP/Kabsch refinement iterations for the sparse point backend.
+    rot_points_max_match_distance : float, optional
+        Maximum nearest-neighbor point-match distance in pixels for the sparse
+        point backend.
     transform_backend : {"skimage", "scipy"}, optional
         Backend used to apply translation corrections. ``"skimage"`` is the
         default for XY transforms and keeps translation correction aligned with
@@ -3000,6 +3036,79 @@ def register_stack(
     phase_cross_correlation_normalization : {None, "phase"}, optional
         Normalization mode forwarded to scikit-image's phase cross-correlation.
         ``None`` is more robust for the smooth synthetic examples.
+    nc_pw_rigid : bool, optional
+        If ``method="normcorre"``, enable piecewise-rigid NoRMCorre-style patch
+        correction. If False, NoRMCorre runs in rigid/global translation mode.
+    nc_strides : int, tuple[int, ...], or None, optional
+        NoRMCorre patch-grid stride. For 2D+t data this is interpreted as
+        ``(stride_y, stride_x)``; for 3D+t data as ``(stride_z, stride_y,
+        stride_x)``. ``None`` uses backend defaults.
+    nc_overlaps : int, tuple[int, ...], or None, optional
+        NoRMCorre patch overlap. The effective patch size is
+        ``nc_strides + nc_overlaps``. Larger overlaps smooth transitions between
+        neighboring local shifts but increase runtime.
+    nc_max_deviation_rigid : float, tuple[float, ...], or None, optional
+        Maximum allowed local patch deviation from the global rigid shift in
+        NoRMCorre. ``None`` leaves local deviations unconstrained.
+    nc_n_iterations : int, optional
+        Number of NoRMCorre template-update passes. Each pass estimates motion,
+        applies correction, and updates the template according to
+        ``nc_template_update_method``.
+    nc_correction_iterations : int, optional
+        Number of times the already corrected NoRMCorre output is fed back into
+        the correction loop. This is useful for difficult data but increases
+        runtime.
+    nc_niter_rig : int, optional
+        Number of rigid pre-alignment iterations before piecewise NoRMCorre
+        patch correction.
+    nc_template_init_mode : {"registration_stack", "median"}, optional
+        Initial NoRMCorre template strategy. ``"registration_stack"`` uses the
+        selected reference time point. ``"median"`` uses a CaImAn-like sparse
+        temporal sample and median template.
+    nc_template_update_method : {"caiman", "mean", "median", "none"}, optional
+        NoRMCorre template update strategy. ``"caiman"`` computes chunk means
+        and takes a median across chunks, following the batch NoRMCorre idea.
+    nc_splits : int, optional
+        Number of temporal chunks used by the CaImAn-style NoRMCorre template
+        update.
+    nc_gSig_filt : int, tuple[int, ...], or None, optional
+        CaImAn-style spatial high-pass filter scale used by NoRMCorre for
+        estimation. ``None`` disables this filter.
+    nc_add_to_movie : float or None, optional
+        Constant offset added internally before NoRMCorre processing. ``None``
+        lets the backend choose an offset when required by non-negativity
+        handling.
+    nc_nonneg_movie : bool, optional
+        If True, NoRMCorre processing keeps the internal movie non-negative by
+        adding an offset when needed.
+    nc_shift_interpolation : {"resize", "linear"}, optional
+        Interpolation strategy used to expand patch shifts into a dense
+        NoRMCorre displacement field.
+    nc_n_jobs : int, optional
+        Worker count used by the NoRMCorre backend. ``1`` inherits the global
+        ``n_jobs`` value.
+    nc_transform_mode : str, optional
+        Boundary mode used when applying NoRMCorre transforms, forwarded to the
+        internal interpolation routines.
+    nc_transform_cval : float, optional
+        Constant fill value used by NoRMCorre transforms when
+        ``nc_transform_mode="constant"``.
+    nc_border_nan : bool, "copy", or None, optional
+        NoRMCorre border handling. ``None`` uses the backend default; other
+        values follow CaImAn/NoRMCorre-style border handling conventions.
+    nc_block_size : int, optional
+        Temporal block size used by NoRMCorre for chunked processing and
+        template updates.
+    nc_output_use_memmap : bool, optional
+        If True, write NoRMCorre registered output to an OMIO disk-backed Zarr
+        store instead of a full in-memory NumPy array. The global
+        ``output_use_memmap`` option acts as an alias for this setting when
+        ``method="normcorre"``.
+    nc_output_memmap_folder : str or None, optional
+        Folder forwarded to OMIO as ``zarr_store_path`` for NoRMCorre output
+        caches.
+    nc_output_memmap_name : str or None, optional
+        Base Zarr store name for NoRMCorre registered outputs.
     n_jobs : int, optional
         Number of CPU worker threads for the standard registration paths. The
         template-based time registration, intra-stack slice registration,
@@ -3044,6 +3153,12 @@ def register_stack(
         If True together with ``return_shifts=True``, always return the full
         registration details dictionary, including settings used for reports,
         instead of the backwards-compatible simple shift arrays.
+    pre_median_filter : bool or None, optional
+        Deprecated alias for ``filter_slices``. Kept for compatibility with
+        early ZenReg scripts.
+    post_median_filter : bool or None, optional
+        Deprecated alias for ``filter_projections``. Kept for compatibility
+        with early ZenReg scripts.
 
     Returns
     -------
