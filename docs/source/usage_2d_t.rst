@@ -255,7 +255,11 @@ New options in this block:
      - Patch overlap in YX. Effective patch size is
        ``nc_strides + nc_overlaps``. Default: ``(24, 24)`` for 2D.
    * - ``nc_max_deviation_rigid``
-     - Maximum local patch deviation around the global rigid shift. ``None`` (default) means not limited.
+     - Maximum local patch deviation around the global rigid shift. This is
+       different from ``max_xy_shifts``: ``max_xy_shifts`` limits the overall
+       correction, while ``nc_max_deviation_rigid`` limits how far an
+       individual patch may deviate from the global estimate. ``None``
+       (default) means not limited.
    * - ``nc_n_jobs``
      - Worker count used by the NoRMCorre backend.  Default:  ``1``.
    * - ``nc_template_init_mode``
@@ -311,6 +315,16 @@ patch layout. ZenReg provides a helper function for this:
    signal is sparse. If motion is mostly global, start with rigid NoRMCorre or
    phase correlation; use piecewise NoRMCorre when different regions of the
    field of view visibly move differently.
+
+.. tip::
+
+   ``max_xy_shifts`` and ``nc_max_deviation_rigid`` constrain different parts
+   of a NoRMCorre run. ``max_xy_shifts=(max_y, max_x)`` is a global safety
+   limit for the final correction. ``nc_max_deviation_rigid`` applies only to
+   piecewise-rigid NoRMCorre and limits how much each local patch may move
+   relative to the global rigid shift. If this value is too small, local motion
+   will be suppressed; if it is too large, noisy or weakly textured patches can
+   jump to implausible local shifts.
 
 
 

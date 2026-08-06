@@ -3049,7 +3049,11 @@ def register_stack(
         neighboring local shifts but increase runtime.
     nc_max_deviation_rigid : float, tuple[float, ...], or None, optional
         Maximum allowed local patch deviation from the global rigid shift in
-        NoRMCorre. ``None`` leaves local deviations unconstrained.
+        NoRMCorre. This is not the same as ``max_xy_shifts``:
+        ``max_xy_shifts`` limits the overall/global correction, whereas
+        ``nc_max_deviation_rigid`` limits how far each piecewise-rigid local
+        patch may move relative to the global rigid estimate. ``None`` leaves
+        local deviations unconstrained.
     nc_n_iterations : int, optional
         Number of NoRMCorre template-update passes. Each pass estimates motion,
         applies correction, and updates the template according to
