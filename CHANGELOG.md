@@ -8,7 +8,9 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
-## 🚧 v0.0.6 - Unreleased
+## 🚀 v0.0.6 - Documentation refinements and improved memory-efficiency in NoRMCorre
+
+This release improves the documentation for NoRMCorre usage and reduces peak RAM use when running NoRMCorre with parallel workers and disk-backed registered-output caches.
 
 ### 🧩 Changes and improvements
 #### NoRMCorre wrapper behavior
