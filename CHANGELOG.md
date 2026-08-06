@@ -8,6 +8,27 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
+## 🚀 v0.0.7 - Quieter interactive registration output
+
+August 6, 2026
+
+### ✨ New features
+#### Interactive execution
+
+- Added `print_shifts` to `register_stack()` and
+  `correct_intra_stack_z_drift()`. Progress bars and high-level status messages
+  remain controlled by `verbose`, while detailed per-frame or per-slice
+  shift/rotation lines can be enabled separately with `print_shifts=True`.
+
+### 🧩 Changes and improvements
+#### Interactive execution
+
+- `print_shifts` defaults to `False`, so `verbose=True` now keeps the useful
+  tqdm progress bars without flooding interactive terminals with lines such as
+  `t=..., shift_y=..., shift_x=...`.
+
+--- 
+
 ## 🚀 v0.0.6 - Documentation refinements and improved memory-efficiency in NoRMCorre
 
 This release improves the documentation for NoRMCorre usage and reduces peak RAM use when running NoRMCorre with parallel workers and disk-backed registered-output caches.
