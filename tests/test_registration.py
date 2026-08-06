@@ -188,6 +188,26 @@ def test_raw_time_shifts_are_reported_before_limit_clipping():
     np.testing.assert_allclose(details["time_shifts_yx_raw"][1], [-4.0, 3.0], atol=0.05)
 
 
+def test_print_shifts_default_keeps_verbose_progress_without_shift_lines(capsys):
+    stack, _ = create_2d_motion_distorted_stack(time_count=3, noise_sigma=0.0)
+
+    _, details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        verbose=True,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    captured = capsys.readouterr()
+    combined_output = captured.out + captured.err
+    assert "Registering TZCYX stack" in combined_output
+    assert "shift_y=" not in combined_output
+    assert "shift_x=" not in combined_output
+    assert details["print_shifts"] is False
+
+
 def test_z_project_supports_expected_projection_methods():
     stack = np.arange(2 * 3 * 1 * 4 * 5, dtype=np.float32).reshape(2, 3, 1, 4, 5)
 

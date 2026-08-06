@@ -1526,6 +1526,7 @@ def _correct_intra_stack_z_drift_impl(
     output_stage_name: str | None = "intra_stack",
     memory_tracker=None,
     verbose: bool = True,
+    print_shifts: bool = False,
     return_shifts: bool = False,
     pre_median_filter: bool | None = None,
     post_median_filter: bool | None = None,
@@ -1598,6 +1599,10 @@ def _correct_intra_stack_z_drift_impl(
         ``1`` keeps serial execution. ``-1`` uses all available CPUs.
     verbose : bool, optional
         If True, print progress messages.
+    print_shifts : bool, optional
+        If True together with ``verbose=True``, print detailed per-slice
+        shift estimates after correction. Set to False to keep progress bars
+        and high-level messages without printing every shift.
     return_shifts : bool, optional
         If True, return ``(corrected_stack, shifts_tzyx)`` where shifts has shape
         ``T, Z, 2`` and stores ``(shift_y, shift_x)``.
@@ -1720,7 +1725,7 @@ def _correct_intra_stack_z_drift_impl(
         shifts[t, :, :] = shifts_t
         for z, shift_yx in enumerate(shifts_t):
             _print_verbose(
-                verbose,
+                verbose and print_shifts,
                 f"t={t} z={z} shift_y={float(shift_yx[0]):.3f} shift_x={float(shift_yx[1]):.3f}",
             )
         corrected[t, :, :, :, :] = corrected_frame
@@ -1746,6 +1751,7 @@ def correct_intra_stack_z_drift(
     transform_order: int = 1,
     n_jobs: int = 1,
     verbose: bool = True,
+    print_shifts: bool = False,
     return_shifts: bool = False,
     pre_median_filter: bool | None = None,
     post_median_filter: bool | None = None,
@@ -1778,6 +1784,7 @@ def correct_intra_stack_z_drift(
         transform_order=transform_order,
         n_jobs=n_jobs,
         verbose=verbose,
+        print_shifts=print_shifts,
         return_shifts=True,
         pre_median_filter=pre_median_filter,
         post_median_filter=post_median_filter,
@@ -1972,6 +1979,7 @@ def _register_stack_across_time(
     output_stage_name: str | None,
     memory_tracker=None,
     verbose: bool,
+    print_shifts: bool,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
     """Register a ``TZCYX`` stack across time and return raw/applied ``TZYX`` shifts."""
 
@@ -2115,7 +2123,7 @@ def _register_stack_across_time(
             max_xy_shifts=max_xy_shifts,
         )
         _print_verbose(
-            verbose,
+            verbose and print_shifts,
             (
                 f"t={t} shift_z={float(shifts_zyx[t, 0]):.3f} "
                 f"shift_y={float(shifts_zyx[t, 1]):.3f} "
@@ -2177,6 +2185,7 @@ def _register_stack_rotations_across_time(
     output_stage_name: str | None,
     memory_tracker=None,
     verbose: bool,
+    print_shifts: bool,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Register in-plane XY rotations across time and return raw/applied correction angles."""
 
@@ -2287,7 +2296,10 @@ def _register_stack_rotations_across_time(
             reference_angle - float(pair_rotations[t]),
             max_rot_shifts,
         )
-        _print_verbose(verbose, f"t={t} rotation_correction_deg={float(angles_deg[t]):.3f}")
+        _print_verbose(
+            verbose and print_shifts,
+            f"t={t} rotation_correction_deg={float(angles_deg[t]):.3f}",
+        )
 
     registered = _create_registered_output(
         tuple(int(v) for v in stack.shape),
@@ -2838,6 +2850,7 @@ def register_stack(
     n_jobs: int = 1,
     memory_tracker=None,
     verbose: bool = True,
+    print_shifts: bool = False,
     return_shifts: bool = False,
     return_details: bool = False,
     pre_median_filter: bool | None = None,
@@ -3168,7 +3181,13 @@ def register_stack(
         major internal steps add markers to the tracker's RSS trace. The default
         ``None`` keeps profiling fully disabled and has negligible overhead.
     verbose : bool, optional
-        If True, print the estimated shifts.
+        If True, print high-level progress messages and show tqdm progress bars
+        for long-running loops.
+    print_shifts : bool, optional
+        If True together with ``verbose=True``, print detailed per-frame or
+        per-slice shift/rotation estimates such as ``t=... shift_y=...``.
+        Set to False to keep progress bars without flooding interactive
+        terminals with every detected correction.
     return_shifts : bool, optional
         If True, return shifts. For the default projection XY time-registration
         path, shifts remain a backwards-compatible ``T, 2`` array storing
@@ -3350,6 +3369,8 @@ def register_stack(
         "zero_clip_mask_strategy": effective_zero_clip_mask_strategy,
         "zero_clip_mask_min_fraction": float(zero_clip_mask_min_fraction),
         "n_jobs": int(n_jobs),
+        "verbose": bool(verbose),
+        "print_shifts": bool(print_shifts),
         "output_use_memmap": bool(output_use_memmap),
         "output_memmap_folder": output_memmap_folder,
         "output_memmap_name": output_memmap_name if output_use_memmap else None,
@@ -3530,6 +3551,7 @@ def register_stack(
             output_stage_name="intra_stack",
             memory_tracker=memory_tracker,
             verbose=verbose,
+            print_shifts=print_shifts,
             return_shifts=True,
         )
         if max_xy_shifts is not None:
@@ -3630,6 +3652,7 @@ def register_stack(
                 output_stage_name=f"time_pass_{pass_index + 1}",
                 memory_tracker=memory_tracker,
                 verbose=verbose,
+                print_shifts=print_shifts,
             )
             translation_pass_shifts_zyx.append(pass_shifts_zyx)
             translation_pass_shifts_zyx_raw.append(pass_shifts_zyx_raw)
@@ -3676,6 +3699,7 @@ def register_stack(
                     output_stage_name=f"rotation_pass_{pass_index + 1}",
                     memory_tracker=memory_tracker,
                     verbose=verbose,
+                    print_shifts=print_shifts,
                 )
                 rotation_pass_shifts_deg.append(pass_rotation_shifts_deg)
                 rotation_pass_shifts_deg_raw.append(pass_rotation_shifts_deg_raw)
