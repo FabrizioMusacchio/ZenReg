@@ -294,6 +294,25 @@ patch layout. ZenReg provides a helper function for this:
    the patch layout with stride 32 and overlap 16. The effective patch size is
    48x48 pixels. 
 
+.. tip::
+
+   Choosing ``nc_strides`` and ``nc_overlaps`` is a model choice, not only a
+   speed setting. The effective patch size is ``nc_strides + nc_overlaps``.
+   A useful patch should contain enough stable image structure to estimate a
+   local translation, for example several puncta, vessels, neuropil features,
+   or cell bodies. A single isolated bright object per patch is often
+   ambiguous, while empty or mostly noisy patches cannot constrain motion.
+
+   As a practical starting point, use patches large enough to contain multiple
+   informative structures, with overlaps of about one third to one half of the
+   stride. Smaller strides provide denser local correction fields but increase
+   runtime and can overfit noisy or weakly textured data. Larger strides behave
+   more like a global rigid correction and are usually more stable when the
+   signal is sparse. If motion is mostly global, start with rigid NoRMCorre or
+   phase correlation; use piecewise NoRMCorre when different regions of the
+   field of view visibly move differently.
+
+
 
 Memory-efficient workflow
 -------------------------
