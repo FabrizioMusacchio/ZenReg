@@ -8,15 +8,16 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
-## 🚀 v0.0.8 - Unreleased
+## 🚀 v0.0.8 - Minor improvements
+
+August 7, 2026
+
+This release adds batch-safe image loading and error handling, which is especially useful for large-scale batch processing of microscopy datasets where some files may be unreadable or corrupted.
 
 ### ✨ New features
 #### Batch-safe image loading
 
-- Added `load_stack(..., on_error="raise"|"return_none")`, forwarding OMIO
-  v0.2.7's batch-safe read-error handling. The default remains `"raise"` for
-  interactive workflows; batch scripts can request `"return_none"` and skip
-  unreadable files deliberately.
+- Added `load_stack(..., on_error="raise"|"return_none")`, forwarding OMIO v0.2.7's batch-safe read-error handling. The default remains `"raise"` for interactive workflows; batch scripts can request `"return_none"` and skip unreadable files (OMIO then returns `(None, None)`) deliberately.
 
 --- 
 
