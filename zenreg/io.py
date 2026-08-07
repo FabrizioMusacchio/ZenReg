@@ -279,6 +279,7 @@ def load_stack(
     use_memmap: bool = False,
     memmap_folder: str | Path | None = None,
     memmap_reuse: bool = True,
+    on_error: str = "raise",
     **imread_kwargs,
 ):
     """
@@ -306,15 +307,26 @@ def load_stack(
         If True with ``use_memmap=True``, forward ``reuse_disk_cache=True`` to
         OMIO so an existing validated ``.omio_cache`` Zarr store is reused. If
         no cache exists, OMIO builds it. If False, OMIO rebuilds the disk cache.
+    on_error : {"raise", "return_none"}, optional
+        Error handling mode forwarded to ``om.imread``. ``"raise"`` is the
+        default and lets unreadable files fail loudly, which is safest for
+        interactive work. ``"return_none"`` lets OMIO return ``(None, None)``
+        for unrecoverable metadata problems, allowing batch workflows to skip
+        that file deliberately.
     **imread_kwargs
         Extra keyword arguments forwarded to ``om.imread``.
 
     Returns
     -------
-    numpy.ndarray or tuple[numpy.ndarray, dict]
-        Loaded canonical ``TZCYX`` stack, optionally with OMIO metadata.
+    numpy.ndarray, None, or tuple[numpy.ndarray | None, dict | None]
+        Loaded canonical ``TZCYX`` stack, optionally with OMIO metadata. If
+        ``on_error="return_none"`` and OMIO cannot read the file, returns
+        ``None`` or ``(None, None)`` depending on ``return_metadata``.
     """
 
+    on_error = str(on_error).strip().lower()
+    if on_error not in {"raise", "return_none"}:
+        raise ValueError("on_error must be 'raise' or 'return_none'.")
     if not use_memmap and memmap_folder is not None:
         raise ValueError("memmap_folder requires use_memmap=True.")
     if use_memmap:
@@ -327,7 +339,12 @@ def load_stack(
             imread_kwargs["zarr_store_path"] = str(memmap_folder)
 
     om = _import_omio()
+    imread_kwargs["on_error"] = on_error
     stack, metadata = om.imread(path, **imread_kwargs)
+    if stack is None or metadata is None:
+        if on_error != "return_none":
+            raise ValueError(f"OMIO returned None for {path!s} although on_error='raise'.")
+        return (None, None) if return_metadata else None
     stack = ensure_tzcyx_stack(stack)
     if metadata.get("axes") != CANONICAL_AXIS_ORDER:
         raise ValueError(

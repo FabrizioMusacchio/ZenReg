@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import zenreg.io as io_module
 from zenreg import (
     cleanup_omio_cache,
     create_empty_stack,
@@ -11,6 +12,15 @@ from zenreg import (
     save_stack,
     update_stack_metadata,
 )
+
+
+class _DummyOmioReturnNone:
+    def __init__(self):
+        self.kwargs = None
+
+    def imread(self, path, **kwargs):
+        self.kwargs = kwargs
+        return None, None
 
 
 def test_omio_roundtrip_preserves_tzcyx_shape_and_metadata(tmp_path):
@@ -132,6 +142,32 @@ def test_load_stack_supports_omio_disk_memmap(tmp_path):
     assert reloaded_metadata["omio_zarr_store_path"] == loaded_metadata["omio_zarr_store_path"]
     np.testing.assert_allclose(np.asarray(reloaded_stack), stack)
     cleanup_omio_cache(cache_folder, verbose=False)
+
+
+def test_load_stack_can_return_none_for_omio_read_errors(monkeypatch):
+    dummy_omio = _DummyOmioReturnNone()
+    monkeypatch.setattr(io_module, "_import_omio", lambda: dummy_omio)
+
+    stack, metadata = load_stack(
+        "broken.raw",
+        return_metadata=True,
+        on_error="return_none",
+    )
+    stack_only = load_stack(
+        "broken.raw",
+        return_metadata=False,
+        on_error="return_none",
+    )
+
+    assert stack is None
+    assert metadata is None
+    assert stack_only is None
+    assert dummy_omio.kwargs["on_error"] == "return_none"
+
+
+def test_load_stack_validates_on_error():
+    with pytest.raises(ValueError, match="on_error"):
+        load_stack("dummy.raw", on_error="skip")
 
 
 def test_create_empty_stack_supports_omio_disk_memmap(tmp_path):
