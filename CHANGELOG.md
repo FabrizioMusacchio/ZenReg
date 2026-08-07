@@ -8,6 +8,18 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
+## 🚀 v0.0.8 - Unreleased
+
+### ✨ New features
+#### Batch-safe image loading
+
+- Added `load_stack(..., on_error="raise"|"return_none")`, forwarding OMIO
+  v0.2.7's batch-safe read-error handling. The default remains `"raise"` for
+  interactive workflows; batch scripts can request `"return_none"` and skip
+  unreadable files deliberately.
+
+--- 
+
 ## 🚀 v0.0.7 - Quieter interactive registration output
 
 August 6, 2026
