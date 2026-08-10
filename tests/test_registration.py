@@ -157,6 +157,24 @@ def test_registration_template_time_range_all_uses_all_frames():
     assert details["registration_template_time_range"] == (0, stack.shape[0])
 
 
+def test_registration_template_time_range_clips_stop_to_available_frames():
+    stack, _ = create_2d_motion_distorted_stack(time_count=5, noise_sigma=0.0)
+
+    with pytest.warns(RuntimeWarning, match="extends beyond the available"):
+        _, details = register_stack(
+            stack,
+            registration_channel=0,
+            method="phase_cross_correlation",
+            registration_template_time_range=(0, 500),
+            projection_method="mean",
+            verbose=False,
+            return_shifts=True,
+            return_details=True,
+        )
+
+    assert details["registration_template_time_range"] == (0, stack.shape[0])
+
+
 def test_registration_template_time_range_rejects_previous_reference_mode():
     stack, _ = create_2d_motion_distorted_stack(time_count=5, noise_sigma=0.0)
 

@@ -8,6 +8,21 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
+## 🚀 v0.0.10 - UNRELEASED
+
+### 🧩 Changes and improvements
+#### Registration robustness
+- `registration_template_time_range` values whose stop exceeds the available
+  number of time points are now clipped to `T` with a warning instead of
+  aborting the registration.
+
+#### Interactive execution
+- Progress bars now use the standard text-based `tqdm` backend instead of
+  `tqdm.auto`, avoiding optional `ipywidgets` warnings in VS Code interactive
+  windows.
+
+--- 
+
 ## 🚀 v0.0.9 - OMIO Thorlabs RAW fallback update
 
 August 10, 2026

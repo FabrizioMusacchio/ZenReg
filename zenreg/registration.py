@@ -238,7 +238,7 @@ def _progress_iter(iterable, *, total: int, enabled: bool, desc: str | None):
     if not enabled:
         return iterable
     try:
-        from tqdm.auto import tqdm
+        from tqdm import tqdm
     except ImportError:
         return iterable
     return tqdm(
@@ -546,11 +546,20 @@ def _normalize_registration_template_time_range(
             "half-open time range (start, stop)."
         )
     start, stop = (int(registration_template_time_range[0]), int(registration_template_time_range[1]))
-    if start < 0 or stop > int(time_count) or start >= stop:
+    if start < 0 or start >= stop or start >= int(time_count):
         raise ValueError(
             "registration_template_time_range must satisfy "
             f"0 <= start < stop <= T. Got {(start, stop)!r} for T={int(time_count)}."
         )
+    if stop > int(time_count):
+        warnings.warn(
+            "registration_template_time_range extends beyond the available "
+            f"time points. Clipping {(start, stop)!r} to {(start, int(time_count))!r} "
+            f"for T={int(time_count)}.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        stop = int(time_count)
     return (start, stop)
 
 def _clip_shift_yx(shift_yx: np.ndarray, max_xy_shifts: np.ndarray | None) -> np.ndarray:
