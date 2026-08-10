@@ -8,7 +8,9 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
-## 🚀 v0.0.10 - UNRELEASED
+## 🚀 v0.0.10 - Introducing: BIDS-like batch processing
+
+August 10, 2026
 
 ### ✨ New features
 #### Batch processing
