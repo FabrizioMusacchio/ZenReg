@@ -8,6 +8,21 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 --- 
 
+## 🚀 v0.0.9 - OMIO Thorlabs RAW fallback update
+
+August 10, 2026
+
+This release updates ZenReg's OMIO dependency to use the latest Thorlabs RAW metadata fallback behavior introduced in OMIO v0.2.8.
+
+### 🧩 Changes and improvements
+#### I/O robustness
+
+- Updated the required OMIO dependency to `omio-microscopy>=0.2.8`.
+- ZenReg batch workflows now benefit from OMIO's improved Thorlabs RAW fallback logic, where XML metadata that is parseable but inconsistent with the RAW file size triggers YAML fallback instead of deriving invalid dimensions such as `Z=0`.
+- ZenReg's existing `load_stack(..., on_error="return_none")` batch-skip path now also covers this additional RAW metadata inconsistency case when no usable YAML fallback is available.
+
+--- 
+
 ## 🚀 v0.0.8 - Minor improvements
 
 August 7, 2026
