@@ -23,8 +23,10 @@
 
    .. autosummary::
    
-      ~BatchImageRecord.subject_id
       ~BatchImageRecord.experiment_tag
+      ~BatchImageRecord.subject_id
+      ~BatchImageRecord.tag_folders
       ~BatchImageRecord.image_path
+      ~BatchImageRecord.output_scope_dir
    
    

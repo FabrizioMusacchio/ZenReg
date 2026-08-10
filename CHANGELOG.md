@@ -10,11 +10,39 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ## 🚀 v0.0.10 - UNRELEASED
 
+### ✨ New features
+#### Batch processing
+- Added `register_bids_like_batch`, a true BIDS-like batch processor that
+  discovers image files, loads them with OMIO, runs `register_stack`, saves
+  registered OME-TIFF outputs, manages optional disk-backed caches, skips
+  already registered files, and returns a structured batch result.
+- Added flexible nested tag-folder discovery via
+  `discover_bids_like_batch_images`, including token-based matching such as
+  `("DC000_FOV", "DA000_FOV")` for folders like `DC000_FOV1` and
+  `DA000_FOV2`.
+- Added batch-level skipped-file reporting with per-folder reports and a
+  root-level, copy-pasteable Python dictionary for later OMIO Thorlabs RAW YAML
+  template creation.
+
 ### 🧩 Changes and improvements
+#### Batch processing
+- Reworked the synthetic batch user script to demonstrate both a simple custom
+  loop and the new `register_bids_like_batch` workflow.
+- Added a private Katharina batch template script that maps the new batch
+  processor to nested `ID*/DC000_FOV*/TL_000/*.raw` style project trees.
+- Removed the older public `iter_bids_like_image_files` helper from the ZenReg
+  top-level API in favor of the more general discovery and full batch
+  registration functions.
+
 #### Registration robustness
 - `registration_template_time_range` values whose stop exceeds the available
   number of time points are now clipped to `T` with a warning instead of
   aborting the registration.
+
+#### Documentation
+- Rebuilt the RTD batch-processing page around the BIDS-like project tree,
+  synthetic batch project creation, custom loops, and the new full batch
+  processor.
 
 #### Interactive execution
 - Progress bars now use the standard text-based `tqdm` backend instead of

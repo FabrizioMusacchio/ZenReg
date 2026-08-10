@@ -1,36 +1,88 @@
 from pathlib import Path
 
-from zenreg import iter_bids_like_image_files
+from zenreg import discover_bids_like_batch_images, register_bids_like_batch
+from zenreg.synthetic import write_batch_example_project
 
 
-def test_iter_bids_like_image_files_discovers_supported_images(tmp_path):
-    image_path = tmp_path / "ID000001" / "TP000" / "image_01.ome.tif"
+def test_discover_bids_like_batch_images_supports_nested_token_levels(tmp_path):
+    image_path = tmp_path / "ID000001" / "DC000_FOV1" / "TL_000" / "image_01.ome.tif"
     image_path.parent.mkdir(parents=True)
     image_path.write_text("dummy")
-    ignored = tmp_path / "ID000001" / "TP000" / "notes.txt"
+    ignored = tmp_path / "ID000001" / "DC000_FOV1" / "TL_000" / "ROIMask.raw"
     ignored.write_text("not an image")
 
-    records = iter_bids_like_image_files(tmp_path)
+    records = discover_bids_like_batch_images(
+        tmp_path,
+        subject_ids=None,
+        subject_prefix="ID",
+        tag_folder_levels=(("DC000_FOV",), ("TL_000",)),
+        image_patterns=("*.ome.tif", "*.raw"),
+    )
 
     assert len(records) == 1
     assert records[0].subject_id == "ID000001"
-    assert records[0].experiment_tag == "TP000"
+    assert records[0].tag_folders == ("DC000_FOV1", "TL_000")
+    assert records[0].experiment_tag == "DC000_FOV1"
     assert records[0].image_path == image_path
+    assert records[0].output_scope_dir == tmp_path / "ID000001" / "DC000_FOV1"
 
 
-def test_iter_bids_like_image_files_respects_requested_subjects_and_experiments(tmp_path):
-    for subject in ("ID000001", "ID000002"):
-        for experiment in ("TP000", "TP001"):
-            folder = tmp_path / subject / experiment
-            folder.mkdir(parents=True)
-            (folder / "image_01.czi").write_text("dummy")
-
-    records = iter_bids_like_image_files(
+def test_register_bids_like_batch_processes_synthetic_project(tmp_path):
+    write_batch_example_project(
         tmp_path,
-        subject_ids=("ID000002",),
-        experiment_tags=("TP001",),
+        subject_ids=("ID000001",),
+        experiment_tags=("TP000",),
     )
 
-    assert [record.image_path for record in records] == [
-        Path(tmp_path / "ID000002" / "TP001" / "image_01.czi")
-    ]
+    result = register_bids_like_batch(
+        tmp_path,
+        subject_ids=("ID000001",),
+        tag_folder_levels=(("TP000",),),
+        image_patterns=("*.ome.tif",),
+        register_kwargs={
+            "registration_channel": 0,
+            "method": "phase_cross_correlation",
+            "time_registration_mode": "projection",
+            "projection_method": "max",
+            "zreg": False,
+            "zero_clip": False,
+            "verbose": False,
+        },
+        save_kwargs={"verbose": False},
+        use_memmap=False,
+        verbose=False,
+    )
+
+    assert len(result.processed) == 1
+    assert len(result.skipped) == 0
+    assert result.processed[0].output_path.exists()
+    assert result.processed[0].output_path.name == "image_01_zenreg_registered.ome.tif"
+
+
+def test_register_bids_like_batch_reports_load_none(monkeypatch, tmp_path):
+    image_path = tmp_path / "ID000001" / "TP000" / "broken.raw"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_text("dummy")
+
+    import zenreg.batch as batch_module
+
+    monkeypatch.setattr(batch_module, "load_stack", lambda *args, **kwargs: (None, None))
+
+    result = register_bids_like_batch(
+        tmp_path,
+        subject_ids=("ID000001",),
+        tag_folder_levels=(("TP000",),),
+        image_patterns=("*.raw",),
+        register_kwargs={"registration_channel": 0, "verbose": False},
+        use_memmap=False,
+        verbose=False,
+    )
+
+    assert len(result.processed) == 0
+    assert len(result.skipped) == 1
+    assert result.skipped[0].stage == "load"
+    assert result.root_error_report_path is not None
+    report_text = result.root_error_report_path.read_text()
+    assert str(image_path) in report_text
+    assert "'template_metadata': {" in report_text
+    assert "'T': 1" in report_text

@@ -33,8 +33,12 @@ Batch and compute helpers
 .. autosummary::
    :toctree: generated
 
-   zenreg.iter_bids_like_image_files
+   zenreg.discover_bids_like_batch_images
+   zenreg.register_bids_like_batch
    zenreg.BatchImageRecord
+   zenreg.BatchProcessedRecord
+   zenreg.BatchSkippedRecord
+   zenreg.BatchRegistrationResult
    zenreg.available_cpu_count
    zenreg.print_available_compute
 

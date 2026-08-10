@@ -12,7 +12,15 @@ from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 import tomllib
 
-from .batch import BatchImageRecord, DEFAULT_IMAGE_EXTENSIONS, iter_bids_like_image_files
+from .batch import (
+    BatchImageRecord,
+    BatchProcessedRecord,
+    BatchRegistrationResult,
+    BatchSkippedRecord,
+    DEFAULT_IMAGE_PATTERNS,
+    discover_bids_like_batch_images,
+    register_bids_like_batch,
+)
 from .compute import available_cpu_count, print_available_compute
 from .filters import apply_filters, max_z_project, z_project
 from .io import (
@@ -54,14 +62,17 @@ __all__ = [
     "apply_filters",
     "available_cpu_count",
     "BatchImageRecord",
+    "BatchProcessedRecord",
+    "BatchRegistrationResult",
+    "BatchSkippedRecord",
     "cleanup_omio_cache",
     "correct_intra_stack_z_drift",
     "create_empty_stack",
     "create_stack_metadata",
-    "DEFAULT_IMAGE_EXTENSIONS",
+    "DEFAULT_IMAGE_PATTERNS",
     "crop_stack",
+    "discover_bids_like_batch_images",
     "load_stack",
-    "iter_bids_like_image_files",
     "load_csv_table",
     "load_expected_rigid_corrections",
     "load_expected_rigid_z_rotation",
@@ -81,6 +92,7 @@ __all__ = [
     "plot_normcorre_patch_overlay",
     "register_stack_normcorre",
     "register_stack_rigid_3d",
+    "register_bids_like_batch",
     "register_stack",
     "save_stack",
     "show_before_after",
