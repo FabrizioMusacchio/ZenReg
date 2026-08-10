@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from zenreg import discover_bids_like_batch_images, register_bids_like_batch
+from zenreg import (
+    create_thorlabs_raw_yaml_templates_from_batch_report,
+    discover_bids_like_batch_images,
+    register_bids_like_batch,
+)
 from zenreg.synthetic import write_batch_example_project
 
 
@@ -86,3 +90,65 @@ def test_register_bids_like_batch_reports_load_none(monkeypatch, tmp_path):
     assert str(image_path) in report_text
     assert "'template_metadata': {" in report_text
     assert "'T': 1" in report_text
+
+
+def test_create_thorlabs_raw_yaml_templates_from_batch_report(monkeypatch, tmp_path):
+    raw_path = tmp_path / "ID000001" / "DC000_FOV1" / "TL_000" / "broken.raw"
+    raw_path.parent.mkdir(parents=True)
+    raw_path.write_text("raw")
+    report_path = tmp_path / "zenreg_batch_error_report_2026-08-10_12-00-00.txt"
+    report_path.write_text(
+        "\n".join(
+            [
+                "ZENREG_BATCH_SKIPPED_RAW_FILES = {",
+                f"    {str(raw_path)!r}: {{",
+                "        'reason': 'metadata missing',",
+                "        'stage': 'load',",
+                "        'subject_id': 'ID000001',",
+                "        'tag_folders': ('DC000_FOV1', 'TL_000'),",
+                "        'template_metadata': {",
+                "            'T': 11,",
+                "            'Z': 3,",
+                "            'C': 2,",
+                "            'Y': 64,",
+                "            'X': 65,",
+                "            'bits': 16,",
+                "            'pixelunit': 'micron',",
+                "            'physicalsize_xyz': (0.5, 0.5, 1.0),",
+                "            'time_increment': 1.0,",
+                "            'time_increment_unit': 'seconds',",
+                "        },",
+                "    },",
+                "}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    calls = []
+
+    class DummyOmio:
+        @staticmethod
+        def create_thorlabs_raw_yaml(fname_raw, **template_metadata):
+            calls.append((Path(fname_raw), template_metadata))
+            Path(fname_raw).with_suffix(".yaml").write_text("template")
+
+    import zenreg.batch as batch_module
+
+    monkeypatch.setattr(batch_module, "_import_omio", lambda: DummyOmio)
+
+    result = create_thorlabs_raw_yaml_templates_from_batch_report(
+        tmp_path,
+        report_name=report_path.name,
+        subject_ids=("ID000001",),
+        tag_folder_levels=(("DC000_FOV",), ("TL_000",)),
+        image_patterns=("*.raw",),
+        verbose=False,
+    )
+
+    assert len(result.created) == 1
+    assert len(result.skipped) == 0
+    assert calls[0][0] == raw_path
+    assert calls[0][1]["T"] == 11
+    assert calls[0][1]["Y"] == 64
+    assert raw_path.with_suffix(".yaml").exists()

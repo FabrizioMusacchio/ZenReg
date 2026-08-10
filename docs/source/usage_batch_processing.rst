@@ -1,11 +1,12 @@
-Batch Processing
+Batch processing
 ================
 
-ZenReg can be used in simple loops, but it also provides a true BIDS-like batch
+ZenReg can be used in simple loops, but it also provides a true 
+`BIDS <https://bids.neuroimaging.io/index.html>`_-like batch
 processor that discovers image files, loads them with OMIO, registers them,
 saves the results, and writes batch-level error reports.
 
-BIDS-like File Tree
+BIDS-like file tree
 -------------------
 
 The batch processor assumes a project tree with subject folders and one or more
@@ -35,18 +36,23 @@ match a strict standard; ZenReg searches for configurable name tokens.
       └─ ...
 
 For example, subject folders may start with ``ID`` and experiment folders may
-contain tags such as ``TP000``, ``DC000_FOV``, ``DA000_FOV``, or ``TL_000``.
+contain tags such as ``TP000``, ``TP001``, ``DA000_FOV``, or ``TL_000``.
+Please refer to the `BIDS <https://bids.neuroimaging.io/getting_started/folders_and_files/folders.html>`_ 
+documentation for a full list of recommended BIDS folder naming conventions.
 
-Create A Synthetic Batch Project
---------------------------------
-
-The repository includes a ready-to-run script:
+All examples shown here can be found in a ready-to-run script in
+ZenReg's repository:
 
 .. code-block:: bash
 
-   python user_scripts/register_batch_bids_like_synthetic.py
+   user_scripts/register_batch_bids_like_synthetic.py
 
-The script first creates a small synthetic project:
+Create a synthetic batch project
+--------------------------------
+
+ZenReg comes with a built-in synthetic project generator that 
+creates a small BIDS-like folder tree with two subjects, two 
+experiments, and a few synthetic images:
 
 .. code-block:: python
 
@@ -59,17 +65,42 @@ The script first creates a small synthetic project:
        project_root,
        subject_ids=("ID000001", "ID000002"),
        experiment_tags=("TP000", "TP001"),
-       overwrite=True,
-   )
+       overwrite=True)
+
+This creates a BIDS-like folder, which looks as follows:
+
+.. code-block:: text
+
+   example_data
+   └─ synthetic_batch_project
+      ├─ ID000001
+      │  ├─ TP000
+      │  │  ├─ image_01.tif
+      │  │  └─ image_02.tif
+      │  └─ TP001
+      │     ├─ image_01.tif
+      │     └─ image_02.tif
+      └─ ID000002
+         ├─ TP000
+         │  ├─ image_01.tif
+         │  └─ image_02.tif
+         └─ TP001
+            ├─ image_01.tif
+            └─ image_02.tif
+
+Here, ``example_data/synthetic_batch_project`` is the project root, ``ID000001`` and
+``ID000002`` are subject folders, and ``TP000`` and ``TP001`` are experiment folders, 
+which contain synthetic TIFF images. 
 
 The synthetic project is useful for testing custom loops or the built-in batch
 processor before mapping the same logic to real data.
 
-Writing Your Own Loop
----------------------
+Writing your own custom loop
+-----------------------------
 
-For unusual project layouts, an explicit Python loop can still be the clearest
-choice. The registration calls remain ordinary ZenReg calls:
+For custom project layouts, an explicit Python loop can be the clearest solution. 
+The following example discovers subject and experiment folders, and processes the 
+images within them:
 
 .. code-block:: python
 
@@ -85,16 +116,14 @@ choice. The registration calls remain ordinary ZenReg calls:
    if selected_subjects is None:
        subject_dirs = sorted(
            path for path in project_root.iterdir()
-           if path.is_dir() and path.name.startswith("ID")
-       )
+           if path.is_dir() and path.name.startswith("ID"))
    else:
        subject_dirs = [project_root / subject_id for subject_id in selected_subjects]
 
    for subject_dir in subject_dirs:
        experiment_dirs = sorted(
            path for path in subject_dir.iterdir()
-           if path.is_dir() and path.name in selected_experiments
-       )
+           if path.is_dir() and path.name in selected_experiments)
 
        for experiment_dir in experiment_dirs:
            image_files = []
@@ -113,8 +142,7 @@ choice. The registration calls remain ordinary ZenReg calls:
                    use_memmap=True,
                    memmap_folder=cache_dir,
                    memmap_reuse=True,
-                   on_error="raise",
-               )
+                   on_error="raise",)
 
                registered, details = register_stack(
                    image,
@@ -132,24 +160,25 @@ choice. The registration calls remain ordinary ZenReg calls:
                    n_jobs=-1,
                    verbose=True,
                    return_shifts=True,
-                   return_details=True,
-               )
+                   return_details=True,)
 
                save_stack(
                    output_path,
                    registered,
                    metadata=metadata,
                    registration_details=details,
-                   overwrite=True,
-               )
+                   overwrite=True,)
 
                cleanup_omio_cache(cache_dir, full_cleanup=True)
 
-Using The ZenReg Batch Processor
---------------------------------
+Using ZenReg's built-in batch processor
+----------------------------------------
 
-For recurring analyses, ``register_bids_like_batch`` wraps discovery, loading,
-registration, saving, cache handling, and error reporting in one call.
+ZenReg comes with a built-in batch processor called ``register_bids_like_batch``
+that can be configured to discover and process image files in a project directory, 
+which follows a BIDS-like folder structure. The entire functionality of ZenReg's core
+functions (``load_stack``, ``register_stack``, and ``save_stack``) is available through 
+this single function, which also handles error reporting and logging:
 
 .. code-block:: python
 
@@ -160,45 +189,40 @@ registration, saving, cache handling, and error reporting in one call.
 
    result = register_bids_like_batch(
        project_root,
-       subject_ids=None,                 # None discovers all folders starting with subject_prefix
-       subject_prefix="ID",
-       tag_folder_levels=(("TP000", "TP001"),),
-       image_patterns=("*.ome.tif", "*.tif", "*.czi", "*.lsm", "*.raw"),
-       output_folder_name="zenreg_output",
-       skip_registered=True,
-       use_memmap=True,
-       memmap_folder_name="omio_memmap_cache",
-       memmap_reuse=True,
-       cleanup_cache_before_load=False,
-       cleanup_cache_after_save=True,
-       load_kwargs={
-           "on_error": "return_none",
-           "verbose": False,
-       },
+       subject_ids          = None, # set to None to discover all folders starting with subject_prefix
+       subject_prefix       = "ID", # the prefix for subject folders, e.g. "ID" for "ID20810"
+       tag_folder_levels    = (("TP000", "TP001"),), # this is a tuple of tuples, one tuple per folder level below each subject
+       image_patterns       = ("*.ome.tif", "*.tif", "*.czi", "*.lsm", "*.raw"),
+       output_folder_name   = "zenreg_output",
+       skip_registered      = True, # switch controlling file skipping if the expected registered output already exists
+       use_memmap           = True,
+       memmap_folder_name   = "omio_memmap_cache",
+       memmap_reuse         = True,
+       cleanup_cache_before_load    = False,
+       cleanup_cache_after_save     = True,
+       load_kwargs={"on_error": "return_none",
+                    "verbose":  False,},
        register_kwargs={
-           "registration_channel": 0,
-           "method": "phase_cross_correlation",
-           "time_registration_mode": "projection",
-           "time_reference_mode": "template",
-           "registration_template_time_range": "all",
-           "projection_method": "max",
-           "zreg": False,
-           "zero_clip": True,
-           "max_xy_shifts": (8, 8),
-           "n_jobs": -1,
-           "verbose": True,
-           "return_shifts": True,
-           "return_details": True,
-       },
+           "registration_channel":              0,
+           "method":                            "phase_cross_correlation",
+           "time_registration_mode":            "projection",
+           "time_reference_mode":               "template",
+           "registration_template_time_range":  "all",
+           "projection_method":                 "max",
+           "zreg":                              False,
+           "zero_clip":                         True,
+           "max_xy_shifts":                     (8, 8),
+           "n_jobs":                            -1,
+           "verbose":                           True,
+           "return_shifts":                     True,
+           "return_details":                    True,},
        save_kwargs={
            "compression_level": 3,
-           "overwrite": True,
-           "verbose": False,
-       },
-       write_error_reports=True,
-       continue_on_error=True,
-       verbose=True,
-   )
+           "overwrite":         True,
+           "verbose":           False,},
+       write_error_reports      = True,
+       continue_on_error        = True,
+       verbose                  = True,)
 
    print(f"Processed files: {len(result.processed)}")
    print(f"Skipped files:   {len(result.skipped)}")
@@ -212,25 +236,23 @@ for a nested ``TL_000`` folder:
 
    result = register_bids_like_batch(
        project_root,
-       subject_ids=("ID20810", "ID20867"),
-       subject_prefix="ID",
-       tag_folder_levels=(
-           ("DC000_FOV", "DA000_FOV"),
-           ("TL_000",),
-       ),
-       image_patterns=("*.raw", "*.ome.tif", "*.tif", "*.czi", "*.lsm"),
-       use_memmap=True,
-       load_kwargs={"on_error": "return_none"},
+       subject_ids          = ("ID20810", "ID20867"),
+       subject_prefix       = "ID",
+       tag_folder_levels    =(
+                                ("DC000_FOV", "DA000_FOV"),
+                                ("TL_000",)
+                             ),
+       image_patterns       = ("*.raw", "*.ome.tif", "*.tif", "*.czi", "*.lsm"),
+       use_memmap           = True,
+       load_kwargs          = {"on_error": "return_none"},
        register_kwargs={
-           "registration_channel": 1,
-           "method": "phase_cross_correlation",
-           "time_registration_mode": "projection",
-           "registration_template_time_range": (0, 500),
-           "max_xy_shifts": (110, 110),
-           "n_jobs": 20,
-           "return_details": True,
-       },
-   )
+           "registration_channel":              1,
+           "method":                            "phase_cross_correlation",
+           "time_registration_mode":            "projection",
+           "registration_template_time_range":  (0, 500),
+           "max_xy_shifts":                     (110, 110),
+           "n_jobs":                            20,
+           "return_details":                    True,},)
 
 Options introduced here:
 
@@ -272,13 +294,20 @@ Options introduced here:
      - Continue with the next image after load, registration, or save errors.
        Default: ``True``.
 
-Batch Error Reports
+All other keyword arguments are the same as for the individual functions, and are 
+forwarded to them. Please refer to the corresponding function documentation and
+tutorials for details.
+
+
+Batch error reports
 -------------------
 
 If an image cannot be loaded, registered, or saved, ZenReg records the failure
-and continues when ``continue_on_error=True``. For Thorlabs RAW files with
-missing or inconsistent metadata, the root error report also contains editable
-metadata defaults:
+and continues when ``continue_on_error=True``. I.e, the batch processor does not 
+abort on the first error, but instead writes a root-level error report and continues 
+with the next image. The root-level error report is a Python dictionary stored in a 
+text file. For Thorlabs RAW files with missing or inconsistent metadata, the root 
+error report also contains editable metadata defaults:
 
 .. code-block:: python
 
@@ -304,13 +333,86 @@ metadata defaults:
        },
    }
 
-The user can edit these metadata values centrally and then create OMIO YAML
-templates for the skipped RAW files.
+The user can edit these metadata values centrally and then create 
+`OMIO YAML templates <https://omio.readthedocs.io/en/latest/usage_file_format_supported.html#reading-thorlabs-raw-files>`_
+for the skipped RAW files. Also see the next section for a helper function 
+that automates this process.
 
-Ready-To-Adapt Script
----------------------
+Creating Thorlabs RAW YAML templates
+------------------------------------
 
-The complete synthetic example is available as
-``user_scripts/register_batch_bids_like_synthetic.py`` in the repository. It
-contains both a simple explicit loop and a ``register_bids_like_batch`` example
-that can be copied into a project-specific batch script.
+For Thorlabs RAW files with missing or inconsistent XML metadata, OMIO can use
+`YAML sidecar files <https://omio.readthedocs.io/en/latest/usage_file_format_supported.html#reading-thorlabs-raw-files>`_ 
+as explicit metadata bypass files. ZenReg provides a helper
+that reads the root batch error report, extracts skipped RAW paths and their
+``template_metadata`` blocks, and calls OMIO's YAML-template creator for each
+selected file:
+
+.. code-block:: python
+
+   from pathlib import Path
+   from zenreg import create_thorlabs_raw_yaml_templates_from_batch_report
+
+   result = create_thorlabs_raw_yaml_templates_from_batch_report(
+       project_root,
+       report_name          = "zenreg_batch_error_report_2026-08-10_12-00-00.txt",
+       subject_ids          = ("ID20810", "ID20867"),
+       subject_prefix       = "ID",
+       tag_folder_levels    = (
+                                ("DC000_FOV", "DA000_FOV"),
+                                ("TL_000",),
+                              ),
+       image_patterns       = ("*.raw",),
+       restrict_to_discovered= True,
+       overwrite_existing   = False,
+       verbose              = True,)
+
+   print(f"Created YAML templates: {len(result.created)}")
+   print(f"Skipped RAW files:      {len(result.skipped)}")
+
+The function uses the same BIDS-like folder discovery logic as the batch processor, 
+so it can be used to locate the relevant RAW files efficiently. Set ``report_name=None`` 
+to use the latest ``zenreg_batch_error_report_*.txt`` in ``project_root``. With
+``restrict_to_discovered=True`` (default), ZenReg only creates YAML templates
+for report entries that also match the provided BIDS-like folder selectors.
+This keeps large repair runs focused on the same subjects and tag folders used
+for the original registration batch.
+
+.. tip::
+
+    The error report created by ZenReg is indeed a valid Python dictionary, 
+    so it can be imported and edited and ZenReg's YAML template creator makes 
+    use of this. The idea here is, that the user can edit the metadata values 
+    centrally and let ZenReg create the YAML templates for all relevant RAW 
+    files in one go, instead of editing each YAML template individually.
+
+Options introduced here:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Argument
+     - Meaning
+   * - ``report_name``
+     - Root-level ZenReg batch error report. Use ``None`` to choose the latest
+       matching report in ``project_root``.
+   * - ``restrict_to_discovered``
+     - If ``True``, YAML templates are created only for RAW files that are both
+       listed in the report and discoverable with the provided batch folder
+       settings.
+   * - ``raw_template_metadata``
+     - Fallback metadata for older reports without per-file
+       ``template_metadata`` blocks. Current reports should usually be edited
+       directly.
+   * - ``overwrite_existing``
+     - If ``False`` (default), existing YAML/YML sidecars are kept and the RAW
+       file is skipped.
+
+ZenReg's GitHub repository also contains a ready-to-run script that demonstrates the 
+Thorlabs RAW metadata repair workflows illustrated above:
+
+.. code-block:: bash
+
+   user_scripts/OMIO_yaml_template_creator.py 
+

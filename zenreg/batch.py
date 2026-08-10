@@ -7,10 +7,12 @@ Date: July 2026
 # %% IMPORTS
 from __future__ import annotations
 
+import ast
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import Iterable, Sequence
 import shutil
 
@@ -84,6 +86,35 @@ class BatchRegistrationResult:
     skipped: tuple[BatchSkippedRecord, ...] = ()
     root_error_report_path: Path | None = None
     tag_error_report_paths: tuple[Path, ...] = field(default_factory=tuple)
+
+@dataclass(frozen=True)
+class BatchRawYamlTemplateRecord:
+    """One RAW file considered for OMIO YAML template creation."""
+
+    raw_path: Path
+    yaml_path: Path | None
+    template_metadata: dict
+    status: str
+    reason: str = ""
+
+@dataclass(frozen=True)
+class BatchRawYamlTemplateResult:
+    """Summary returned by :func:`create_thorlabs_raw_yaml_templates_from_batch_report`."""
+
+    report_path: Path | None
+    records: tuple[BatchRawYamlTemplateRecord, ...] = ()
+
+    @property
+    def created(self) -> tuple[BatchRawYamlTemplateRecord, ...]:
+        """RAW files for which YAML template creation was attempted."""
+
+        return tuple(record for record in self.records if record.status == "created")
+
+    @property
+    def skipped(self) -> tuple[BatchRawYamlTemplateRecord, ...]:
+        """RAW files skipped during YAML template creation."""
+
+        return tuple(record for record in self.records if record.status != "created")
 
 # %% HELPER FUNCTIONS
 def _normalize_subject_ids(subject_ids: Iterable[str | Path] | None) -> tuple[str, ...] | None:
@@ -199,6 +230,18 @@ def _metadata_for_batch_output(metadata: dict | None, output_path: Path) -> dict
     annotations["original_parentfolder"] = str(output_path.parent)
     return output_metadata
 
+def _import_omio():
+    """Import OMIO lazily for optional RAW YAML helper functionality."""
+
+    try:
+        import omio as om
+    except ImportError as exc:
+        raise ImportError(
+            "Creating Thorlabs RAW YAML templates requires OMIO. Install "
+            "'omio-microscopy' or use an environment that provides `import omio`."
+        ) from exc
+    return om
+
 def _output_scope_for_chain(subject_dir: Path, tag_folder_chain: Sequence[Path]) -> Path:
     """Choose the folder that receives the ZenReg output folder."""
 
@@ -265,6 +308,85 @@ def _write_root_error_report(
             handle.write("    },\n")
         handle.write("}\n")
     return report_path
+
+def _extract_skipped_raw_dict(report_text: str) -> dict:
+    """Extract ``ZENREG_BATCH_SKIPPED_RAW_FILES`` from a root error report."""
+
+    variable_name = "ZENREG_BATCH_SKIPPED_RAW_FILES"
+    assignment_index = report_text.find(variable_name)
+    if assignment_index < 0:
+        return {}
+
+    brace_start = report_text.find("{", assignment_index)
+    if brace_start < 0:
+        return {}
+
+    depth = 0
+    for index in range(brace_start, len(report_text)):
+        character = report_text[index]
+        if character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                parsed = ast.literal_eval(report_text[brace_start : index + 1])
+                if not isinstance(parsed, dict):
+                    raise ValueError("ZENREG_BATCH_SKIPPED_RAW_FILES is not a dictionary.")
+                return parsed
+
+    raise ValueError("Could not find the end of ZENREG_BATCH_SKIPPED_RAW_FILES.")
+
+def _extract_raw_paths_from_report_text(report_text: str) -> list[Path]:
+    """Fallback parser for legacy plain-text reports containing RAW paths."""
+
+    raw_path_pattern = re.compile(r"([A-Za-z]:\\[^\n\r'\"]+?\.raw|/[^\n\r'\"]+?\.raw)")
+    return [Path(match.group(1).strip()) for match in raw_path_pattern.finditer(report_text)]
+
+def _load_skipped_raw_entries_from_report(
+    report_path: Path,
+    *,
+    raw_template_metadata: dict,
+) -> list[dict]:
+    """Load skipped RAW paths and template metadata from one ZenReg report."""
+
+    report_text = report_path.read_text(encoding="utf-8")
+    skipped_dict = _extract_skipped_raw_dict(report_text)
+    if skipped_dict:
+        entries = []
+        for raw_path, details in skipped_dict.items():
+            details = details if isinstance(details, dict) else {}
+            entries.append(
+                {
+                    "path": Path(raw_path),
+                    "template_metadata": dict(
+                        details.get("template_metadata", raw_template_metadata)
+                    ),
+                }
+            )
+        return entries
+    return [
+        {
+            "path": raw_path,
+            "template_metadata": dict(raw_template_metadata),
+        }
+        for raw_path in _extract_raw_paths_from_report_text(report_text)
+    ]
+
+def _expected_raw_yaml_paths(raw_path: Path) -> tuple[Path, ...]:
+    """Return likely OMIO Thorlabs RAW YAML sidecar paths."""
+
+    return (
+        raw_path.with_suffix(".yaml"),
+        raw_path.with_suffix(".yml"),
+        raw_path.with_name(raw_path.name + ".yaml"),
+        raw_path.with_name(raw_path.name + ".yml"),
+    )
+
+def _find_latest_batch_error_report(project_root: Path) -> Path | None:
+    """Return the latest root-level ZenReg batch error report if present."""
+
+    reports = sorted(project_root.glob("zenreg_batch_error_report_*.txt"))
+    return reports[-1] if reports else None
 
 def _cleanup_fresh_failed_output_dir(output_dir: Path, *, was_created_for_file: bool) -> None:
     """Remove an output folder only if this failed file created it in this run."""
@@ -622,5 +744,174 @@ def register_bids_like_batch(
         skipped=tuple(skipped),
         root_error_report_path=root_report_path,
         tag_error_report_paths=tuple(sorted(tag_report_paths)),
+    )
+
+def create_thorlabs_raw_yaml_templates_from_batch_report(
+    project_root: str | Path,
+    *,
+    report_name: str | Path | None = None,
+    subject_ids: Iterable[str | Path] | None = None,
+    subject_prefix: str = "ID",
+    tag_folder_levels: Sequence[Iterable[str | Path] | None] | None = None,
+    image_patterns: str | Sequence[str] = ("*.raw",),
+    exclude_name_contains: Sequence[str] = ("ROIMask.raw",),
+    restrict_to_discovered: bool = True,
+    raw_template_metadata: dict | None = None,
+    overwrite_existing: bool = False,
+    verbose: bool = True,
+) -> BatchRawYamlTemplateResult:
+    """
+    Create OMIO Thorlabs RAW YAML templates from a ZenReg batch error report.
+
+    The root-level error report written by :func:`register_bids_like_batch`
+    contains a copy-pasteable ``ZENREG_BATCH_SKIPPED_RAW_FILES`` dictionary with
+    RAW paths and editable ``template_metadata`` blocks. This helper reads that
+    report and calls ``omio.create_thorlabs_raw_yaml`` for each selected RAW
+    file. By default, report entries are additionally restricted to files
+    discoverable from the same BIDS-like folder settings used for batch
+    registration.
+
+    Parameters
+    ----------
+    project_root : str or pathlib.Path
+        Root folder containing the ZenReg batch error report and subject
+        folders.
+    report_name : str, pathlib.Path, or None, optional
+        Report filename or path. If None, the latest
+        ``zenreg_batch_error_report_*.txt`` in ``project_root`` is used.
+    subject_ids, subject_prefix, tag_folder_levels, image_patterns,
+    exclude_name_contains
+        Same discovery controls as :func:`register_bids_like_batch`. They are
+        used only when ``restrict_to_discovered=True``.
+    restrict_to_discovered : bool, optional
+        If True, create YAML templates only for report entries that also match
+        the provided BIDS-like discovery settings.
+    raw_template_metadata : dict or None, optional
+        Fallback metadata used for legacy reports without per-file
+        ``template_metadata`` blocks.
+    overwrite_existing : bool, optional
+        If False, skip RAW files that already have a likely YAML/YML sidecar.
+    verbose : bool, optional
+        If True, print progress and skip reasons.
+
+    Returns
+    -------
+    BatchRawYamlTemplateResult
+        Per-RAW template creation records.
+    """
+
+    root = Path(project_root)
+    if report_name is None:
+        report_path = _find_latest_batch_error_report(root)
+        if report_path is None:
+            raise FileNotFoundError(
+                f"No zenreg_batch_error_report_*.txt found in {root!s}."
+            )
+    else:
+        report_path = Path(report_name)
+        if not report_path.is_absolute():
+            report_path = root / report_path
+    if not report_path.exists():
+        raise FileNotFoundError(f"ZenReg batch error report not found: {report_path}")
+
+    fallback_metadata = dict(raw_template_metadata or DEFAULT_RAW_TEMPLATE_METADATA)
+    entries = _load_skipped_raw_entries_from_report(
+        report_path,
+        raw_template_metadata=fallback_metadata,
+    )
+
+    allowed_paths: set[Path] | None = None
+    if restrict_to_discovered:
+        allowed_paths = {
+            record.image_path.resolve()
+            for record in discover_bids_like_batch_images(
+                root,
+                subject_ids=subject_ids,
+                subject_prefix=subject_prefix,
+                tag_folder_levels=tag_folder_levels,
+                image_patterns=image_patterns,
+                exclude_name_contains=exclude_name_contains,
+            )
+        }
+
+    om = _import_omio()
+    records: list[BatchRawYamlTemplateRecord] = []
+    for entry in entries:
+        raw_path = Path(entry["path"])
+        template_metadata = dict(entry.get("template_metadata", fallback_metadata))
+        yaml_paths = _expected_raw_yaml_paths(raw_path)
+        existing_yaml_paths = [path for path in yaml_paths if path.exists()]
+
+        if allowed_paths is not None and raw_path.resolve() not in allowed_paths:
+            reason = "RAW file is not part of the selected BIDS-like batch folders."
+            records.append(
+                BatchRawYamlTemplateRecord(
+                    raw_path=raw_path,
+                    yaml_path=None,
+                    template_metadata=template_metadata,
+                    status="skipped",
+                    reason=reason,
+                )
+            )
+            if verbose:
+                print(f"Skipping RAW outside selected folders: {raw_path}")
+            continue
+
+        if not raw_path.exists():
+            reason = "RAW file does not exist."
+            records.append(
+                BatchRawYamlTemplateRecord(
+                    raw_path=raw_path,
+                    yaml_path=None,
+                    template_metadata=template_metadata,
+                    status="missing",
+                    reason=reason,
+                )
+            )
+            if verbose:
+                print(f"Skipping missing RAW file: {raw_path}")
+            continue
+
+        if existing_yaml_paths and not overwrite_existing:
+            reason = "YAML/YML sidecar already exists."
+            records.append(
+                BatchRawYamlTemplateRecord(
+                    raw_path=raw_path,
+                    yaml_path=existing_yaml_paths[0],
+                    template_metadata=template_metadata,
+                    status="exists",
+                    reason=reason,
+                )
+            )
+            if verbose:
+                existing_names = ", ".join(str(path) for path in existing_yaml_paths)
+                print(f"Skipping existing YAML for {raw_path}: {existing_names}")
+            continue
+
+        if verbose:
+            print(f"Creating OMIO YAML template for: {raw_path}")
+        om.create_thorlabs_raw_yaml(raw_path, **template_metadata)
+        created_yaml = next((path for path in yaml_paths if path.exists()), yaml_paths[0])
+        records.append(
+            BatchRawYamlTemplateRecord(
+                raw_path=raw_path,
+                yaml_path=created_yaml,
+                template_metadata=template_metadata,
+                status="created",
+                reason="",
+            )
+        )
+
+    if verbose:
+        created_count = sum(record.status == "created" for record in records)
+        skipped_count = len(records) - created_count
+        print(
+            f"ZenReg RAW YAML template creation finished: "
+            f"{created_count} created, {skipped_count} skipped."
+        )
+
+    return BatchRawYamlTemplateResult(
+        report_path=report_path,
+        records=tuple(records),
     )
 # %% END
