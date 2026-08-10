@@ -194,7 +194,5 @@ later. See [LICENSE](LICENSE) for details.
 ## Citation
 If you use ZenReg in scientific work, please cite:
 
-```text
-Musacchio, F. (2026). ZenReg: Fast and memory-efficient N-dimensional microscopy image registration for Python. https://doi.org/10.5281/zenodo.21727826
-```
+> Musacchio, F. (2026). *ZenReg: Fast and memory-efficient N-dimensional microscopy image registration for Python*. https://doi.org/10.5281/zenodo.21727826
 
