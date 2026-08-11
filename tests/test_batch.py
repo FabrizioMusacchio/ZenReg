@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from zenreg import (
-    create_thorlabs_raw_yaml_templates_from_batch_report,
+    batch_create_thorlabs_raw_yaml_templates,
     discover_bids_like_batch_images,
     register_bids_like_batch,
 )
@@ -92,7 +92,7 @@ def test_register_bids_like_batch_reports_load_none(monkeypatch, tmp_path):
     assert "'T': 1" in report_text
 
 
-def test_create_thorlabs_raw_yaml_templates_from_batch_report(monkeypatch, tmp_path):
+def test_batch_create_thorlabs_raw_yaml_templates(monkeypatch, tmp_path):
     raw_path = tmp_path / "ID000001" / "DC000_FOV1" / "TL_000" / "broken.raw"
     raw_path.parent.mkdir(parents=True)
     raw_path.write_text("raw")
@@ -137,12 +137,9 @@ def test_create_thorlabs_raw_yaml_templates_from_batch_report(monkeypatch, tmp_p
 
     monkeypatch.setattr(batch_module, "_import_omio", lambda: DummyOmio)
 
-    result = create_thorlabs_raw_yaml_templates_from_batch_report(
+    result = batch_create_thorlabs_raw_yaml_templates(
         tmp_path,
         report_name=report_path.name,
-        subject_ids=("ID000001",),
-        tag_folder_levels=(("DC000_FOV",), ("TL_000",)),
-        image_patterns=("*.raw",),
         verbose=False,
     )
 

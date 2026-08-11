@@ -20,19 +20,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from zenreg import create_thorlabs_raw_yaml_templates_from_batch_report
-# %% BATCH-LIKE PATH SETTINGS
+from zenreg import batch_create_thorlabs_raw_yaml_templates
+# %% PATH SETTINGS
 BATCH_ROOT = PROJECT_ROOT / "example_data" / "synthetic_batch_project"
-
-# Use either explicit IDs or None to discover all folders starting with
-# SUBJECT_PREFIX.
-BATCH_IDS = ("ID000001", "ID000002")
-SUBJECT_PREFIX = "ID"
-
-# Same tag-folder logic as register_bids_like_batch:
-# tokens are matched by containment, e.g. "DC000_FOV" matches "DC000_FOV1".
-BATCH_TAG_FOLDER_LEVELS = (
-    ("TP000", "TP001"),)
 
 # Name of the root-level report written by register_bids_like_batch.
 # Set to None to use the latest "zenreg_batch_error_report_*.txt" in BATCH_ROOT.
@@ -56,15 +46,9 @@ RAW_TEMPLATE_METADATA_FALLBACK = dict(
     time_increment=1.0,
     time_increment_unit="seconds",)
 # %% CREATE YAML TEMPLATES FROM ZENREG BATCH ERROR REPORT
-result = create_thorlabs_raw_yaml_templates_from_batch_report(
+result = batch_create_thorlabs_raw_yaml_templates(
     BATCH_ROOT,
     report_name             = ZENREG_BATCH_ERROR_REPORT_NAME,
-    subject_ids             = BATCH_IDS,
-    subject_prefix          = SUBJECT_PREFIX, # this only affects when subject_ids=None or commented out
-    tag_folder_levels       = BATCH_TAG_FOLDER_LEVELS,
-    image_patterns          = ("*.raw",),
-    exclude_name_contains   = ("ROIMask.raw",),
-    restrict_to_discovered  = True,
     raw_template_metadata   = RAW_TEMPLATE_METADATA_FALLBACK,
     overwrite_existing      = OVERWRITE_EXISTING_YML_FILES,
     verbose                 = True,)

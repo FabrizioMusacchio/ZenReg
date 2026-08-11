@@ -35,7 +35,7 @@ Batch and compute helpers
 
    zenreg.discover_bids_like_batch_images
    zenreg.register_bids_like_batch
-   zenreg.create_thorlabs_raw_yaml_templates_from_batch_report
+   zenreg.batch_create_thorlabs_raw_yaml_templates
    zenreg.BatchImageRecord
    zenreg.BatchProcessedRecord
    zenreg.BatchSkippedRecord

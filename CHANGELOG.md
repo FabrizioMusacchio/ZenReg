@@ -6,7 +6,16 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue)](https://doi.org/10.5281/zenodo.21727826)
 
---- 
+## 🚀 v0.0.11 - UNRELEASED
+
+### 🧩 Changes and improvements
+#### Batch RAW metadata repair
+- Renamed and simplified the Thorlabs RAW YAML repair helper from `create_thorlabs_raw_yaml_templates_from_batch_report` to `batch_create_thorlabs_raw_yaml_templates`.
+- Reduced `batch_create_thorlabs_raw_yaml_templates` to its specific task: reading RAW paths and editable `template_metadata` blocks from a ZenReg root error report and creating OMIO YAML sidecars for those paths.
+- Removed BIDS-like rediscovery arguments from the RAW YAML template helper (`subject_ids`, `subject_prefix`, `tag_folder_levels`, `image_patterns`, `exclude_name_contains`, and `restrict_to_discovered`); the function now deliberately trusts the paths already recorded in the ZenReg error report.
+- Simplified the public and private OMIO YAML template creator scripts so they expose only the report path, fallback metadata, overwrite behavior, and verbosity settings.
+
+---
 
 ## 🚀 v0.0.10 - Introducing: BIDS-like batch processing
 
@@ -14,34 +23,17 @@ August 10, 2026
 
 ### ✨ New features
 #### Batch processing
-- Added `register_bids_like_batch`, a true BIDS-like batch processor that
-  discovers image files, loads them with OMIO, runs `register_stack`, saves
-  registered OME-TIFF outputs, manages optional disk-backed caches, skips
-  already registered files, and returns a structured batch result.
-- Added flexible nested tag-folder discovery via
-  `discover_bids_like_batch_images`, including token-based matching such as
-  `("DC000_FOV", "DA000_FOV")` for folders like `DC000_FOV1` and
-  `DA000_FOV2`.
-- Added batch-level skipped-file reporting with per-folder reports and a
-  root-level, copy-pasteable Python dictionary for later OMIO Thorlabs RAW YAML
-  template creation.
-- Added `create_thorlabs_raw_yaml_templates_from_batch_report`, a batch helper
-  that reads ZenReg root error reports and creates OMIO Thorlabs RAW YAML
-  bypass templates for selected skipped RAW files using the same BIDS-like
-  folder-selection logic as `register_bids_like_batch`.
+- Added `register_bids_like_batch`, a true BIDS-like batch processor that discovers image files, loads them with OMIO, runs `register_stack`, saves registered OME-TIFF outputs, manages optional disk-backed caches, skips already registered files, and returns a structured batch result.
+- Added flexible nested tag-folder discovery via `discover_bids_like_batch_images`, including token-based matching such as `("DC000_FOV", "DA000_FOV")` for folders like `DC000_FOV1` and `DA000_FOV2`.
+- Added batch-level skipped-file reporting with per-folder reports and a root-level, copy-pasteable Python dictionary for later OMIO Thorlabs RAW YAML template creation.
+- Added `create_thorlabs_raw_yaml_templates_from_batch_report`, a batch helper that reads ZenReg root error reports and creates OMIO Thorlabs RAW YAML bypass templates for selected skipped RAW files using BIDS-like folder selection logic.
 
 ### 🧩 Changes and improvements
 #### Batch processing
-- Reworked the synthetic batch user script to demonstrate both a simple custom
-  loop and the new `register_bids_like_batch` workflow.
-- Added a private Katharina batch template script that maps the new batch
-  processor to nested `ID*/DC000_FOV*/TL_000/*.raw` style project trees.
-- Simplified the private OMIO YAML template creator script so it delegates
-  report parsing, BIDS-like filtering, and OMIO YAML creation to ZenReg's new
-  batch helper.
-- Removed the older public `iter_bids_like_image_files` helper from the ZenReg
-  top-level API in favor of the more general discovery and full batch
-  registration functions.
+- Reworked the synthetic batch user script to demonstrate both a simple custom loop and the new `register_bids_like_batch` workflow.
+- Added a private Katharina batch template script that maps the new batch processor to nested `ID*/DC000_FOV*/TL_000/*.raw` style project trees.
+- Added public and private OMIO YAML template creator scripts for creating Thorlabs RAW YAML bypass files from ZenReg batch error reports.
+- Removed the older public `iter_bids_like_image_files` helper from the ZenReg top-level API in favor of the more general discovery and full batch registration functions.
 
 #### Registration robustness
 - `registration_template_time_range` values whose stop exceeds the available

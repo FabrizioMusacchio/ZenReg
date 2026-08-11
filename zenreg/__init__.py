@@ -20,7 +20,7 @@ from .batch import (
     BatchRegistrationResult,
     BatchSkippedRecord,
     DEFAULT_IMAGE_PATTERNS,
-    create_thorlabs_raw_yaml_templates_from_batch_report,
+    batch_create_thorlabs_raw_yaml_templates,
     discover_bids_like_batch_images,
     register_bids_like_batch,
 )
@@ -74,7 +74,7 @@ __all__ = [
     "correct_intra_stack_z_drift",
     "create_empty_stack",
     "create_stack_metadata",
-    "create_thorlabs_raw_yaml_templates_from_batch_report",
+    "batch_create_thorlabs_raw_yaml_templates",
     "DEFAULT_IMAGE_PATTERNS",
     "crop_stack",
     "discover_bids_like_batch_images",

@@ -346,45 +346,34 @@ For Thorlabs RAW files with missing or inconsistent XML metadata, OMIO can use
 as explicit metadata bypass files. ZenReg provides a helper
 that reads the root batch error report, extracts skipped RAW paths and their
 ``template_metadata`` blocks, and calls OMIO's YAML-template creator for each
-selected file:
+RAW file listed in the report:
 
 .. code-block:: python
 
    from pathlib import Path
-   from zenreg import create_thorlabs_raw_yaml_templates_from_batch_report
+   from zenreg import batch_create_thorlabs_raw_yaml_templates
 
-   result = create_thorlabs_raw_yaml_templates_from_batch_report(
+   result = batch_create_thorlabs_raw_yaml_templates(
        project_root,
-       report_name          = "zenreg_batch_error_report_2026-08-10_12-00-00.txt",
-       subject_ids          = ("ID20810", "ID20867"),
-       subject_prefix       = "ID",
-       tag_folder_levels    = (
-                                ("DC000_FOV", "DA000_FOV"),
-                                ("TL_000",),
-                              ),
-       image_patterns       = ("*.raw",),
-       restrict_to_discovered= True,
-       overwrite_existing   = False,
-       verbose              = True,)
+       report_name="zenreg_batch_error_report_2026-08-10_12-00-00.txt",
+       overwrite_existing=False,
+       verbose=True,
+   )
 
    print(f"Created YAML templates: {len(result.created)}")
    print(f"Skipped RAW files:      {len(result.skipped)}")
 
-The function uses the same BIDS-like folder discovery logic as the batch processor, 
-so it can be used to locate the relevant RAW files efficiently. Set ``report_name=None`` 
-to use the latest ``zenreg_batch_error_report_*.txt`` in ``project_root``. With
-``restrict_to_discovered=True`` (default), ZenReg only creates YAML templates
-for report entries that also match the provided BIDS-like folder selectors.
-This keeps large repair runs focused on the same subjects and tag folders used
-for the original registration batch.
+Set ``report_name=None`` to use the latest
+``zenreg_batch_error_report_*.txt`` in ``project_root``. The function does not
+scan the project tree again. It deliberately trusts the report and creates YAML
+templates only for the RAW paths listed there.
 
 .. tip::
 
-    The error report created by ZenReg is indeed a valid Python dictionary, 
-    so it can be imported and edited and ZenReg's YAML template creator makes 
-    use of this. The idea here is, that the user can edit the metadata values 
-    centrally and let ZenReg create the YAML templates for all relevant RAW 
-    files in one go, instead of editing each YAML template individually.
+    The error report created by ZenReg contains a valid Python dictionary. The
+    intended workflow is to edit the metadata values centrally in that report
+    and then let ZenReg create YAML templates for all listed RAW files in one
+    go.
 
 Options introduced here:
 
@@ -397,10 +386,6 @@ Options introduced here:
    * - ``report_name``
      - Root-level ZenReg batch error report. Use ``None`` to choose the latest
        matching report in ``project_root``.
-   * - ``restrict_to_discovered``
-     - If ``True``, YAML templates are created only for RAW files that are both
-       listed in the report and discoverable with the provided batch folder
-       settings.
    * - ``raw_template_metadata``
      - Fallback metadata for older reports without per-file
        ``template_metadata`` blocks. Current reports should usually be edited
@@ -415,4 +400,3 @@ Thorlabs RAW metadata repair workflows illustrated above:
 .. code-block:: bash
 
    user_scripts/OMIO_yaml_template_creator.py 
-

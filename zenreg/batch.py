@@ -99,7 +99,7 @@ class BatchRawYamlTemplateRecord:
 
 @dataclass(frozen=True)
 class BatchRawYamlTemplateResult:
-    """Summary returned by :func:`create_thorlabs_raw_yaml_templates_from_batch_report`."""
+    """Summary returned by :func:`batch_create_thorlabs_raw_yaml_templates`."""
 
     report_path: Path | None
     records: tuple[BatchRawYamlTemplateRecord, ...] = ()
@@ -746,16 +746,10 @@ def register_bids_like_batch(
         tag_error_report_paths=tuple(sorted(tag_report_paths)),
     )
 
-def create_thorlabs_raw_yaml_templates_from_batch_report(
+def batch_create_thorlabs_raw_yaml_templates(
     project_root: str | Path,
     *,
     report_name: str | Path | None = None,
-    subject_ids: Iterable[str | Path] | None = None,
-    subject_prefix: str = "ID",
-    tag_folder_levels: Sequence[Iterable[str | Path] | None] | None = None,
-    image_patterns: str | Sequence[str] = ("*.raw",),
-    exclude_name_contains: Sequence[str] = ("ROIMask.raw",),
-    restrict_to_discovered: bool = True,
     raw_template_metadata: dict | None = None,
     overwrite_existing: bool = False,
     verbose: bool = True,
@@ -766,10 +760,8 @@ def create_thorlabs_raw_yaml_templates_from_batch_report(
     The root-level error report written by :func:`register_bids_like_batch`
     contains a copy-pasteable ``ZENREG_BATCH_SKIPPED_RAW_FILES`` dictionary with
     RAW paths and editable ``template_metadata`` blocks. This helper reads that
-    report and calls ``omio.create_thorlabs_raw_yaml`` for each selected RAW
-    file. By default, report entries are additionally restricted to files
-    discoverable from the same BIDS-like folder settings used for batch
-    registration.
+    report and calls ``omio.create_thorlabs_raw_yaml`` for each RAW file listed
+    in the report.
 
     Parameters
     ----------
@@ -779,13 +771,6 @@ def create_thorlabs_raw_yaml_templates_from_batch_report(
     report_name : str, pathlib.Path, or None, optional
         Report filename or path. If None, the latest
         ``zenreg_batch_error_report_*.txt`` in ``project_root`` is used.
-    subject_ids, subject_prefix, tag_folder_levels, image_patterns,
-    exclude_name_contains
-        Same discovery controls as :func:`register_bids_like_batch`. They are
-        used only when ``restrict_to_discovered=True``.
-    restrict_to_discovered : bool, optional
-        If True, create YAML templates only for report entries that also match
-        the provided BIDS-like discovery settings.
     raw_template_metadata : dict or None, optional
         Fallback metadata used for legacy reports without per-file
         ``template_metadata`` blocks.
@@ -820,20 +805,6 @@ def create_thorlabs_raw_yaml_templates_from_batch_report(
         raw_template_metadata=fallback_metadata,
     )
 
-    allowed_paths: set[Path] | None = None
-    if restrict_to_discovered:
-        allowed_paths = {
-            record.image_path.resolve()
-            for record in discover_bids_like_batch_images(
-                root,
-                subject_ids=subject_ids,
-                subject_prefix=subject_prefix,
-                tag_folder_levels=tag_folder_levels,
-                image_patterns=image_patterns,
-                exclude_name_contains=exclude_name_contains,
-            )
-        }
-
     om = _import_omio()
     records: list[BatchRawYamlTemplateRecord] = []
     for entry in entries:
@@ -841,21 +812,6 @@ def create_thorlabs_raw_yaml_templates_from_batch_report(
         template_metadata = dict(entry.get("template_metadata", fallback_metadata))
         yaml_paths = _expected_raw_yaml_paths(raw_path)
         existing_yaml_paths = [path for path in yaml_paths if path.exists()]
-
-        if allowed_paths is not None and raw_path.resolve() not in allowed_paths:
-            reason = "RAW file is not part of the selected BIDS-like batch folders."
-            records.append(
-                BatchRawYamlTemplateRecord(
-                    raw_path=raw_path,
-                    yaml_path=None,
-                    template_metadata=template_metadata,
-                    status="skipped",
-                    reason=reason,
-                )
-            )
-            if verbose:
-                print(f"Skipping RAW outside selected folders: {raw_path}")
-            continue
 
         if not raw_path.exists():
             reason = "RAW file does not exist."
