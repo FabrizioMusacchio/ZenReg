@@ -14,6 +14,11 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 #### Batch progress output
 - Added explicit flushed progress messages to `register_bids_like_batch` after loading and registration, and before/after saving registered OME-TIFF images and ZenReg report sidecars. This makes long interactive batch runs easier to follow when tqdm bars are cleared by the terminal frontend.
 
+#### Documentation
+- Reworked the API reference from autosummary-generated fully qualified names
+  to explicit autodoc entries. Function entries now render in the cleaner
+  OMIO-style format, for example `load_stack()` instead of `zenreg.load_stack`.
+
 ---
 
 ## 🚀 v0.0.11 - Housekeeping: Reduced YAML template helper scope

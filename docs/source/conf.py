@@ -42,7 +42,8 @@ source_suffix = {
     ".md": "markdown",
 }
 
-autosummary_generate = True
+autosummary_generate = False
+add_module_names = False
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 napoleon_google_docstring = False
@@ -51,7 +52,7 @@ napoleon_use_param = False
 napoleon_use_rtype = False
 
 templates_path = ["_templates"]
-exclude_patterns: list[str] = []
+exclude_patterns: list[str] = ["generated/*"]
 
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {

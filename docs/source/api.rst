@@ -2,112 +2,69 @@ API Reference
 =============
 
 This page documents the public ZenReg functions used by the tutorials. The
-main entry point for registration workflows is :func:`zenreg.register_stack`.
+main entry point for registration workflows is :func:`register_stack`.
 
-Core workflow
+.. currentmodule:: zenreg
+
+Core Workflow
 -------------
 
-.. autosummary::
-   :toctree: generated
+.. autofunction:: load_stack
+.. autofunction:: register_stack
+.. autofunction:: save_stack
+.. autofunction:: cleanup_omio_cache
+.. autofunction:: create_empty_stack
+.. autofunction:: crop_stack
 
-   zenreg.load_stack
-   zenreg.register_stack
-   zenreg.save_stack
-   zenreg.cleanup_omio_cache
-   zenreg.create_empty_stack
-   zenreg.crop_stack
-
-Registration backends
+Registration Backends
 ---------------------
 
-.. autosummary::
-   :toctree: generated
+.. autofunction:: register_stack_normcorre
+.. autofunction:: register_stack_rigid_3d
+.. autofunction:: correct_intra_stack_z_drift
 
-   zenreg.register_stack_normcorre
-   zenreg.register_stack_rigid_3d
-   zenreg.correct_intra_stack_z_drift
-
-Batch and compute helpers
+Batch And Compute Helpers
 -------------------------
 
-.. autosummary::
-   :toctree: generated
+.. autofunction:: discover_bids_like_batch_images
+.. autofunction:: register_bids_like_batch
+.. autofunction:: batch_create_thorlabs_raw_yaml_templates
+.. autoclass:: BatchImageRecord
+   :members:
+.. autoclass:: BatchProcessedRecord
+   :members:
+.. autoclass:: BatchSkippedRecord
+   :members:
+.. autoclass:: BatchRegistrationResult
+   :members:
+.. autoclass:: BatchRawYamlTemplateRecord
+   :members:
+.. autoclass:: BatchRawYamlTemplateResult
+   :members:
+.. autofunction:: available_cpu_count
+.. autofunction:: print_available_compute
 
-   zenreg.discover_bids_like_batch_images
-   zenreg.register_bids_like_batch
-   zenreg.batch_create_thorlabs_raw_yaml_templates
-   zenreg.BatchImageRecord
-   zenreg.BatchProcessedRecord
-   zenreg.BatchSkippedRecord
-   zenreg.BatchRegistrationResult
-   zenreg.BatchRawYamlTemplateRecord
-   zenreg.BatchRawYamlTemplateResult
-   zenreg.available_cpu_count
-   zenreg.print_available_compute
-
-Tutorial and plotting helpers
+Tutorial And Plotting Helpers
 -----------------------------
 
-.. autosummary::
-   :toctree: generated
+.. autofunction:: plot_normcorre_patch_overlay
+.. autofunction:: open_in_napari
+.. autofunction:: show_before_after
+.. autofunction:: show_projection
+.. autofunction:: show_timepoints
+.. autofunction:: show_slices
+.. autofunction:: write_registration_summary_plot
+.. autofunction:: print_shift_comparison
+.. autofunction:: print_rigid_comparison
 
-   zenreg.plot_normcorre_patch_overlay
-   zenreg.open_in_napari
-   zenreg.show_before_after
-   zenreg.show_projection
-   zenreg.show_timepoints
-   zenreg.show_slices
-   zenreg.write_registration_summary_plot
-   zenreg.print_shift_comparison
-   zenreg.print_rigid_comparison
-
-Synthetic data
+Synthetic Data
 --------------
 
-.. autosummary::
-   :toctree: generated
+.. currentmodule:: zenreg.synthetic
 
-   zenreg.synthetic.write_example_dataset
-   zenreg.synthetic.write_batch_example_project
-   zenreg.synthetic.create_2d_motion_distorted_stack
-   zenreg.synthetic.create_3d_time_xy_motion_distorted_stack
-   zenreg.synthetic.create_3d_time_zyx_motion_distorted_stack
-   zenreg.synthetic.create_3d_time_rigid_motion_distorted_stack
-
-Modules
--------
-
-.. automodule:: zenreg
-   :members:
-   :undoc-members:
-   :no-index:
-
-.. automodule:: zenreg.batch
-   :members:
-   :undoc-members:
-   :no-index:
-
-.. automodule:: zenreg.io
-   :members:
-   :undoc-members:
-   :no-index:
-
-.. automodule:: zenreg.registration
-   :members:
-   :undoc-members:
-   :no-index:
-
-.. automodule:: zenreg.normcorre
-   :members:
-   :undoc-members:
-   :no-index:
-
-.. automodule:: zenreg.rigid3d
-   :members:
-   :undoc-members:
-   :no-index:
-
-.. automodule:: zenreg.synthetic
-   :members:
-   :undoc-members:
-   :no-index:
+.. autofunction:: write_example_dataset
+.. autofunction:: write_batch_example_project
+.. autofunction:: create_2d_motion_distorted_stack
+.. autofunction:: create_3d_time_xy_motion_distorted_stack
+.. autofunction:: create_3d_time_zyx_motion_distorted_stack
+.. autofunction:: create_3d_time_rigid_motion_distorted_stack
