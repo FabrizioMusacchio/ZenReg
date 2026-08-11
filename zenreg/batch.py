@@ -631,7 +631,10 @@ def register_bids_like_batch(
         memmap_name = f"{_sanitize_name(record.subject_id)}_{tag_text}_{_sanitize_name(record.image_path.stem)}"
         if verbose:
             chain = "/".join(record.tag_folders) if record.tag_folders else "subject_root"
-            print(f"Registering {record.subject_id}/{chain}/{record.image_path.name}")
+            print(
+                f"Registering {record.subject_id}/{chain}/{record.image_path.name}",
+                flush=True,
+            )
 
         load_options = dict(base_load_kwargs)
         load_options["return_metadata"] = True
@@ -665,7 +668,7 @@ def register_bids_like_batch(
             continue
 
         if verbose:
-            print(f"  input shape: {stack.shape} (TZCYX)")
+            print(f"  load done; input shape: {stack.shape} (TZCYX)", flush=True)
 
         registration_options = dict(base_register_kwargs)
         if use_memmap:
@@ -687,11 +690,19 @@ def register_bids_like_batch(
                 cleanup_omio_cache(memmap_cache_dir, full_cleanup=True, verbose=False)
             continue
 
+        if verbose:
+            print("  registration done.", flush=True)
+
         save_options = dict(base_save_kwargs)
         save_options.setdefault("metadata", _metadata_for_batch_output(metadata, output_path))
         save_options.setdefault("registration_details", details)
 
         try:
+            if verbose:
+                print(
+                    "  writing registered OME-TIFF and ZenReg report sidecars...",
+                    flush=True,
+                )
             written_path = save_stack(output_path, registered, **save_options)
         except Exception as exc:
             if not continue_on_error:
@@ -711,7 +722,7 @@ def register_bids_like_batch(
             )
         )
         if verbose:
-            print(f"  wrote: {written_path}")
+            print(f"  save done; wrote: {written_path}", flush=True)
 
         if cleanup_cache_after_save and use_memmap:
             cleanup_omio_cache(memmap_cache_dir, full_cleanup=True, verbose=False)

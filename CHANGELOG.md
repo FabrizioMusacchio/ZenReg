@@ -8,6 +8,14 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ---
 
+## 🔜 v0.0.11 - UNRELEASED
+
+### 🧩 Changes and improvements
+#### Batch progress output
+- Added explicit flushed progress messages to `register_bids_like_batch` after loading and registration, and before/after saving registered OME-TIFF images and ZenReg report sidecars. This makes long interactive batch runs easier to follow when tqdm bars are cleared by the terminal frontend.
+
+---
+
 ## 🚀 v0.0.11 - Housekeeping: Reduced YAML template helper scope
 
 ### 🧩 Changes and improvements
