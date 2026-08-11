@@ -138,36 +138,36 @@ images within them:
 
                image, metadata = load_stack(
                    image_path,
-                   return_metadata=True,
-                   use_memmap=True,
-                   memmap_folder=cache_dir,
-                   memmap_reuse=True,
-                   on_error="raise",)
+                   return_metadata  = True,
+                   use_memmap       = True,
+                   memmap_folder    = cache_dir,
+                   memmap_reuse     = True,
+                   on_error         = "raise")
 
                registered, details = register_stack(
                    image,
-                   registration_channel=0,
-                   method="phase_cross_correlation",
-                   time_registration_mode="projection",
-                   time_reference_mode="template",
-                   registration_template_time_range="all",
-                   projection_method="max",
-                   zreg=False,
-                   zero_clip=True,
-                   max_xy_shifts=(8, 8),
-                   output_use_memmap=True,
-                   output_memmap_folder=cache_dir,
-                   n_jobs=-1,
-                   verbose=True,
-                   return_shifts=True,
-                   return_details=True,)
+                   registration_channel             = 0,
+                   method                           = "phase_cross_correlation",
+                   time_registration_mode           = "projection",
+                   time_reference_mode              = "template",
+                   registration_template_time_range = "all",
+                   projection_method                = "max",
+                   zreg                             = False,
+                   zero_clip                        = True,
+                   max_xy_shifts                    = (8, 8),
+                   output_use_memmap                = True,
+                   output_memmap_folder             = cache_dir,
+                   n_jobs                           = -1,
+                   verbose                          = True,
+                   return_shifts                    = True,
+                   return_details                   = True)
 
                save_stack(
                    output_path,
                    registered,
-                   metadata=metadata,
-                   registration_details=details,
-                   overwrite=True,)
+                   metadata             = metadata,
+                   registration_details = details,
+                   overwrite            = True)
 
                cleanup_omio_cache(cache_dir, full_cleanup=True)
 
@@ -219,10 +219,10 @@ this single function, which also handles error reporting and logging:
        save_kwargs={
            "compression_level": 3,
            "overwrite":         True,
-           "verbose":           False,},
+           "verbose":           False},
        write_error_reports      = True,
        continue_on_error        = True,
-       verbose                  = True,)
+       verbose                  = True)
 
    print(f"Processed files: {len(result.processed)}")
    print(f"Skipped files:   {len(result.skipped)}")
@@ -355,10 +355,9 @@ RAW file listed in the report:
 
    result = batch_create_thorlabs_raw_yaml_templates(
        project_root,
-       report_name="zenreg_batch_error_report_2026-08-10_12-00-00.txt",
-       overwrite_existing=False,
-       verbose=True,
-   )
+       report_name        = "zenreg_batch_error_report_2026-08-10_12-00-00.txt",
+       overwrite_existing = False,
+       verbose            = True)
 
    print(f"Created YAML templates: {len(result.created)}")
    print(f"Skipped RAW files:      {len(result.skipped)}")
