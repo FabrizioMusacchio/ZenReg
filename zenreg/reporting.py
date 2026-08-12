@@ -25,6 +25,10 @@ SETTING_KEYS = (
     "registration_channel_fallback_reason",
     "registration_stack",
     "registration_template_time_range",
+    "registration_range",
+    "registration_range_requested",
+    "registration_range_axis",
+    "registration_range_ignored_reason",
     "method",
     "time_registration_mode",
     "effective_time_registration_mode",
@@ -465,6 +469,19 @@ def _projection_range_label(details: dict[str, Any], z_count: int) -> str:
     z_start, z_stop = normalize_zrange(projection_range, z_count, strict=True)
     return f"{z_start}:{z_stop}"
 
+def _registration_range_label(details: dict[str, Any]) -> str:
+    """Return a compact processing-range label for annotations."""
+
+    registration_range = details.get("registration_range")
+    ignored_reason = details.get("registration_range_ignored_reason")
+    if registration_range is None:
+        if ignored_reason:
+            return "ignored"
+        return "all"
+    axis = details.get("registration_range_axis")
+    start, stop = (int(registration_range[0]), int(registration_range[1]))
+    return f"{axis}_{start}:{stop}" if axis else f"{start}:{stop}"
+
 def _template_time_label(details: dict[str, Any], time_count: int) -> str:
     """Return a compact registration-template time label for annotations."""
 
@@ -544,7 +561,8 @@ def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) 
             (
                 f"template_t={_template_time_label(details, registered_stack.shape[0])} | "
                 f"projection={details.get('projection_method')} | "
-                f"registration_z_range={_projection_range_label(details, registered_stack.shape[1])}"
+                f"registration_z_range={_projection_range_label(details, registered_stack.shape[1])} | "
+                f"registration_range={_registration_range_label(details)}"
             ),
             _raw_estimate_label(details, registered_stack.shape[0]),
             f"max_xy={max_xy} | max_z={max_z} | max_rot={max_rot}",

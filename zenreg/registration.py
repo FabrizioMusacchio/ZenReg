@@ -420,6 +420,29 @@ def _create_registered_output(
         )
     return np.empty(tuple(int(v) for v in shape), dtype=np.dtype(dtype))
 
+def _copy_stack_to_registered_output(
+    stack,
+    registered,
+    *,
+    output_dtype,
+    n_jobs: int,
+    progress: bool,
+    desc: str,
+) -> None:
+    """Copy a TZCYX stack into an already allocated output container."""
+
+    def copy_timepoint(t: int) -> tuple[int, np.ndarray]:
+        return int(t), np.asarray(stack[int(t), :, :, :, :], dtype=np.dtype(output_dtype))
+
+    for t, frame in _iter_map_ordered(
+        copy_timepoint,
+        range(stack.shape[0]),
+        n_jobs=n_jobs,
+        progress=progress,
+        desc=desc,
+    ):
+        registered[t, :, :, :, :] = frame
+
 def _extract_registration_volume(
     stack,
     *,
@@ -560,6 +583,47 @@ def _normalize_registration_template_time_range(
             stacklevel=3,
         )
         stop = int(time_count)
+    return (start, stop)
+
+def _normalize_registration_range(
+    registration_range: tuple[int, int] | Sequence[int] | str | None,
+    axis_size: int,
+    *,
+    axis_label: str,
+) -> tuple[int, int] | None:
+    """Validate an optional half-open processing range on T or Z."""
+
+    if registration_range is None:
+        return None
+    if isinstance(registration_range, str):
+        normalized = registration_range.strip().lower()
+        if normalized == "all":
+            return (0, int(axis_size))
+        raise ValueError(
+            "registration_range must be None, 'all', or a two-element "
+            f"half-open {axis_label}-range (start, stop)."
+        )
+    if len(registration_range) != 2:
+        raise ValueError(
+            "registration_range must be None, 'all', or a two-element "
+            f"half-open {axis_label}-range (start, stop)."
+        )
+    start, stop = (int(registration_range[0]), int(registration_range[1]))
+    if start < 0 or start >= stop or start >= int(axis_size):
+        raise ValueError(
+            "registration_range must satisfy "
+            f"0 <= start < stop <= {axis_label}. "
+            f"Got {(start, stop)!r} for {axis_label}={int(axis_size)}."
+        )
+    if stop > int(axis_size):
+        warnings.warn(
+            "registration_range extends beyond the available "
+            f"{axis_label} positions. Clipping {(start, stop)!r} to "
+            f"{(start, int(axis_size))!r} for {axis_label}={int(axis_size)}.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        stop = int(axis_size)
     return (start, stop)
 
 def _clip_shift_yx(shift_yx: np.ndarray, max_xy_shifts: np.ndarray | None) -> np.ndarray:
@@ -1533,6 +1597,8 @@ def _correct_intra_stack_z_drift_impl(
     output_memmap_name: str | None = None,
     output_dtype=np.float32,
     output_stage_name: str | None = "intra_stack",
+    processing_time_range: tuple[int, int] | None = None,
+    processing_z_range: tuple[int, int] | None = None,
     memory_tracker=None,
     verbose: bool = True,
     print_shifts: bool = False,
@@ -1655,6 +1721,10 @@ def _correct_intra_stack_z_drift_impl(
         )
 
     shifts = np.zeros((stack.shape[0], stack.shape[1], 2), dtype=np.float32)
+    t_start, t_stop = processing_time_range if processing_time_range is not None else (0, stack.shape[0])
+    time_indices = range(int(t_start), int(t_stop))
+    z_start, z_stop = processing_z_range if processing_z_range is not None else (0, stack.shape[1])
+    z_indices = range(int(z_start), int(z_stop))
     _memory_mark(memory_tracker, "intra_stack:start")
     if stack.shape[1] <= 1:
         _print_verbose(verbose, "Skipping intra-stack Z drift correction because Z <= 1.")
@@ -1681,9 +1751,12 @@ def _correct_intra_stack_z_drift_impl(
         working_volume = _as_float32_work_array(stack[int(t), :, int(registration_channel), :, :])
         if filter_slices:
             working_volume = _apply_median_to_zyx(working_volume, int(median_kernel_size))
-        corrected_frame = np.empty(stack.shape[1:], dtype=output_dtype)
+        if processing_z_range is None:
+            corrected_frame = np.empty(stack.shape[1:], dtype=output_dtype)
+        else:
+            corrected_frame = np.asarray(stack[int(t), :, :, :, :], dtype=output_dtype).copy()
         shifts_t = np.zeros((stack.shape[1], 2), dtype=np.float32)
-        for z in range(stack.shape[1]):
+        for z in z_indices:
             moving_image = _as_float32_work_array(working_volume[z, :, :])
             reference_image = _build_intra_stack_reference_image(
                 working_volume,
@@ -1724,9 +1797,18 @@ def _correct_intra_stack_z_drift_impl(
         output_memmap_name=output_memmap_name,
         stage_name=output_stage_name,
     )
+    if processing_time_range is not None:
+        _copy_stack_to_registered_output(
+            stack,
+            corrected,
+            output_dtype=output_dtype,
+            n_jobs=n_jobs,
+            progress=verbose,
+            desc="ZenReg intra-stack copy unchanged frames",
+        )
     for t, corrected_frame, shifts_t in _iter_map_ordered(
         process_timepoint,
-        range(stack.shape[0]),
+        time_indices,
         n_jobs=n_jobs,
         progress=verbose,
         desc="ZenReg intra-stack correction",
@@ -1986,6 +2068,7 @@ def _register_stack_across_time(
     output_memmap_name: str | None,
     output_dtype,
     output_stage_name: str | None,
+    registration_range: tuple[int, int] | None,
     memory_tracker=None,
     verbose: bool,
     print_shifts: bool,
@@ -2010,6 +2093,8 @@ def _register_stack_across_time(
     output_dtype = _normalize_output_dtype(output_dtype)
     shifts_zyx = np.zeros((stack.shape[0], 3), dtype=np.float32)
     raw_shifts_zyx = np.zeros_like(shifts_zyx)
+    t_start, t_stop = registration_range if registration_range is not None else (0, stack.shape[0])
+    time_indices = range(int(t_start), int(t_stop))
     _print_verbose(
         verbose,
         (
@@ -2099,7 +2184,7 @@ def _register_stack_across_time(
     _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:estimate_shifts:start")
     pair_results = _parallel_map_ordered(
         estimate_pair_shift,
-        range(stack.shape[0]),
+        time_indices,
         n_jobs=n_jobs,
         progress=verbose,
         desc=f"ZenReg {output_stage_name or 'time'} estimate shifts",
@@ -2113,7 +2198,7 @@ def _register_stack_across_time(
         pair_shifts[t, :] = pair_shift_zyx
         reference_indices[t] = int(reference_t)
 
-    for t in range(stack.shape[0]):
+    for t in time_indices:
         reference_t = int(reference_indices[t])
         reference_shift_zyx = _reference_shift_for_time(
             shifts_zyx,
@@ -2148,6 +2233,15 @@ def _register_stack_across_time(
         output_memmap_name=output_memmap_name,
         stage_name=output_stage_name,
     )
+    if registration_range is not None:
+        _copy_stack_to_registered_output(
+            stack,
+            registered,
+            output_dtype=output_dtype,
+            n_jobs=n_jobs,
+            progress=verbose,
+            desc=f"ZenReg {output_stage_name or 'time'} copy unchanged frames",
+        )
 
     def apply_timepoint(t: int) -> tuple[int, np.ndarray]:
         return int(t), _apply_translation_to_zcyx(
@@ -2160,7 +2254,7 @@ def _register_stack_across_time(
     _memory_mark(memory_tracker, f"{output_stage_name or 'time'}:apply_transforms:start")
     for t, registered_timepoint in _iter_map_ordered(
         apply_timepoint,
-        range(stack.shape[0]),
+        time_indices,
         n_jobs=n_jobs,
         progress=verbose,
         desc=f"ZenReg {output_stage_name or 'time'} apply transforms",
@@ -2192,6 +2286,7 @@ def _register_stack_rotations_across_time(
     output_memmap_name: str | None,
     output_dtype,
     output_stage_name: str | None,
+    registration_range: tuple[int, int] | None,
     memory_tracker=None,
     verbose: bool,
     print_shifts: bool,
@@ -2201,6 +2296,8 @@ def _register_stack_rotations_across_time(
     output_dtype = _normalize_output_dtype(output_dtype)
     angles_deg = np.zeros(stack.shape[0], dtype=np.float32)
     raw_angles_deg = np.zeros_like(angles_deg)
+    t_start, t_stop = registration_range if registration_range is not None else (0, stack.shape[0])
+    time_indices = range(int(t_start), int(t_stop))
     _print_verbose(
         verbose,
         (
@@ -2282,7 +2379,7 @@ def _register_stack_rotations_across_time(
     _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:estimate_rotations:start")
     pair_results = _parallel_map_ordered(
         estimate_pair_rotation,
-        range(stack.shape[0]),
+        time_indices,
         n_jobs=n_jobs,
         progress=verbose,
         desc=f"ZenReg {output_stage_name or 'rotation'} estimate rotations",
@@ -2296,7 +2393,7 @@ def _register_stack_rotations_across_time(
         pair_rotations[t] = _clip_rotation_deg(float(detected_rotation_deg), max_rot_shifts)
         reference_indices[t] = int(reference_t)
 
-    for t in range(stack.shape[0]):
+    for t in time_indices:
         reference_t = int(reference_indices[t])
         reference_angle = float(angles_deg[reference_t]) if time_reference_mode == "previous" else 0.0
         reference_raw_angle = float(raw_angles_deg[reference_t]) if time_reference_mode == "previous" else 0.0
@@ -2318,6 +2415,15 @@ def _register_stack_rotations_across_time(
         output_memmap_name=output_memmap_name,
         stage_name=output_stage_name,
     )
+    if registration_range is not None:
+        _copy_stack_to_registered_output(
+            stack,
+            registered,
+            output_dtype=output_dtype,
+            n_jobs=n_jobs,
+            progress=verbose,
+            desc=f"ZenReg {output_stage_name or 'rotation'} copy unchanged frames",
+        )
 
     def apply_timepoint(t: int) -> tuple[int, np.ndarray]:
         return int(t), _apply_rotation_to_zcyx(
@@ -2329,7 +2435,7 @@ def _register_stack_rotations_across_time(
     _memory_mark(memory_tracker, f"{output_stage_name or 'rotation'}:apply_rotations:start")
     for t, registered_timepoint in _iter_map_ordered(
         apply_timepoint,
-        range(stack.shape[0]),
+        time_indices,
         n_jobs=n_jobs,
         progress=verbose,
         desc=f"ZenReg {output_stage_name or 'rotation'} apply rotations",
@@ -2794,6 +2900,7 @@ def register_stack(
     time_registration_mode: str = "projection",
     time_reference_mode: str = "template",
     registration_template_time_range: tuple[int, int] | Sequence[int] | str | None = None,
+    registration_range: tuple[int, int] | Sequence[int] | str | None = None,
     intra_stack: bool = False,
     registration_z_range: tuple[int, int] | Sequence[int] | None = None,
     zrange: tuple[int, int] | Sequence[int] | None = None,
@@ -2924,6 +3031,16 @@ def register_stack(
         ``method="normcorre"``, this setting is ignored with a warning because
         NoRMCorre uses ``nc_template_init_mode`` and
         ``nc_template_update_method`` for template construction and updates.
+    registration_range : tuple[int, int], "all", or None, optional
+        Optional half-open processing range for fast trial registrations while
+        keeping the returned stack shape unchanged. If time registration is
+        active, the range refers to time points ``T`` and frames outside the
+        range are copied unchanged. If ``time_registration_mode="none"`` and
+        ``intra_stack=True``, the range refers to Z slices and slices outside
+        the range are copied unchanged. ``None`` uses all available positions
+        on the active registration axis. This is currently supported by the
+        standard ``"phase_cross_correlation"`` and ``"pystackreg"`` paths;
+        NoRMCorre and full 3D rigid backends ignore it with a warning.
     intra_stack : bool, optional
         If True, run intra-stack XY slice correction independently for each time
         point before optional time registration.
@@ -3240,6 +3357,34 @@ def register_stack(
     rot_metric = normalize_rigid_3d_metric(rot_metric)
     time_registration_mode = _normalize_time_registration_mode(time_registration_mode)
     time_reference_mode = _normalize_time_reference_mode(time_reference_mode)
+    registration_range_requested_input = registration_range
+    registration_range_axis = (
+        "T"
+        if time_registration_mode != "none"
+        else "Z"
+        if intra_stack
+        else None
+    )
+    registration_range = (
+        _normalize_registration_range(
+            registration_range,
+            stack.shape[0] if registration_range_axis == "T" else stack.shape[1],
+            axis_label=registration_range_axis,
+        )
+        if registration_range_axis is not None
+        else None
+    )
+    registration_range_inactive_ignored_reason = None
+    if registration_range_requested_input is not None and registration_range_axis is None:
+        registration_range_inactive_ignored_reason = (
+            "registration_range requires time registration or intra_stack=True."
+        )
+        warnings.warn(
+            "registration_range was provided, but neither time registration nor "
+            "intra_stack=True is active. Continuing by ignoring registration_range.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     registration_template_time_range = _normalize_registration_template_time_range(
         registration_template_time_range,
         stack.shape[0],
@@ -3352,6 +3497,47 @@ def register_stack(
             "registration backends. Use registration_stack as the explicit rigid "
             "reference volume."
         )
+    registration_range_requested = (
+        registration_range
+        if registration_range_axis is not None
+        else registration_range_requested_input
+    )
+    registration_range_ignored_reason = registration_range_inactive_ignored_reason
+    registration_range_effective = registration_range
+    if registration_range is not None and method == "normcorre":
+        registration_range_ignored_reason = (
+            "method='normcorre' currently processes its full input stack."
+        )
+        warnings.warn(
+            "registration_range was provided, but method='normcorre' currently "
+            "processes its full input stack. Continuing by ignoring "
+            "registration_range.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        registration_range_effective = None
+    if (
+        registration_range is not None
+        and rotreg
+        and rigid_3d_backend in {"simpleitk", "points"}
+    ):
+        registration_range_ignored_reason = (
+            "full 3D rigid backends currently process all time points."
+        )
+        warnings.warn(
+            "registration_range was provided, but full 3D rigid backends "
+            "currently process all time points. Continuing by ignoring "
+            "registration_range.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        registration_range_effective = None
+    processing_time_range = (
+        registration_range_effective if registration_range_axis == "T" else None
+    )
+    processing_z_range = (
+        registration_range_effective if registration_range_axis == "Z" else None
+    )
     effective_zero_clip_mode = _effective_zero_clip_mode(
         zero_clip=bool(zero_clip),
         zero_clip_mode=zero_clip_mode,
@@ -3376,6 +3562,10 @@ def register_stack(
         "registration_template_time_range": registration_template_time_range,
         "registration_template_time_range_requested": registration_template_time_range_requested,
         "registration_template_time_range_ignored_reason": registration_template_time_range_ignored_reason,
+        "registration_range": registration_range_effective,
+        "registration_range_requested": registration_range_requested,
+        "registration_range_axis": registration_range_axis,
+        "registration_range_ignored_reason": registration_range_ignored_reason,
         "registration_z_range": registration_z_range_setting,
         "method": method,
         "intra_stack": bool(intra_stack),
@@ -3565,6 +3755,8 @@ def register_stack(
             output_memmap_name=output_memmap_name,
             output_dtype=output_dtype,
             output_stage_name="intra_stack",
+            processing_time_range=processing_time_range,
+            processing_z_range=processing_z_range,
             memory_tracker=memory_tracker,
             verbose=verbose,
             print_shifts=print_shifts,
@@ -3587,6 +3779,15 @@ def register_stack(
                     output_memmap_name=output_memmap_name,
                     stage_name="intra_stack_clipped",
                 )
+                if processing_time_range is not None or processing_z_range is not None:
+                    _copy_stack_to_registered_output(
+                        stack,
+                        registered,
+                        output_dtype=output_dtype,
+                        n_jobs=n_jobs,
+                        progress=verbose,
+                        desc="ZenReg intra-stack clipped copy unchanged frames",
+                    )
 
                 def apply_clipped_intra_slice(index: tuple[int, int]) -> tuple[int, int, np.ndarray]:
                     t, z = index
@@ -3597,7 +3798,17 @@ def register_stack(
                         transform_order=transform_order,
                     )
 
-                tasks = [(t, z) for t in range(stack.shape[0]) for z in range(stack.shape[1])]
+                clipped_t_indices = (
+                    range(int(processing_time_range[0]), int(processing_time_range[1]))
+                    if processing_time_range is not None
+                    else range(stack.shape[0])
+                )
+                clipped_z_indices = (
+                    range(int(processing_z_range[0]), int(processing_z_range[1]))
+                    if processing_z_range is not None
+                    else range(stack.shape[1])
+                )
+                tasks = [(t, z) for t in clipped_t_indices for z in clipped_z_indices]
                 for t, z, corrected_slice in _iter_map_ordered(
                     apply_clipped_intra_slice,
                     tasks,
@@ -3616,7 +3827,17 @@ def register_stack(
                     transform_backend=transform_backend,
                 )
 
-            tasks = [(t, z) for t in range(stack.shape[0]) for z in range(stack.shape[1])]
+            intra_mask_t_indices = (
+                range(int(processing_time_range[0]), int(processing_time_range[1]))
+                if processing_time_range is not None
+                else range(stack.shape[0])
+            )
+            intra_mask_z_indices = (
+                range(int(processing_z_range[0]), int(processing_z_range[1]))
+                if processing_z_range is not None
+                else range(stack.shape[1])
+            )
+            tasks = [(t, z) for t in intra_mask_t_indices for z in intra_mask_z_indices]
             for t, z, mask_plane in _parallel_map_ordered(
                 apply_intra_mask,
                 tasks,
@@ -3638,6 +3859,11 @@ def register_stack(
     rotation_pass_shifts_deg_raw = []
     effective_time_registration_mode = time_registration_mode
     if time_registration_mode != "none":
+        time_mask_indices = (
+            range(int(processing_time_range[0]), int(processing_time_range[1]))
+            if processing_time_range is not None
+            else range(stack.shape[0])
+        )
         translation_pass_count = rotreg_iter + 1 if rotreg else 1
         for pass_index in range(translation_pass_count):
             registered, pass_shifts_zyx, pass_shifts_zyx_raw, effective_time_registration_mode = _register_stack_across_time(
@@ -3666,6 +3892,7 @@ def register_stack(
                 output_memmap_name=output_memmap_name,
                 output_dtype=output_dtype,
                 output_stage_name=f"time_pass_{pass_index + 1}",
+                registration_range=processing_time_range,
                 memory_tracker=memory_tracker,
                 verbose=verbose,
                 print_shifts=print_shifts,
@@ -3682,7 +3909,7 @@ def register_stack(
 
                 for t, mask_volume in _parallel_map_ordered(
                     apply_time_mask,
-                    range(stack.shape[0]),
+                    time_mask_indices,
                     n_jobs=n_jobs,
                     progress=verbose,
                     desc="ZenReg zero-clip time mask",
@@ -3713,6 +3940,7 @@ def register_stack(
                     output_memmap_name=output_memmap_name,
                     output_dtype=output_dtype,
                     output_stage_name=f"rotation_pass_{pass_index + 1}",
+                    registration_range=processing_time_range,
                     memory_tracker=memory_tracker,
                     verbose=verbose,
                     print_shifts=print_shifts,
@@ -3728,7 +3956,7 @@ def register_stack(
 
                     for t, mask_volume in _parallel_map_ordered(
                         apply_rotation_mask,
-                        range(stack.shape[0]),
+                        time_mask_indices,
                         n_jobs=n_jobs,
                         progress=verbose,
                         desc="ZenReg zero-clip rotation mask",

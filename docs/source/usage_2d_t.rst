@@ -32,6 +32,7 @@ Use ``phase_cross_correlation`` for fast global translation correction:
        image,
        registration_channel   = 0,
        registration_template_time_range = "all",
+       registration_range     = None,
        method                 = "phase_cross_correlation",
        time_registration_mode = "projection",
        projection_method      = "max",
@@ -74,6 +75,11 @@ Options used here:
        multi-frame registration template. Use ``"all"`` to aggregate all time
        points. ``None`` uses ``registration_stack`` as one reference frame.
        Default: ``None``.
+   * - ``registration_range``
+     - Optional half-open processing range for quick trial runs. In 2D+t
+       registration this refers to time points, for example ``(750, 1250)``.
+       Frames outside the range are copied unchanged and the returned stack
+       keeps its original shape. ``None`` (default) registers all frames.
    * - ``method``
      - Registration backend. Default:  ``"phase_cross_correlation"``.
    * - ``time_registration_mode``

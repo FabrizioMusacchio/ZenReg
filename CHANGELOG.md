@@ -8,9 +8,16 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ---
 
-### 🔜 v0.0.13 - UNRELEASED
+### 🚀 v0.0.13
 
 #### 🧩 Changes and improvements
+##### Registration controls
+- Added `registration_range` to `register_stack` for quick subset
+  registrations. For time-registration workflows the range refers to time
+  points; for pure intra-stack workflows with `time_registration_mode="none"`
+  it refers to Z slices. The returned stack keeps its original shape and
+  positions outside the processing range are copied unchanged.
+
 ##### Registration summary plots
 - Summary plot annotations now report both the input and output stack shape as
   `shape_TZCYX before registration=(...) | after=(...)`, making zero-clipping

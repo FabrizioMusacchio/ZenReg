@@ -25,6 +25,7 @@ Use ``time_registration_mode="none"`` and ``intra_stack=True``:
        method                     = "phase_cross_correlation",
        time_registration_mode     = "none",
        intra_stack                = True,
+       registration_range         = None,
        intra_stack_reference_mode = "neighbor",
        neighbor_window_size       = 3,
        projection_method          = "max",
@@ -51,6 +52,12 @@ Options introduced here:
        correction is applied. Default:  ``"projection"``.
    * - ``intra_stack=True``
      - Correct XY motion between Z slices inside each 3D stack. Default:  ``False``.
+   * - ``registration_range``
+     - Optional half-open processing range for quick trial runs. In pure
+       intra-stack registration with ``time_registration_mode="none"``, this
+       refers to Z slices, for example ``(5, 20)``. Slices outside the range
+       are copied unchanged and the returned stack keeps its original shape.
+       ``None`` (default) registers all slices.
    * - ``intra_stack_reference_mode``
      - Reference strategy for slice alignment. ``"neighbor"`` uses a local
        neighborhood, while ``"first_slice"`` aligns slices to z=0. Default: ``"neighbor"``.

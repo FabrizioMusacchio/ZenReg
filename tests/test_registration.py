@@ -437,6 +437,55 @@ def test_register_stack_can_run_intra_stack_only():
     assert shifts.shape == (2, stack.shape[1], 2)
 
 
+def test_registration_range_limits_time_processing_and_keeps_shape():
+    stack, _ = create_2d_motion_distorted_stack(time_count=5, noise_sigma=0.0)
+
+    registered, details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="projection",
+        registration_range=(1, 3),
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    assert registered.shape == stack.shape
+    assert details["registration_range"] == (1, 3)
+    assert details["registration_range_axis"] == "T"
+    np.testing.assert_allclose(registered[0], stack[0])
+    np.testing.assert_allclose(registered[3:], stack[3:])
+    np.testing.assert_allclose(details["time_shifts_zyx"][0], 0.0)
+    np.testing.assert_allclose(details["time_shifts_zyx"][3:], 0.0)
+    assert np.any(np.abs(details["time_shifts_zyx"][1:3, 1:]) > 0.05)
+
+
+def test_registration_range_limits_intra_stack_z_processing_and_keeps_shape():
+    stack, _ = create_3d_slice_motion_distorted_stack(z_count=8, noise_sigma=0.0)
+
+    corrected, details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="none",
+        intra_stack=True,
+        intra_stack_reference_mode="first_slice",
+        registration_range=(2, 5),
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    assert corrected.shape == stack.shape
+    assert details["registration_range"] == (2, 5)
+    assert details["registration_range_axis"] == "Z"
+    np.testing.assert_allclose(corrected[:, :2], stack[:, :2])
+    np.testing.assert_allclose(corrected[:, 5:], stack[:, 5:])
+    np.testing.assert_allclose(details["intra_stack_shifts_yx"][:, :2], 0.0)
+    np.testing.assert_allclose(details["intra_stack_shifts_yx"][:, 5:], 0.0)
+
+
 def test_intra_stack_n_jobs_matches_serial():
     stack, _ = create_3d_slice_motion_distorted_stack(
         z_count=8,

@@ -22,6 +22,7 @@ to every Z slice and channel:
        image,
        registration_channel   = 0,
        registration_stack     = 0,
+       registration_range     = None,
        method                 = "phase_cross_correlation",
        time_registration_mode = "projection",
        projection_method      = "max",
@@ -50,6 +51,11 @@ Options introduced here:
      - Register YX projections over time and apply the resulting correction to
        all Z slices. Default: ``"projection"``. Set to ``full_3d`` for full-volume 
        ZYX registration or ``none`` to disable time registration.
+   * - ``registration_range``
+     - Optional half-open processing range for quick trial runs. In 3D+t time
+       registration this refers to time points, for example ``(20, 60)``.
+       Frames outside the range are copied unchanged and the returned stack
+       keeps its original shape. ``None`` (default) registers all frames.
    * - ``projection_method``
      - Projection used to build the registration image. Default: ``"max"``.
    * - ``zreg=False``
