@@ -11,6 +11,7 @@ import ast
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
+import json
 from pathlib import Path
 import re
 from typing import Iterable, Sequence
@@ -86,6 +87,8 @@ class BatchRegistrationResult:
     skipped: tuple[BatchSkippedRecord, ...] = ()
     root_error_report_path: Path | None = None
     tag_error_report_paths: tuple[Path, ...] = field(default_factory=tuple)
+    root_run_report_yaml_path: Path | None = None
+    root_run_report_txt_path: Path | None = None
 
 @dataclass(frozen=True)
 class BatchRawYamlTemplateRecord:
@@ -388,6 +391,246 @@ def _find_latest_batch_error_report(project_root: Path) -> Path | None:
     reports = sorted(project_root.glob("zenreg_batch_error_report_*.txt"))
     return reports[-1] if reports else None
 
+def _run_report_paths(project_root: Path, run_report_name: str) -> tuple[Path, Path]:
+    """Return YAML and text report paths for one batch project."""
+
+    report_base = project_root / run_report_name
+    return report_base.with_suffix(".yaml"), report_base.with_suffix(".txt")
+
+def _load_run_report(path: Path, project_root: Path) -> dict:
+    """Load an existing run report or return an empty report payload."""
+
+    if not path.exists():
+        return {
+            "zenreg_batch_run_report_version": 1,
+            "project_root": str(project_root),
+            "last_updated": None,
+            "files": {},
+        }
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        return {
+            "zenreg_batch_run_report_version": 1,
+            "project_root": str(project_root),
+            "last_updated": None,
+            "files": {},
+        }
+    try:
+        import yaml
+
+        loaded = yaml.safe_load(text)
+    except Exception:
+        loaded = json.loads(text)
+    if not isinstance(loaded, dict):
+        raise ValueError(f"Run report is not a mapping: {path}")
+    loaded.setdefault("zenreg_batch_run_report_version", 1)
+    loaded.setdefault("project_root", str(project_root))
+    loaded.setdefault("last_updated", None)
+    loaded.setdefault("files", {})
+    if not isinstance(loaded["files"], dict):
+        raise ValueError(f"Run report 'files' entry is not a mapping: {path}")
+    return loaded
+
+def _write_run_report_yaml(path: Path, payload: dict) -> None:
+    """Write the machine-readable run report."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import yaml
+
+        text = yaml.safe_dump(
+            payload,
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
+        )
+    except Exception:
+        text = json.dumps(payload, indent=2, ensure_ascii=False)
+    path.write_text(text, encoding="utf-8")
+
+def _relative_report_path(path: Path, root: Path) -> str:
+    """Return a stable POSIX-style path relative to ``root`` when possible."""
+
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+def _status_symbol(status: str, style: str) -> str:
+    """Return one status marker for the text report."""
+
+    normalized_style = str(style).lower()
+    if normalized_style in {"unicode", "symbol", "symbols"}:
+        return {
+            "processed": "✓ REGISTERED",
+            "already_registered": "✓ REGISTERED",
+            "load": "✗ FAILED",
+            "register": "✗ FAILED",
+            "save": "✗ FAILED",
+            "failed": "✗ FAILED",
+        }.get(status, "•")
+    return {
+        "processed": "REGISTERED",
+        "already_registered": "REGISTERED",
+        "load": "FAILED",
+        "register": "FAILED",
+        "save": "FAILED",
+        "failed": "FAILED",
+    }.get(status, status.upper())
+
+def _format_run_summary(run: dict) -> str:
+    """Return one compact run-history line."""
+
+    status = str(run.get("status", "unknown"))
+    if status == "already_registered":
+        status_label = "skipped/already registered"
+    elif status in {"load", "register", "save", "failed"}:
+        status_label = f"failed/{status}"
+    else:
+        status_label = status
+    parts = [str(run.get("timestamp", "unknown")), status_label]
+    method = run.get("method")
+    if method and status == "processed":
+        parts.append(str(method))
+    registration_channel = run.get("registration_channel")
+    if registration_channel is not None and status == "processed":
+        parts.append(f"c={registration_channel}")
+    reason = run.get("reason")
+    if reason and status != "already_registered":
+        parts.append(str(reason))
+    return " | ".join(parts)
+
+def _add_tree_path(tree: dict, parts: Sequence[str], file_key: str) -> None:
+    """Add one file key to a nested folder tree."""
+
+    node = tree
+    for part in parts:
+        node = node.setdefault(part, {})
+    node.setdefault("__files__", []).append(file_key)
+
+def _render_tree_node(
+    lines: list[str],
+    tree: dict,
+    files: dict,
+    *,
+    indent: str = "",
+    status_symbol_style: str = "ascii",
+) -> None:
+    """Render one nested folder node into ``lines``."""
+
+    folder_names = sorted(key for key in tree if key != "__files__")
+    file_keys = sorted(tree.get("__files__", []))
+    entries = [(name, "folder") for name in folder_names] + [(key, "file") for key in file_keys]
+    for index, (name, entry_type) in enumerate(entries):
+        is_last = index == len(entries) - 1
+        branch = "└─ " if is_last else "├─ "
+        child_indent = indent + ("   " if is_last else "│  ")
+        if entry_type == "folder":
+            lines.append(f"{indent}{branch}{name}/")
+            _render_tree_node(
+                lines,
+                tree[name],
+                files,
+                indent=child_indent,
+                status_symbol_style=status_symbol_style,
+            )
+            continue
+        file_entry = files[name]
+        runs = list(file_entry.get("runs", []))
+        latest_run = runs[-1] if runs else {}
+        status = str(latest_run.get("status", file_entry.get("latest_status", "unknown")))
+        symbol = _status_symbol(status, status_symbol_style)
+        lines.append(f"{indent}{branch}{Path(name).name} [{symbol}]")
+        output_path = latest_run.get("output_path") or file_entry.get("latest_output_path")
+        if output_path:
+            lines.append(f"{child_indent}output: {output_path}")
+        if runs:
+            lines.append(f"{child_indent}runs:")
+            for run in runs:
+                lines.append(f"{child_indent}  - {_format_run_summary(run)}")
+
+def _render_run_report_text(
+    payload: dict,
+    path: Path,
+    *,
+    status_symbol_style: str,
+) -> None:
+    """Write the human-readable text run report."""
+
+    files = payload.get("files", {})
+    tree: dict = {}
+    for file_key in files:
+        parts = Path(file_key).parts
+        if not parts:
+            continue
+        _add_tree_path(tree, parts[:-1], file_key)
+
+    lines = [
+        "ZenReg batch run report",
+        f"Project root: {payload.get('project_root', '')}",
+        f"Last updated: {payload.get('last_updated', '')}",
+        "",
+    ]
+    if files:
+        _render_tree_node(
+            lines,
+            tree,
+            files,
+            status_symbol_style=status_symbol_style,
+        )
+    else:
+        lines.append("No batch image files have been recorded yet.")
+    lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+def _registration_setting(register_kwargs: dict, key: str):
+    """Return one registration setting from batch ``register_kwargs``."""
+
+    return register_kwargs.get(key)
+
+def _append_run_report_entry(
+    payload: dict,
+    record: BatchImageRecord,
+    *,
+    root: Path,
+    timestamp: str,
+    status: str,
+    register_kwargs: dict,
+    output_path: Path | None = None,
+    reason: str | None = None,
+) -> None:
+    """Append one run-history entry for a discovered image."""
+
+    file_key = _relative_report_path(record.image_path, root)
+    files = payload.setdefault("files", {})
+    file_entry = files.setdefault(
+        file_key,
+        {
+            "subject_id": record.subject_id,
+            "tag_folders": list(record.tag_folders),
+            "input_path": file_key,
+            "runs": [],
+        },
+    )
+    file_entry["subject_id"] = record.subject_id
+    file_entry["tag_folders"] = list(record.tag_folders)
+    file_entry["input_path"] = file_key
+    run_entry = {
+        "timestamp": timestamp,
+        "status": status,
+        "method": _registration_setting(register_kwargs, "method"),
+        "registration_channel": _registration_setting(register_kwargs, "registration_channel"),
+        "time_registration_mode": _registration_setting(register_kwargs, "time_registration_mode"),
+        "time_reference_mode": _registration_setting(register_kwargs, "time_reference_mode"),
+    }
+    if output_path is not None:
+        run_entry["output_path"] = _relative_report_path(output_path, root)
+        file_entry["latest_output_path"] = run_entry["output_path"]
+    if reason:
+        run_entry["reason"] = reason
+    file_entry.setdefault("runs", []).append(run_entry)
+    file_entry["latest_status"] = status
+
 def _cleanup_fresh_failed_output_dir(output_dir: Path, *, was_created_for_file: bool) -> None:
     """Remove an output folder only if this failed file created it in this run."""
 
@@ -495,6 +738,10 @@ def register_bids_like_batch(
     cleanup_cache_after_save: bool = False,
     raw_template_metadata: dict | None = None,
     write_error_reports: bool = True,
+    write_run_report: bool = True,
+    run_report_name: str = "zenreg_batch_run_report",
+    run_report_format: str | Sequence[str] = ("yaml", "txt"),
+    run_report_status_symbol_style: str = "ascii",
     continue_on_error: bool = True,
     verbose: bool = True,
 ) -> BatchRegistrationResult:
@@ -557,6 +804,20 @@ def register_bids_like_batch(
     write_error_reports : bool, optional
         If True, write per-tag and root-level error reports for skipped/failed
         images.
+    write_run_report : bool, optional
+        If True, update a root-level project run report after the batch. Unlike
+        error reports, the run report is written for successful runs as well and
+        preserves a per-image run history.
+    run_report_name : str, optional
+        Base filename for the project run report. ZenReg writes
+        ``<run_report_name>.yaml`` and/or ``<run_report_name>.txt`` depending
+        on ``run_report_format``.
+    run_report_format : str or sequence[str], optional
+        Report format(s) to write. Supported values are ``"yaml"`` and
+        ``"txt"``. Default: ``("yaml", "txt")``.
+    run_report_status_symbol_style : {"ascii", "unicode"}, optional
+        Status marker style for the text report. ``"ascii"`` uses
+        ``REGISTERED`` and ``FAILED`` for terminal-safe output.
     continue_on_error : bool, optional
         If True, record load/register/save errors and continue with the next
         image. If False, re-raise exceptions immediately.
@@ -588,6 +849,7 @@ def register_bids_like_batch(
     processed: list[BatchProcessedRecord] = []
     skipped: list[BatchSkippedRecord] = []
     tag_report_paths: set[Path] = set()
+    run_report_events: list[dict] = []
 
     def record_skip(record: BatchImageRecord, *, reason: str, stage: str, output_dir: Path) -> None:
         skipped_record = BatchSkippedRecord(
@@ -610,6 +872,17 @@ def register_bids_like_batch(
         if verbose:
             print(f"  skipped [{stage}]: {record.image_path}")
             print(f"  reason: {reason}")
+        status = "already_registered" if stage == "already_registered" else stage
+        run_report_events.append(
+            {
+                "record": record,
+                "status": status,
+                "reason": reason,
+                "output_path": _output_path_for_image(output_dir, record.image_path)
+                if stage == "already_registered"
+                else None,
+            }
+        )
 
     for record in records:
         output_dir = record.output_scope_dir / output_folder_name
@@ -723,6 +996,14 @@ def register_bids_like_batch(
         )
         if verbose:
             print(f"  save done; wrote: {written_path}", flush=True)
+        run_report_events.append(
+            {
+                "record": record,
+                "status": "processed",
+                "reason": None,
+                "output_path": written_path,
+            }
+        )
 
         if cleanup_cache_after_save and use_memmap:
             cleanup_omio_cache(memmap_cache_dir, full_cleanup=True, verbose=False)
@@ -738,6 +1019,47 @@ def register_bids_like_batch(
         if write_error_reports
         else None
     )
+
+    run_report_yaml_path = None
+    run_report_txt_path = None
+    if write_run_report:
+        requested_formats = (
+            {str(run_report_format).lower()}
+            if isinstance(run_report_format, str)
+            else {str(item).lower() for item in run_report_format}
+        )
+        if not requested_formats <= {"yaml", "txt"}:
+            raise ValueError(
+                "run_report_format must contain only 'yaml' and/or 'txt'. "
+                f"Got {run_report_format!r}."
+            )
+        run_report_yaml_path, run_report_txt_path = _run_report_paths(root, run_report_name)
+        payload = _load_run_report(run_report_yaml_path, root)
+        payload["project_root"] = str(root)
+        payload["last_updated"] = timestamp
+        for event in run_report_events:
+            _append_run_report_entry(
+                payload,
+                event["record"],
+                root=root,
+                timestamp=timestamp,
+                status=event["status"],
+                register_kwargs=base_register_kwargs,
+                output_path=event.get("output_path"),
+                reason=event.get("reason"),
+            )
+        if "yaml" in requested_formats:
+            _write_run_report_yaml(run_report_yaml_path, payload)
+        else:
+            run_report_yaml_path = None
+        if "txt" in requested_formats:
+            _render_run_report_text(
+                payload,
+                run_report_txt_path,
+                status_symbol_style=run_report_status_symbol_style,
+            )
+        else:
+            run_report_txt_path = None
 
     if verbose:
         print(
@@ -755,6 +1077,8 @@ def register_bids_like_batch(
         skipped=tuple(skipped),
         root_error_report_path=root_report_path,
         tag_error_report_paths=tuple(sorted(tag_report_paths)),
+        root_run_report_yaml_path=run_report_yaml_path,
+        root_run_report_txt_path=run_report_txt_path,
     )
 
 def batch_create_thorlabs_raw_yaml_templates(

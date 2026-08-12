@@ -221,12 +221,17 @@ this single function, which also handles error reporting and logging:
            "overwrite":         True,
            "verbose":           False},
        write_error_reports      = True,
+       write_run_report         = True,
+       run_report_name          = "zenreg_batch_run_report",
+       run_report_format        = ("yaml", "txt"),
        continue_on_error        = True,
        verbose                  = True)
 
    print(f"Processed files: {len(result.processed)}")
    print(f"Skipped files:   {len(result.skipped)}")
    print(f"Error report:    {result.root_error_report_path}")
+   print(f"Run report YAML: {result.root_run_report_yaml_path}")
+   print(f"Run report TXT:  {result.root_run_report_txt_path}")
 
 Nested tag folders are expressed by adding levels to ``tag_folder_levels``. This
 example searches for folders containing ``DC000_FOV`` or ``DA000_FOV`` and then
@@ -290,6 +295,15 @@ Options introduced here:
    * - ``write_error_reports``
      - Writes short per-folder reports and a root-level, copy-pasteable Python
        dictionary of skipped files. Default: ``True``.
+   * - ``write_run_report``
+     - Updates the root-level project run report after the batch, also for
+       successful runs. Default: ``True``.
+   * - ``run_report_name``
+     - Base filename for the project run report. ZenReg writes
+       ``<run_report_name>.yaml`` and/or ``<run_report_name>.txt``. Default:
+       ``"zenreg_batch_run_report"``.
+   * - ``run_report_format``
+     - Format or formats for the run report. Default: ``("yaml", "txt")``.
    * - ``continue_on_error``
      - Continue with the next image after load, registration, or save errors.
        Default: ``True``.
@@ -297,6 +311,49 @@ Options introduced here:
 All other keyword arguments are the same as for the individual functions, and are 
 forwarded to them. Please refer to the corresponding function documentation and
 tutorials for details.
+
+Batch run reports
+-----------------
+
+ZenReg writes a persistent project run report by default. This report is
+different from the error report: it is a project-level history of discovered
+image stacks and their batch-processing status, including successful runs.
+
+Two files are written in ``project_root`` by default:
+
+.. code-block:: text
+
+   zenreg_batch_run_report.yaml
+   zenreg_batch_run_report.txt
+
+The YAML file is the machine-readable source of truth. It is loaded and updated
+on each batch run. If the same image stack is processed again, ZenReg appends a
+new run entry below the existing file entry instead of replacing the history.
+
+The text report is re-rendered from the YAML report and is meant for quick
+inspection:
+
+.. code-block:: text
+
+   ZenReg batch run report
+   Project root: /path/to/project_root
+   Last updated: 2026-08-12_14-32-10
+
+   ID20990_for_Fab/
+   └─ DA000_FOV1/
+      └─ TL_000/
+         ├─ ChanB_Preview.tif [FAILED]
+         │  runs:
+         │    - 2026-08-12_14-20-01 | failed/register | Registration requires T > 1.
+         └─ Image_001_001.raw [REGISTERED]
+            output: ID20990_for_Fab/DA000_FOV1/zenreg_output/Image_001_001_zenreg_registered.ome.tif
+            runs:
+              - 2026-08-12_14-18-02 | skipped/already registered
+              - 2026-08-12_14-31-11 | processed | phase_cross_correlation | c=0
+
+``REGISTERED`` means that a registered output exists, either because ZenReg just
+processed the image or because ``skip_registered=True`` found an existing output.
+``FAILED`` marks load, registration, or save failures.
 
 
 Batch error reports

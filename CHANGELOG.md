@@ -8,23 +8,36 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ---
 
-## 🔜 v0.0.11 - UNRELEASED
+### 🔜 v0.0.12 - UNRELEASED
 
-### 🧩 Changes and improvements
-#### Batch progress output
+#### 🧩 Changes and improvements
+##### Batch progress output
 - Added explicit flushed progress messages to `register_bids_like_batch` after loading and registration, and before/after saving registered OME-TIFF images and ZenReg report sidecars. This makes long interactive batch runs easier to follow when tqdm bars are cleared by the terminal frontend.
 
-#### Documentation
+##### Batch run reports
+- Added optional root-level batch run reports to `register_bids_like_batch`.
+  ZenReg now writes `zenreg_batch_run_report.yaml` and
+  `zenreg_batch_run_report.txt` by default, preserving a per-image run history
+  across multiple batch runs.
+- Added `write_run_report`, `run_report_name`, `run_report_format`, and
+  `run_report_status_symbol_style` options to control project-level batch run
+  reporting.
+
+##### Documentation
 - Reworked the API reference from autosummary-generated fully qualified names
   to explicit autodoc entries. Function entries now render in the cleaner
   OMIO-style format, for example `load_stack()` instead of `zenreg.load_stack`.
 
 ---
 
-## 🚀 v0.0.11 - Housekeeping: Reduced YAML template helper scope
+### 🚀 v0.0.11
 
-### 🧩 Changes and improvements
-#### Batch RAW metadata repair
+August 11, 2026
+
+This release adds explicit progress messages to the BIDS-like batch processor and reworks the API reference documentation for cleaner function entries.
+
+#### 🧩 Changes and improvements
+##### Batch RAW metadata repair
 - Renamed and simplified the Thorlabs RAW YAML repair helper from `create_thorlabs_raw_yaml_templates_from_batch_report` to `batch_create_thorlabs_raw_yaml_templates`.
 - Reduced `batch_create_thorlabs_raw_yaml_templates` to its specific task: reading RAW paths and editable `template_metadata` blocks from a ZenReg root error report and creating OMIO YAML sidecars for those paths.
 - Removed BIDS-like rediscovery arguments from the RAW YAML template helper (`subject_ids`, `subject_prefix`, `tag_folder_levels`, `image_patterns`, `exclude_name_contains`, and `restrict_to_discovered`); the function now deliberately trusts the paths already recorded in the ZenReg error report.
@@ -32,49 +45,51 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ---
 
-## 🚀 v0.0.10 - Introducing: BIDS-like batch processing
+### 🚀 v0.0.10
 
 August 10, 2026
 
-### ✨ New features
-#### Batch processing
+Introducing: BIDS-like batch processing. This release adds a new batch processor that discovers microscopy image files in nested BIDS-like project trees, loads them with OMIO, runs `register_stack`, saves registered OME-TIFF outputs, manages optional disk-backed caches, skips already registered files, and returns a structured batch result. The batch processor also writes a root-level error report for skipped files, which can be used to create OMIO Thorlabs RAW YAML bypass templates for selected skipped RAW files.
+
+#### ✨ New features
+##### Batch processing
 - Added `register_bids_like_batch`, a true BIDS-like batch processor that discovers image files, loads them with OMIO, runs `register_stack`, saves registered OME-TIFF outputs, manages optional disk-backed caches, skips already registered files, and returns a structured batch result.
 - Added flexible nested tag-folder discovery via `discover_bids_like_batch_images`, including token-based matching such as `("DC000_FOV", "DA000_FOV")` for folders like `DC000_FOV1` and `DA000_FOV2`.
 - Added batch-level skipped-file reporting with per-folder reports and a root-level, copy-pasteable Python dictionary for later OMIO Thorlabs RAW YAML template creation.
 - Added `create_thorlabs_raw_yaml_templates_from_batch_report`, a batch helper that reads ZenReg root error reports and creates OMIO Thorlabs RAW YAML bypass templates for selected skipped RAW files using BIDS-like folder selection logic.
 
-### 🧩 Changes and improvements
-#### Batch processing
+#### 🧩 Changes and improvements
+##### Batch processing
 - Reworked the synthetic batch user script to demonstrate both a simple custom loop and the new `register_bids_like_batch` workflow.
 - Added a private Katharina batch template script that maps the new batch processor to nested `ID*/DC000_FOV*/TL_000/*.raw` style project trees.
 - Added public and private OMIO YAML template creator scripts for creating Thorlabs RAW YAML bypass files from ZenReg batch error reports.
 - Removed the older public `iter_bids_like_image_files` helper from the ZenReg top-level API in favor of the more general discovery and full batch registration functions.
 
-#### Registration robustness
+##### Registration robustness
 - `registration_template_time_range` values whose stop exceeds the available
   number of time points are now clipped to `T` with a warning instead of
   aborting the registration.
 
-#### Documentation
+##### Documentation
 - Rebuilt the RTD batch-processing page around the BIDS-like project tree,
   synthetic batch project creation, custom loops, and the new full batch
   processor.
 
-#### Interactive execution
+##### Interactive execution
 - Progress bars now use the standard text-based `tqdm` backend instead of
   `tqdm.auto`, avoiding optional `ipywidgets` warnings in VS Code interactive
   windows.
 
 --- 
 
-## 🚀 v0.0.9 - OMIO Thorlabs RAW fallback update
+### 🚀 v0.0.9
 
 August 10, 2026
 
 This release updates ZenReg's OMIO dependency to use the latest Thorlabs RAW metadata fallback behavior introduced in OMIO v0.2.8.
 
-### 🧩 Changes and improvements
-#### I/O robustness
+#### 🧩 Changes and improvements
+##### I/O robustness
 
 - Updated the required OMIO dependency to `omio-microscopy>=0.2.8`.
 - ZenReg batch workflows now benefit from OMIO's improved Thorlabs RAW fallback logic, where XML metadata that is parseable but inconsistent with the RAW file size triggers YAML fallback instead of deriving invalid dimensions such as `Z=0`.
@@ -82,33 +97,35 @@ This release updates ZenReg's OMIO dependency to use the latest Thorlabs RAW met
 
 --- 
 
-## 🚀 v0.0.8 - Minor improvements
+### 🚀 v0.0.8
 
 August 7, 2026
 
 This release adds batch-safe image loading and error handling, which is especially useful for large-scale batch processing of microscopy datasets where some files may be unreadable or corrupted.
 
-### ✨ New features
-#### Batch-safe image loading
+#### ✨ New features
+##### Batch-safe image loading
 
 - Added `load_stack(..., on_error="raise"|"return_none")`, forwarding OMIO v0.2.7's batch-safe read-error handling. The default remains `"raise"` for interactive workflows; batch scripts can request `"return_none"` and skip unreadable files (OMIO then returns `(None, None)`) deliberately.
 
 --- 
 
-## 🚀 v0.0.7 - Quieter interactive registration output
+### 🚀 v0.0.7
 
 August 6, 2026
 
-### ✨ New features
-#### Interactive execution
+Quieter interactive registration output: This minor release adds a new `print_shifts` argument to `register_stack()` and `correct_intra_stack_z_drift()` for optional per-frame/per-slice shift/rotation output, while keeping the default `verbose=True` behavior clean and focused on progress bars and high-level status messages.
+
+#### ✨ New features
+##### Interactive execution
 
 - Added `print_shifts` to `register_stack()` and
   `correct_intra_stack_z_drift()`. Progress bars and high-level status messages
   remain controlled by `verbose`, while detailed per-frame or per-slice
   shift/rotation lines can be enabled separately with `print_shifts=True`.
 
-### 🧩 Changes and improvements
-#### Interactive execution
+#### 🧩 Changes and improvements
+##### Interactive execution
 
 - `print_shifts` defaults to `False`, so `verbose=True` now keeps the useful
   tqdm progress bars without flooding interactive terminals with lines such as
@@ -116,19 +133,21 @@ August 6, 2026
 
 --- 
 
-## 🚀 v0.0.6 - Documentation refinements and improved memory-efficiency in NoRMCorre
+### 🚀 v0.0.6
+
+August 6, 2026
 
 This release improves the documentation for NoRMCorre usage and reduces peak RAM use when running NoRMCorre with parallel workers and disk-backed registered-output caches.
 
-### 🧩 Changes and improvements
-#### NoRMCorre wrapper behavior
+#### 🧩 Changes and improvements
+##### NoRMCorre wrapper behavior
 
 - `register_stack(method="normcorre")` now warns and ignores `registration_template_time_range` instead of raising an error, because NoRMCorre uses its own `nc_template_init_mode` and `nc_template_update_method` template workflow.
 - `register_stack(method="normcorre", zero_clip=True)` now warns and continues with zero clipping disabled until NoRMCorre-compatible zero clipping is implemented.
 - Registration details now record requested/effective NoRMCorre behavior for ignored `registration_template_time_range` and `zero_clip` settings.
 - NoRMCorre parallel execution now streams completed worker results directly into the registered output array instead of collecting all corrected frames in an intermediate list first. This reduces peak RAM use, especially with disk-backed output caches and larger `nc_n_jobs` values.
 
-#### Documentation
+##### Documentation
 
 - Expanded the `register_stack()` docstring so every public parameter is documented explicitly, including NoRMCorre-specific `nc_*` options and full 3D rigid `rot_*` options.
 - Added NoRMCorre guidance to the 2D+t RTD usage example for choosing `nc_strides`, `nc_overlaps`, and `nc_max_deviation_rigid`, including how these settings differ from global `max_xy_shifts`.
@@ -137,7 +156,7 @@ This release improves the documentation for NoRMCorre usage and reduces peak RAM
   Napari workflow, and assessing-results pages, including
   `open_in_napari(..., zarr_mode="zarr_nodask")`.
 
-#### Tutorial helpers
+##### Tutorial helpers
 
 - `open_in_napari` now forwards additional keyword arguments to
   `omio.open_in_napari`, enabling OMIO-specific options such as
@@ -145,32 +164,36 @@ This release improves the documentation for NoRMCorre usage and reduces peak RAM
 
 --- 
 
-## 🚀 v0.0.5 - New registration reports and interactive progress bar
+### 🚀 v0.0.5
 
 August 4, 2026
 
-### ✨ New features
-#### Registration reports
+New registration reports and interactive progress bar: This release adds a new `write_registration_summary_plot` helper for writing only the ZenReg registration summary PNG after `register_stack`, without saving the full registered image or CSV/YAML sidecars. It also adds `tqdm`-based progress bars for long `register_stack` loops when `verbose=True`, including shift estimation, transform application, rotation correction, and zero-clip mask/crop steps.
+
+#### ✨ New features
+##### Registration reports
 
 - Added `write_registration_summary_plot` for writing only the ZenReg registration summary PNG after `register_stack`, without saving the full registered image or CSV/YAML sidecars.
 
-### 🧩 Changes and improvements
-#### Registration reports
+#### 🧩 Changes and improvements
+##### Registration reports
 
 - Summary plot annotations now list the registered image dimensions in canonical `TZCYX` order as the first entry.
 
-#### Interactive execution
+##### Interactive execution
 
 - Added `tqdm`-based progress bars for long `register_stack` loops when `verbose=True`, including shift estimation, transform application, rotation correction, and zero-clip mask/crop steps. Verbose messages are now flushed immediately to improve feedback in VS Code and Jupyter-style interactive sessions.
 
 --- 
 
-## 🚀 v0.0.4 - Template controls, reporting refinements, and tutorial helpers
+### 🚀 v0.0.4
 
 August 3, 2026
 
-### ✨ New features
-#### Registration controls and outputs
+Template controls, reporting refinements, and tutorial helpers. This release adds new controls for building multi-frame registration templates, clearer Z-range selection, raw shift/rotation reporting, single-channel fallback behavior, and OMIO OME-TIFF compression control. It also improves registration summary plots, extends tutorial helpers, and improves synthetic benchmark data generation.
+
+#### ✨ New features
+##### Registration controls and outputs
 
 - Added `registration_template_time_range` to `register_stack` for building
   multi-frame registration templates from a half-open time range. This is
@@ -192,24 +215,24 @@ August 3, 2026
 - Added user control over OMIO OME-TIFF compression via
   `save_stack(compression_level=...)`.
 
-#### Tutorial and preview helpers
+##### Tutorial and preview helpers
 
 - Added `show_projection` for previewing registration-style Z/time projections
   and all-frame template images before running `register_stack`. Projection
   arrays are returned only when `return_projection=True`.
 
-### 🧩 Changes and improvements
-#### Registration reports
+#### 🧩 Changes and improvements
+##### Registration reports
 
 - Summary plots now suppress per-frame line markers for long time series to
   keep large-frame reports readable; clipped estimates are still highlighted.
 
-#### Tutorial and preview helpers
+##### Tutorial and preview helpers
 
 - Extended `show_timepoints` with configurable `reference_time`,
   `moving_time`, and `projection_z_range` arguments.
 
-#### Synthetic data and benchmarks
+##### Synthetic data and benchmarks
 
 - Improved synthetic full 3D rigid benchmark data generation for dense
   structural volumes by adding richer volumetric texture and distributed
@@ -217,7 +240,7 @@ August 3, 2026
   and point-based backend comparisons better constrained and more
   representative for six-degree-of-freedom registration validation.
 
-### 📚 Documentation
+#### 📚 Documentation
 
 - Expanded the multi-channel usage guide with the new single-channel fallback
   behavior and the distinction between tolerant single-channel handling and
@@ -230,7 +253,7 @@ August 3, 2026
 
 --- 
 
-## 🚀 v0.0.3 - Dummy release for Zenodo
+### 🚀 v0.0.3
 
 July 31, 2026
 
@@ -238,7 +261,7 @@ This is a dummy release to trigger Zenodo archiving.
 
 --- 
 
-## 🚀 v0.0.2 - First functional ZenReg release
+### 🚀 v0.0.2
 
 July 31, 2026
 
@@ -246,7 +269,7 @@ This is the first real ZenReg release. Version 0.0.1 only established the
 package skeleton; v0.0.2 introduces the functional microscopy registration
 platform.
 
-### Core workflow
+#### Core workflow
 
 - Added the main ZenReg workflow: `load_stack -> register_stack -> save_stack`.
 - Standardized internal image handling on OMIO-normalized `TZCYX` arrays.
@@ -255,7 +278,7 @@ platform.
 - Added support for TIFF, OME-TIFF, CZI, LSM, and Thorlabs RAW input through
   OMIO.
 
-### Registration methods and modes
+#### Registration methods and modes
 
 - Added global translational registration with scikit-image
   `phase_cross_correlation`.
@@ -273,7 +296,7 @@ platform.
 - Added a sparse puncta/spot-oriented 3D rigid backend based on point detection
   and point matching.
 
-### Registration controls
+#### Registration controls
 
 - Added explicit `registration_channel` and `registration_stack` controls.
 - Added configurable projection methods: `max`, `mean`, `median`, `var`, and
@@ -290,7 +313,7 @@ platform.
   rotation workflows.
 - Added post hoc cropping utilities for manual inspection-based cropping.
 
-### Memory efficiency and performance
+#### Memory efficiency and performance
 
 - Added OMIO/Zarr memory-mapped loading via `use_memmap`, `memmap_folder`, and
   `memmap_reuse`.
@@ -301,7 +324,7 @@ platform.
   settings.
 - Added utility helpers for available compute-unit inspection.
 
-### Reporting and reproducibility
+#### Reporting and reproducibility
 
 - Added registration sidecar outputs next to registered images:
   shift/rotation/correlation CSV files, settings YAML files, and summary plots.
@@ -311,7 +334,7 @@ platform.
   rotation workflows.
 - Added transparent settings capture for reproducibility.
 
-### Synthetic data and tutorials
+#### Synthetic data and tutorials
 
 - Added synthetic OME-TIFF benchmark datasets with two channels and
   ground-truth tables.
@@ -323,7 +346,7 @@ platform.
 - Added dedicated user scripts for synthetic registration, NoRMCorre
   comparison, full 3D rigid registration, profiling, and batch processing.
 
-### Documentation
+#### Documentation
 
 - Added the first Read the Docs documentation tree with overview,
   installation, usage tutorials, API reference, changelog, and contribution
@@ -334,7 +357,7 @@ platform.
 
 --- 
 
-## 🚀 v0.0.0
+### 🚀 v0.0.0
 
 February 3, 2026
 

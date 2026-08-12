@@ -61,6 +61,67 @@ def test_register_bids_like_batch_processes_synthetic_project(tmp_path):
     assert len(result.skipped) == 0
     assert result.processed[0].output_path.exists()
     assert result.processed[0].output_path.name == "image_01_zenreg_registered.ome.tif"
+    assert result.root_run_report_yaml_path is not None
+    assert result.root_run_report_txt_path is not None
+    assert result.root_run_report_yaml_path.exists()
+    assert result.root_run_report_txt_path.exists()
+    assert "image_01.ome.tif" in result.root_run_report_txt_path.read_text()
+    assert "REGISTERED" in result.root_run_report_txt_path.read_text()
+
+
+def test_register_bids_like_batch_appends_run_report_history(tmp_path):
+    write_batch_example_project(
+        tmp_path,
+        subject_ids=("ID000001",),
+        experiment_tags=("TP000",),
+    )
+    kwargs = dict(
+        subject_ids=("ID000001",),
+        tag_folder_levels=(("TP000",),),
+        image_patterns=("*.ome.tif",),
+        register_kwargs={
+            "registration_channel": 0,
+            "method": "phase_cross_correlation",
+            "time_registration_mode": "projection",
+            "projection_method": "max",
+            "zreg": False,
+            "zero_clip": False,
+            "verbose": False,
+        },
+        save_kwargs={"verbose": False, "overwrite": True},
+        skip_registered=False,
+        use_memmap=False,
+        verbose=False,
+    )
+
+    first = register_bids_like_batch(tmp_path, **kwargs)
+    second = register_bids_like_batch(tmp_path, **kwargs)
+
+    import zenreg.batch as batch_module
+
+    payload = batch_module._load_run_report(second.root_run_report_yaml_path, tmp_path)
+    image_key = "ID000001/TP000/image_01.ome.tif"
+    assert first.root_run_report_yaml_path == second.root_run_report_yaml_path
+    assert image_key in payload["files"]
+    assert len(payload["files"][image_key]["runs"]) == 2
+    assert all(run["status"] == "processed" for run in payload["files"][image_key]["runs"])
+
+    skipped = register_bids_like_batch(
+        tmp_path,
+        **{
+            **kwargs,
+            "skip_registered": True,
+            "save_kwargs": {"verbose": False, "overwrite": False},
+        },
+    )
+    report_text = skipped.root_run_report_txt_path.read_text()
+    already_registered_lines = [
+        line for line in report_text.splitlines() if "| skipped/already registered" in line
+    ]
+    assert already_registered_lines
+    assert "[REGISTERED]" in report_text
+    assert "output=ID000001/TP000/zenreg_output/image_01_zenreg_registered.ome.tif" not in already_registered_lines[-1]
+    assert "Registered output already exists" not in already_registered_lines[-1]
 
 
 def test_register_bids_like_batch_reports_load_none(monkeypatch, tmp_path):
