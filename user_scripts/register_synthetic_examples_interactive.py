@@ -83,7 +83,7 @@ GT_3D_T_TRANS_ROT_Z_PATH = EXAMPLE_DIR / "synthetic_3d_t_trans_rot_z_rigid_trans
 # %% 1a) 2D+t: GLOBAL XY TIME REGISTRATION WITH A MULTI-FRAME TEMPLATE
 stack_2d_t_xy, metadata_2d_t_xy = load_stack(STACK_2D_T_XY_PATH, return_metadata=True, verbose=False)
 expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")
-print(f"2D+t XY stack shape: {stack_2d_t_xy.shape} (TZCYX)")
+print(f"2D+t XY stack shape before registration: {stack_2d_t_xy.shape} (TZCYX)")
 show_timepoints(stack_2d_t_xy, title="2D+t XY before registration", channel=0, projection_method="max", save_dir=FIGURE_DIR)
 # template_preview_2d_t_xy = show_projection(
 #     stack_2d_t_xy,
@@ -106,7 +106,7 @@ registered_2d_t_xy_time_template, details_2d_t_xy_time_template = register_stack
     time_reference_mode="template",  # required for registration_template_time_range
     projection_method="median",  # used to aggregate the selected time points
     zreg=False,  # estimate/apply Z shifts during time registration
-    zero_clip=False,  # keep original shape for visual comparison
+    zero_clip=True,  # keep original shape for visual comparison
     max_xy_shifts=(2,2),  # None or (max_y, max_x)
     transform_backend="skimage",  # "skimage" or "scipy"
     transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
@@ -121,6 +121,7 @@ print_shift_comparison(
     "2D+t XY time registration with all-frame template",
     details_2d_t_xy_time_template["time_shifts_yx"],
     expected_2d_t_xy)
+print(f"2D+t XY stack shape after registration: {registered_2d_t_xy_time_template.shape} (TZCYX)")
 show_timepoints(
     registered_2d_t_xy_time_template,
     title="2D+t XY after registration with all-frame template",
