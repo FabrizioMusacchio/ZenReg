@@ -141,7 +141,7 @@ def test_summary_annotation_labels_template_time_and_singleton_z():
 
     annotation = _settings_annotation(details, registered)
 
-    assert "shape_TZCYX=(8, 1, 1, 8, 8)" in annotation
+    assert "shape_TZCYX before registration=(8, 1, 1, 8, 8) | after=(8, 1, 1, 8, 8)" in annotation
     assert "template_t=0:6" in annotation
     assert "projection=median" in annotation
     assert "registration_z_range=Z_N=1" in annotation

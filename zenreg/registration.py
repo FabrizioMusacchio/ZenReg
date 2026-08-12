@@ -2728,6 +2728,13 @@ def _register_stack_rigid_3d_from_main_wrapper(
         except ValueError as exc:
             zero_clip_failed_reason = str(exc)
             zero_clip_bounds = None
+            if verbose:
+                print(
+                    "ZenReg zero_clip skipped: no usable common valid 3D image region; "
+                    "returning the uncropped registered stack.",
+                    flush=True,
+                )
+                print(f"  reason: {zero_clip_failed_reason}", flush=True)
             warnings.warn(
                 "zero_clip=True was requested, but no usable common valid "
                 f"3D region could be found. Returning the registered stack without cropping. {exc}",
@@ -3765,6 +3772,13 @@ def register_stack(
         except ValueError as exc:
             zero_clip_failed_reason = str(exc)
             zero_clip_bounds = None
+            if verbose:
+                print(
+                    "ZenReg zero_clip skipped: no usable common valid image region; "
+                    "returning the uncropped registered stack.",
+                    flush=True,
+                )
+                print(f"  reason: {zero_clip_failed_reason}", flush=True)
             warnings.warn(
                 "zero_clip=True was requested, but no usable common valid "
                 f"region could be found. Returning the registered stack without cropping. {exc}",

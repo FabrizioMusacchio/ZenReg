@@ -574,6 +574,29 @@ def test_zero_clip_crops_directional_zyx_translation_borders():
     }
 
 
+def test_zero_clip_failure_prints_verbose_reason(capsys):
+    stack = _two_timepoint_3d_stack((-1.0, -2.0, 3.0))
+
+    with pytest.warns(RuntimeWarning, match="zero_clip=True was requested"):
+        registered, shift_details = register_stack(
+            stack,
+            registration_channel=0,
+            method="phase_cross_correlation",
+            time_registration_mode="full_3d",
+            zreg=True,
+            zero_clip=True,
+            zero_clip_margin=(20, 20, 20),
+            verbose=True,
+            return_shifts=True,
+        )
+
+    captured = capsys.readouterr()
+    assert registered.shape == stack.shape
+    assert shift_details["zero_clip_bounds"] is None
+    assert "ZenReg zero_clip skipped" in captured.out
+    assert "zero_clip would remove the complete image" in captured.out
+
+
 def test_registration_z_range_matches_legacy_aliases():
     stack = _two_timepoint_3d_stack((0.0, 2.0, -3.0))
 

@@ -6,11 +6,20 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue)](https://doi.org/10.5281/zenodo.21727826)
 
-<!-- ---
+---
 
-### 🔜 v0.0.12 - UNRELEASED
+### 🔜 v0.0.13 - UNRELEASED
 
-tba -->
+#### 🧩 Changes and improvements
+##### Registration summary plots
+- Summary plot annotations now report both the input and output stack shape as
+  `shape_TZCYX before registration=(...) | after=(...)`, making zero-clipping
+  and other shape-changing registration steps immediately visible in reports.
+
+##### Interactive execution
+- `register_stack(..., zero_clip=True, verbose=True)` now prints an explicit
+  message when zero clipping is skipped because no common valid image region can
+  be retained. The detailed reason remains stored in `zero_clip_failed_reason`.
 
 
 ---

@@ -510,6 +510,14 @@ def _raw_estimate_label(details: dict[str, Any], time_count: int) -> str:
 def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) -> str:
     """Build the compact plot annotation."""
 
+    shape_before = details.get("stack_shape_tzcyx")
+    if shape_before is None:
+        shape_before = details.get("input_shape_tzcyx")
+    shape_after_label = str(tuple(int(v) for v in registered_stack.shape))
+    if shape_before is None:
+        shape_before_label = shape_after_label
+    else:
+        shape_before_label = str(tuple(int(v) for v in shape_before))
     max_xy = details.get("max_xy_shifts")
     max_z = details.get("max_z_shifts")
     max_shifts = details.get("max_shifts")
@@ -521,7 +529,7 @@ def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) 
     max_rot = details.get("max_rot_shifts")
     return "\n".join(
         [
-            f"shape_TZCYX={tuple(int(v) for v in registered_stack.shape)}",
+            f"shape_TZCYX before registration={shape_before_label} | after={shape_after_label}",
             (
                 f"method={details.get('method')} | "
                 f"time={details.get('time_registration_mode')}"

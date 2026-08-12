@@ -115,7 +115,7 @@ def test_rigid_3d_mask_zero_clip_preserves_more_z_with_corner_invalidity():
     assert details["zero_clip_bounds"]["z_top"] + details["zero_clip_bounds"]["z_bottom"] <= 6
 
 
-def test_rigid_3d_zero_clip_failure_warns_and_keeps_registered_stack():
+def test_rigid_3d_zero_clip_failure_warns_and_keeps_registered_stack(capsys):
     pytest.importorskip("SimpleITK")
     stack, _, _, _ = create_3d_time_sparse_puncta_rigid_motion_distorted_stack(
         time_count=3,
@@ -139,10 +139,13 @@ def test_rigid_3d_zero_clip_failure_warns_and_keeps_registered_stack():
             transform_order=0,
             zero_clip=True,
             zero_clip_margin=(20, 40, 40),
-            verbose=False,
+            verbose=True,
             return_details=True,
         )
 
+    captured = capsys.readouterr()
     assert registered.shape == stack.shape
     assert details["zero_clip_bounds"] is None
     assert isinstance(details["zero_clip_failed_reason"], str)
+    assert "ZenReg zero_clip skipped" in captured.out
+    assert "zero_clip would remove the complete image" in captured.out
