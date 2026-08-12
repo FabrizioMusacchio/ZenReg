@@ -8,7 +8,7 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ---
 
-### 🔜 v0.0.12 - UNRELEASED
+### 🚀 v0.0.12
 
 #### 🧩 Changes and improvements
 ##### Batch progress output
