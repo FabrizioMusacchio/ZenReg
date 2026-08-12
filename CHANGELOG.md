@@ -10,23 +10,20 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ### 🚀 v0.0.12
 
+August 12, 2026
+
+This release adds explicit progress messages to the BIDS-like batch processor and reworks the API reference documentation for cleaner function entries.
+
 #### 🧩 Changes and improvements
 ##### Batch progress output
 - Added explicit flushed progress messages to `register_bids_like_batch` after loading and registration, and before/after saving registered OME-TIFF images and ZenReg report sidecars. This makes long interactive batch runs easier to follow when tqdm bars are cleared by the terminal frontend.
 
 ##### Batch run reports
-- Added optional root-level batch run reports to `register_bids_like_batch`.
-  ZenReg now writes `zenreg_batch_run_report.yaml` and
-  `zenreg_batch_run_report.txt` by default, preserving a per-image run history
-  across multiple batch runs.
-- Added `write_run_report`, `run_report_name`, `run_report_format`, and
-  `run_report_status_symbol_style` options to control project-level batch run
-  reporting.
+- Added optional root-level batch run reports to `register_bids_like_batch`. ZenReg now writes `zenreg_batch_run_report.yaml` and `zenreg_batch_run_report.txt` by default, preserving a per-image run history across multiple batch runs.
+- Added `write_run_report`, `run_report_name`, `run_report_format`, and `run_report_status_symbol_style` options to control project-level batch run reporting.
 
 ##### Documentation
-- Reworked the API reference from autosummary-generated fully qualified names
-  to explicit autodoc entries. Function entries now render in the cleaner
-  OMIO-style format, for example `load_stack()` instead of `zenreg.load_stack`.
+- Reworked the API reference from autosummary-generated fully qualified names to explicit autodoc entries. Function entries now render in the cleaner OMIO-style format, for example `load_stack()` instead of `zenreg.load_stack`.
 
 ---
 
