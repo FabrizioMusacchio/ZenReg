@@ -339,14 +339,14 @@ inspection:
    Project root: /path/to/project_root
    Last updated: 2026-08-12_14-32-10
 
-   ID20990_for_Fab/
+   ID20990/
    └─ DA000_FOV1/
       └─ TL_000/
          ├─ ChanB_Preview.tif [FAILED]
          │  runs:
          │    - 2026-08-12_14-20-01 | failed/register | Registration requires T > 1.
          └─ Image_001_001.raw [REGISTERED]
-            output: ID20990_for_Fab/DA000_FOV1/zenreg_output/Image_001_001_zenreg_registered.ome.tif
+            output: ID20990/DA000_FOV1/zenreg_output/Image_001_001_zenreg_registered.ome.tif
             runs:
               - 2026-08-12_14-18-02 | skipped/already registered
               - 2026-08-12_14-31-11 | processed | phase_cross_correlation | c=0
