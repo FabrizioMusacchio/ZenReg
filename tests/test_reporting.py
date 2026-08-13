@@ -4,6 +4,7 @@ import numpy as np
 
 from zenreg.reporting import (
     _projection_range_label,
+    _raw_estimate_label,
     _settings_annotation,
     write_registration_outputs,
     write_registration_summary_plot,
@@ -182,6 +183,40 @@ def test_summary_annotation_labels_template_time_and_singleton_z():
     assert "template_t=0:6" in annotation
     assert "projection=median" in annotation
     assert "registration_z_range=Z_N=1" in annotation
+
+
+def test_summary_annotation_keeps_yx_shift_labels_explicit():
+    registered = np.zeros((4, 1, 1, 8, 8), dtype=np.float32)
+    details = {
+        "registration_channel": 0,
+        "registration_stack": 0,
+        "method": "phase_cross_correlation",
+        "time_registration_mode": "projection",
+        "effective_time_registration_mode": "projection",
+        "time_reference_mode": "template",
+        "projection_method": "max",
+        "intra_stack": False,
+        "zreg": False,
+        "rotreg": False,
+        "transform_backend": "skimage",
+        "transform_order": 1,
+        "max_xy_shifts": (60, 30),
+        "time_shifts_zyx_raw": np.asarray(
+            [
+                [0, 0, 0],
+                [0, 51, 12],
+                [0, -20, -29],
+                [0, 4, 8],
+            ],
+            dtype=np.float32,
+        ),
+    }
+
+    raw_label = _raw_estimate_label(details, registered.shape[0])
+    annotation = _settings_annotation(details, registered)
+
+    assert "max_raw_shift[y=51, x=29]" in raw_label
+    assert "max_y=60, max_x=30" in annotation
 
 
 def test_projection_range_label_reports_all_slices_for_z_stacks():

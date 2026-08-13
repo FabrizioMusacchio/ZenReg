@@ -526,6 +526,14 @@ def _format_max_abs(values: np.ndarray) -> str:
         return "n/a"
     return f"{float(np.nanmax(np.abs(values))):.3g}"
 
+def _format_max_xy_limits(max_xy) -> str:
+    """Format ``(max_y, max_x)`` limits with explicit axis labels."""
+
+    if max_xy is None:
+        return "None"
+    max_y, max_x = [float(v) for v in max_xy]
+    return f"max_y={max_y:g}, max_x={max_x:g}"
+
 def _raw_estimate_label(details: dict[str, Any], time_count: int) -> str:
     """Return compact max-raw-shift and rotation labels."""
 
@@ -590,7 +598,7 @@ def _settings_annotation(details: dict[str, Any], registered_stack: np.ndarray) 
                 f"registration_range={_registration_range_label(details)}"
             ),
             _raw_estimate_label(details, registered_stack.shape[0]),
-            f"max_xy={max_xy} | max_z={max_z} | max_rot={max_rot}",
+            f"{_format_max_xy_limits(max_xy)} | max_z={max_z} | max_rot={max_rot}",
         ]
     )
 

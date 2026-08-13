@@ -175,28 +175,28 @@ show_timepoints(
 
 registered_2d_t_variable_snr, details_2d_t_variable_snr = register_stack(
     stack_2d_t_variable_snr,
-    registration_channel=0,  # channel used to estimate shifts
+    registration_channel    = 0,  # channel used to estimate shifts
     registration_template_time_range="all",  # build a stable template from all frames
-    method="phase_cross_correlation",  # "phase_cross_correlation" or "pystackreg"
-    time_registration_mode="projection",  # one YX registration image per time point
-    time_reference_mode="template",  # align all frames to the template
-    projection_method="median",  # also aggregates the selected time points into the template
-    zreg=False,  # 2D+t example; no Z shift estimation
-    zero_clip=False,  # keep original shape for visual SNR comparison
-    max_xy_shifts=(8, 8),  # None or (max_y, max_x)
-    transform_backend="skimage",  # "skimage" or "scipy"
-    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
-    filter_slices=False,  # median-filter Z slices before projection
-    filter_projections=False,  # median-filter projections before shift estimation
-    median_kernel_size=3,  # median-filter kernel size in pixels
-    calc_SNR=True,  # add robust raw-frame SNR to details, CSV, and summary plot
-    calc_CNR=False,  # add robust raw-frame CNR to details, CSV, and summary plot
-    SNR_sampling_step=2,  # use every second pixel for faster quality metrics
-    CNR_sampling_step=2,  # use every second pixel for faster quality metrics
-    n_jobs=2,  # CPU worker threads for independent time points/slices
-    verbose=True,
-    return_shifts=True,
-    return_details=True)
+    method                  = "phase_cross_correlation",  # "phase_cross_correlation" or "pystackreg"
+    time_registration_mode  = "projection",  # one YX registration image per time point
+    time_reference_mode     = "template",  # align all frames to the template
+    projection_method       = "median",  # also aggregates the selected time points into the template
+    zreg                    = False,  # 2D+t example; no Z shift estimation
+    zero_clip               = False,  # keep original shape for visual SNR comparison
+    max_xy_shifts           = (8, 8),  # None or (max_y, max_x)
+    transform_backend       = "skimage",  # "skimage" or "scipy"
+    transform_order         = 1,  # 1 for intensity data, 0 for sparse puncta/labels
+    filter_slices           = False,  # median-filter Z slices before projection
+    filter_projections      = False,  # median-filter projections before shift estimation
+    median_kernel_size      = 3,  # median-filter kernel size in pixels
+    calc_SNR                = True,  # add robust raw-frame SNR to details, CSV, and summary plot
+    calc_CNR                = True,  # add robust raw-frame CNR to details, CSV, and summary plot
+    SNR_sampling_step       = 2,  # use every second pixel for faster quality metrics
+    CNR_sampling_step       = 2,  # use every second pixel for faster quality metrics
+    n_jobs                  = 2,  # CPU worker threads for independent time points/slices
+    verbose                 = True,
+    return_shifts           = True,
+    return_details          = True)
 print_shift_comparison(
     "2D+t variable-SNR time registration",
     details_2d_t_variable_snr["time_shifts_yx"],
