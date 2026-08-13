@@ -9,7 +9,7 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ### 🚀 v0.0.14
 
-August 12, 2026
+August 13, 2026
 
 This update adds per-frame quality metrics to `register_stack`, including robust SNR and CNR estimates, and a new synthetic 2D+t variable-SNR benchmark dataset generator. It also improves interactive execution with stable completion messages and persistent progress bars.
 
