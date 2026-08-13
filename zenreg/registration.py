@@ -8,6 +8,7 @@ Date: June 2026
 from __future__ import annotations
 
 import os
+import sys
 import warnings
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -245,8 +246,9 @@ def _progress_iter(iterable, *, total: int, enabled: bool, desc: str | None):
         iterable,
         total=int(total),
         desc=desc,
-        leave=False,
+        leave=True,
         dynamic_ncols=True,
+        file=sys.stdout,
     )
 
 def _parallel_map_ordered(function, items, *, n_jobs: int, progress: bool = False, desc: str | None = None):
@@ -1753,6 +1755,20 @@ def _print_verbose(verbose: bool, message: str) -> None:
 
     if verbose:
         print(message, flush=True)
+
+def _print_registration_done(verbose: bool, registered_stack) -> None:
+    """Print a stable registration completion message."""
+
+    shape = getattr(registered_stack, "shape", None)
+    shape_text = f"; output shape: {tuple(int(v) for v in shape)} (TZCYX)" if shape is not None else ""
+    _print_verbose(verbose, f"ZenReg registration done{shape_text}.")
+
+def _registered_stack_from_result(result):
+    """Return the registered stack from a register_stack return value."""
+
+    if isinstance(result, tuple) and result:
+        return result[0]
+    return result
 
 def _memory_mark(memory_tracker, step: str) -> None:
     """Record an optional memory profiling marker."""
@@ -3954,6 +3970,7 @@ def register_stack(
             registration_settings=registration_settings,
         )
         _memory_mark(memory_tracker, "register_stack:end")
+        _print_registration_done(verbose, _registered_stack_from_result(result))
         return result
     if method == "normcorre":
         result = _register_stack_normcorre_from_main_wrapper(
@@ -4004,6 +4021,7 @@ def register_stack(
             registration_settings=registration_settings,
         )
         _memory_mark(memory_tracker, "register_stack:end")
+        _print_registration_done(verbose, _registered_stack_from_result(result))
         return result
 
     registered = stack
@@ -4373,5 +4391,6 @@ def register_stack(
         registration_settings=registration_settings,
     )
     _memory_mark(memory_tracker, "register_stack:end")
+    _print_registration_done(verbose, registered)
     return result
 # %% END

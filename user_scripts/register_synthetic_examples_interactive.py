@@ -51,8 +51,7 @@ from zenreg import (
     show_before_after,
     show_projection,
     show_slices,
-    show_timepoints,
-)
+    show_timepoints)
 # %% DEFINE INPUT AND OUTPUT PATHS
 EXAMPLE_DIR = PROJECT_ROOT / "example_data" / "synthetic_data"
 OUTPUT_DIR = EXAMPLE_DIR / "registered"
