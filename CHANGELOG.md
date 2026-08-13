@@ -6,6 +6,11 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue)](https://doi.org/10.5281/zenodo.21727826)
 
+<!-- ---
+
+### 🔜 v0.0.15 - UNRELEASED -->
+
+---
 
 ### 🚀 v0.0.14
 
