@@ -60,6 +60,12 @@ SETTING_KEYS = (
     "filter_slices",
     "filter_projections",
     "median_kernel_size",
+    "calc_SNR",
+    "calc_CNR",
+    "SNR_sampling_step",
+    "CNR_sampling_step",
+    "quality_background_percentile",
+    "quality_signal_percentile",
     "max_xy_shifts",
     "max_z_shifts",
     "max_rot_shifts",
@@ -303,6 +309,17 @@ def _pre_frame_correlations(details: dict[str, Any], time_count: int) -> np.ndar
         return np.full(time_count, np.nan, dtype=np.float32)
     return correlations
 
+def _quality_series(details: dict[str, Any], key: str, time_count: int) -> np.ndarray:
+    """Return one optional per-frame quality series from registration details."""
+
+    values = details.get(key)
+    if values is None:
+        return np.full(time_count, np.nan, dtype=np.float32)
+    values = np.asarray(values, dtype=np.float32)
+    if values.shape != (time_count,):
+        return np.full(time_count, np.nan, dtype=np.float32)
+    return values
+
 def _csv_value(value) -> str:
     """Format one CSV cell."""
 
@@ -344,6 +361,8 @@ def _write_shift_csv(
     raw_shifts_zyx = _time_shifts_zyx_raw(details, time_count)
     rotations, _ = _rotation_shift_series_deg(details, time_count)
     raw_rotations, _ = _rotation_shift_series_raw_deg(details, time_count)
+    snr_before = _quality_series(details, "snr_before", time_count)
+    cnr_before = _quality_series(details, "cnr_before", time_count)
     fieldnames = [
         "scope",
         "frame",
@@ -370,6 +389,8 @@ def _write_shift_csv(
         "rotation_z_limit_exceeded",
         "rotation_y_limit_exceeded",
         "rotation_x_limit_exceeded",
+        "snr_before",
+        "cnr_before",
         "pearson_correlation_before",
         "pearson_correlation_after",
         "pearson_correlation",
@@ -411,6 +432,8 @@ def _write_shift_csv(
                     "rotation_x_limit_exceeded": str(_limit_exceeded(rotations[t, 2], raw_rotations[t, 2]))
                     if rotations.shape[1] >= 3 and raw_rotations.shape[1] >= 3
                     else "",
+                    "snr_before": _csv_value(snr_before[t]),
+                    "cnr_before": _csv_value(cnr_before[t]),
                     "pearson_correlation_before": _csv_value(correlations_before[t]),
                     "pearson_correlation_after": _csv_value(correlations_after[t]),
                     "pearson_correlation": _csv_value(correlations_after[t]),
@@ -452,6 +475,8 @@ def _write_shift_csv(
                         "rotation_z_limit_exceeded": "",
                         "rotation_y_limit_exceeded": "",
                         "rotation_x_limit_exceeded": "",
+                        "snr_before": _csv_value(snr_before[t]),
+                        "cnr_before": _csv_value(cnr_before[t]),
                         "pearson_correlation_before": _csv_value(correlations_before[t]),
                         "pearson_correlation_after": _csv_value(correlations_after[t]),
                         "pearson_correlation": _csv_value(correlations_after[t]),
@@ -651,13 +676,12 @@ def _write_summary_plot(
     rotations, rotation_labels = _rotation_shift_series_deg(details, time_count)
     raw_rotations, _ = _rotation_shift_series_raw_deg(details, time_count)
 
-    fig, (ax_shift, ax_corr) = plt.subplots(
-        2,
-        1,
-        figsize=(9, 6.5),
-        sharex=True,
-        gridspec_kw={"height_ratios": [2.0, 1.2]},
-    )
+    fig = plt.figure(figsize=(11, 7.2), constrained_layout=True)
+    grid = fig.add_gridspec(3, 1, height_ratios=[2.0, 1.2, 0.42])
+    ax_shift = fig.add_subplot(grid[0])
+    ax_corr = fig.add_subplot(grid[1], sharex=ax_shift)
+    ax_note = fig.add_subplot(grid[2])
+    ax_shift.tick_params(labelbottom=False)
     ax_shift.plot(frames, shifts_zyx[:, 1], marker=line_marker, label="shift_y", color="tab:blue")
     ax_shift.plot(frames, shifts_zyx[:, 2], marker=line_marker, label="shift_x", color="tab:orange")
     _add_limit_exceeded_markers(ax_shift, frames, shifts_zyx[:, 1], raw_shifts_zyx[:, 1], label="limit exceeded")
@@ -706,27 +730,69 @@ def _write_summary_plot(
             marker=line_marker,
             color="0.45",
             alpha=0.75,
-            label="before",
+            label="r before",
         )
-    ax_corr.plot(frames, correlations_after, marker=line_marker, color="tab:purple", label="after")
+    ax_corr.plot(frames, correlations_after, marker=line_marker, color="tab:purple", label="r after")
     ax_corr.set_ylabel("Pearson r vs template")
     ax_corr.set_xlabel("Frame")
     ax_corr.set_ylim(-1.05, 1.05)
     ax_corr.grid(True, alpha=0.25)
-    ax_corr.legend(loc="lower right", fontsize=8)
+
+    snr_before = _quality_series(details, "snr_before", time_count)
+    cnr_before = _quality_series(details, "cnr_before", time_count)
+    has_snr = np.any(np.isfinite(snr_before))
+    has_cnr = np.any(np.isfinite(cnr_before))
+    if has_snr or has_cnr:
+        if has_snr:
+            ax_snr = ax_corr.twinx()
+            ax_snr.plot(
+                frames,
+                snr_before,
+                marker=line_marker,
+                color="tab:green",
+                alpha=0.75,
+                linewidth=1.2,
+                label="SNR",
+            )
+            ax_snr.set_ylabel("SNR", color="tab:green")
+            ax_snr.tick_params(axis="y", labelcolor="tab:green")
+            ax_snr.set_ylim(bottom=0)
+            ax_snr.legend(loc="upper right", fontsize=8)
+        if has_cnr:
+            ax_cnr = ax_corr.twinx()
+            if has_snr:
+                ax_cnr.spines["right"].set_position(("axes", 1.12))
+                ax_cnr.spines["right"].set_visible(True)
+            ax_cnr.plot(
+                frames,
+                cnr_before,
+                marker=line_marker,
+                color="tab:brown",
+                alpha=0.75,
+                linewidth=1.2,
+                label="CNR",
+            )
+            ax_cnr.set_ylabel("CNR", color="tab:brown")
+            ax_cnr.tick_params(axis="y", labelcolor="tab:brown")
+            ax_cnr.set_ylim(bottom=0)
+            ax_cnr.legend(loc="center right" if has_snr else "upper right", fontsize=8)
+        ax_corr.legend(loc="lower left", fontsize=8)
+    else:
+        ax_corr.legend(loc="lower right", fontsize=8)
 
     annotation = _settings_annotation(details, registered_stack)
-    fig.text(
-        0.01,
-        0.01,
+    ax_note.axis("off")
+    ax_note.text(
+        0.0,
+        1.0,
         annotation,
+        transform=ax_note.transAxes,
         ha="left",
-        va="bottom",
+        va="top",
         fontsize=8,
         family="monospace",
     )
     fig.suptitle("ZenReg registration report", fontsize=12)
-    fig.tight_layout(rect=(0, 0.20, 1, 0.95))
     fig.savefig(path, dpi=180)
     plt.close(fig)
 
@@ -743,6 +809,8 @@ def _settings_payload(
 
     settings = {key: _plain_value(details[key]) for key in SETTING_KEYS if key in details}
     template_time_range = details.get("registration_template_time_range")
+    snr_before = _quality_series(details, "snr_before", registered_stack.shape[0])
+    cnr_before = _quality_series(details, "cnr_before", registered_stack.shape[0])
     return {
         "zenreg_report": {
             "output_image": str(output_image_path),
@@ -756,6 +824,10 @@ def _settings_payload(
             "correlation_after_min": _nan_stat(correlations_after, np.nanmin),
             "correlation_before_mean": _nan_stat(correlations_before, np.nanmean),
             "correlation_before_min": _nan_stat(correlations_before, np.nanmin),
+            "snr_before_mean": _nan_stat(snr_before, np.nanmean),
+            "snr_before_min": _nan_stat(snr_before, np.nanmin),
+            "cnr_before_mean": _nan_stat(cnr_before, np.nanmean),
+            "cnr_before_min": _nan_stat(cnr_before, np.nanmin),
             "csv": str(report_paths["csv"]),
             "plot": str(report_paths["plot"]),
         },

@@ -325,6 +325,30 @@ def _normalize_zero_clip_mask_min_fraction(zero_clip_mask_min_fraction: float) -
         )
     return fraction
 
+def _normalize_quality_sampling_step(value: int, *, name: str) -> int:
+    """Validate a spatial subsampling step for per-frame quality metrics."""
+
+    step = int(value)
+    if step < 1:
+        raise ValueError(f"{name} must be >= 1. Got {value!r}.")
+    return step
+
+def _normalize_quality_percentiles(
+    background_percentile: float,
+    signal_percentile: float,
+) -> tuple[float, float]:
+    """Validate foreground/background percentile definitions."""
+
+    background = float(background_percentile)
+    signal = float(signal_percentile)
+    if not 0.0 <= background < signal <= 100.0:
+        raise ValueError(
+            "quality_background_percentile and quality_signal_percentile must "
+            "satisfy 0 <= background < signal <= 100. "
+            f"Got background={background_percentile!r}, signal={signal_percentile!r}."
+        )
+    return background, signal
+
 def _normalize_zero_clip_margin(zero_clip_margin: int | Sequence[int]) -> np.ndarray:
     """Normalize optional extra ``(z, y, x)`` crop margins."""
 
@@ -1082,6 +1106,169 @@ def _compute_registration_frame_correlations(
         )
         correlations[t] = _pearson_correlation_flat(template, image)
     return correlations
+
+def _robust_sigma(values: np.ndarray) -> float:
+    """Return a robust standard-deviation estimate from the median absolute deviation."""
+
+    values = np.asarray(values, dtype=np.float32)
+    values = values[np.isfinite(values)]
+    if values.size < 2:
+        return float("nan")
+    median = float(np.median(values))
+    mad = float(np.median(np.abs(values - median)))
+    sigma = 1.4826 * mad
+    if not np.isfinite(sigma) or sigma <= 0:
+        sigma = float(np.std(values))
+    return sigma if np.isfinite(sigma) and sigma > 0 else float("nan")
+
+def _compute_robust_snr_cnr_from_values(
+    values: np.ndarray,
+    *,
+    background_percentile: float,
+    signal_percentile: float,
+) -> tuple[float, float]:
+    """Compute robust foreground/background SNR and CNR from one sampled frame."""
+
+    values = np.asarray(values, dtype=np.float32)
+    values = values[np.isfinite(values)]
+    if values.size < 4:
+        return float("nan"), float("nan")
+    background_threshold = float(np.percentile(values, background_percentile))
+    signal_threshold = float(np.percentile(values, signal_percentile))
+    background = values[values <= background_threshold]
+    foreground = values[values >= signal_threshold]
+    if background.size < 2 or foreground.size < 1:
+        return float("nan"), float("nan")
+    background_median = float(np.median(background))
+    foreground_median = float(np.median(foreground))
+    background_sigma = _robust_sigma(background)
+    if not (np.isfinite(background_sigma) and background_sigma > 0):
+        background_sigma = _robust_sigma(values)
+    snr = (
+        (foreground_median - background_median) / background_sigma
+        if np.isfinite(background_sigma) and background_sigma > 0
+        else float("nan")
+    )
+    foreground_sigma = _robust_sigma(foreground)
+    if not (np.isfinite(foreground_sigma) and foreground_sigma > 0):
+        foreground_sigma = _robust_sigma(values)
+    finite_sigmas = np.asarray([background_sigma, foreground_sigma], dtype=np.float32)
+    finite_sigmas = finite_sigmas[np.isfinite(finite_sigmas) & (finite_sigmas > 0)]
+    pooled_sigma = (
+        float(np.sqrt(np.mean(np.square(finite_sigmas))))
+        if finite_sigmas.size
+        else float("nan")
+    )
+    cnr = (
+        (foreground_median - background_median) / pooled_sigma
+        if np.isfinite(pooled_sigma) and pooled_sigma > 0
+        else float("nan")
+    )
+    return float(snr), float(cnr)
+
+def _sample_registration_quality_image_for_frame(
+    stack,
+    *,
+    t: int,
+    registration_channel: int,
+    projection_range,
+    projection_method: str,
+    effective_time_registration_mode: str,
+    sampling_step: int,
+) -> np.ndarray:
+    """Return sampled registration signal values for one frame."""
+
+    if effective_time_registration_mode == "full_3d":
+        volume = _extract_registration_volume(
+            stack,
+            t=t,
+            registration_channel=registration_channel,
+            zrange=projection_range,
+            filter_slices=False,
+            median_kernel_size=1,
+        )
+        if int(sampling_step) > 1:
+            volume = volume[::sampling_step, ::sampling_step, ::sampling_step]
+        return np.asarray(volume, dtype=np.float32).ravel()
+    image = _registration_correlation_image_for_frame(
+        stack,
+        t=t,
+        registration_channel=registration_channel,
+        projection_range=projection_range,
+        projection_method=projection_method,
+        effective_time_registration_mode="projection",
+    )
+    image = np.asarray(image, dtype=np.float32)
+    if int(sampling_step) > 1:
+        yx_shape = (
+            int(stack.shape[3]),
+            int(stack.shape[4]),
+        )
+        image = image.reshape(yx_shape)[::sampling_step, ::sampling_step]
+    return image.ravel()
+
+def _compute_registration_frame_quality_metrics(
+    stack,
+    *,
+    registration_channel: int,
+    projection_range,
+    projection_method: str,
+    effective_time_registration_mode: str,
+    calc_SNR: bool,
+    calc_CNR: bool,
+    SNR_sampling_step: int,
+    CNR_sampling_step: int,
+    quality_background_percentile: float,
+    quality_signal_percentile: float,
+    n_jobs: int,
+    progress: bool,
+) -> dict[str, np.ndarray | None]:
+    """Compute optional raw-frame robust SNR/CNR without materializing all frames."""
+
+    if not (calc_SNR or calc_CNR):
+        return {"snr_before": None, "cnr_before": None}
+
+    snr_values = np.full(stack.shape[0], np.nan, dtype=np.float32) if calc_SNR else None
+    cnr_values = np.full(stack.shape[0], np.nan, dtype=np.float32) if calc_CNR else None
+    steps = sorted(
+        {
+            int(SNR_sampling_step) if calc_SNR else None,
+            int(CNR_sampling_step) if calc_CNR else None,
+        }
+        - {None}
+    )
+
+    def compute_one(t: int) -> tuple[int, dict[int, tuple[float, float]]]:
+        values_by_step: dict[int, tuple[float, float]] = {}
+        for step in steps:
+            sampled_values = _sample_registration_quality_image_for_frame(
+                stack,
+                t=int(t),
+                registration_channel=registration_channel,
+                projection_range=projection_range,
+                projection_method=projection_method,
+                effective_time_registration_mode=effective_time_registration_mode,
+                sampling_step=step,
+            )
+            values_by_step[step] = _compute_robust_snr_cnr_from_values(
+                sampled_values,
+                background_percentile=quality_background_percentile,
+                signal_percentile=quality_signal_percentile,
+            )
+        return int(t), values_by_step
+
+    for t, values_by_step in _iter_map_ordered(
+        compute_one,
+        range(stack.shape[0]),
+        n_jobs=n_jobs,
+        progress=progress,
+        desc="ZenReg frame quality metrics",
+    ):
+        if calc_SNR and snr_values is not None:
+            snr_values[t] = values_by_step[int(SNR_sampling_step)][0]
+        if calc_CNR and cnr_values is not None:
+            cnr_values[t] = values_by_step[int(CNR_sampling_step)][1]
+    return {"snr_before": snr_values, "cnr_before": cnr_values}
 
 def _project_zyx_along_axis(
     volume_zyx: np.ndarray,
@@ -2473,6 +2660,8 @@ def _return_registration_result(
     transform_backend: str,
     transform_order: int,
     pearson_correlations_before: np.ndarray | None,
+    snr_before: np.ndarray | None,
+    cnr_before: np.ndarray | None,
     registration_settings: dict,
 ):
     """Return a backwards-compatible shift object for simple cases."""
@@ -2504,6 +2693,8 @@ def _return_registration_result(
         "transform_backend": transform_backend,
         "transform_order": transform_order,
         "pearson_correlations_before": pearson_correlations_before,
+        "snr_before": snr_before,
+        "cnr_before": cnr_before,
         **registration_settings,
     }
     if return_details:
@@ -2700,6 +2891,28 @@ def _register_stack_normcorre_from_main_wrapper(
             projection_method=projection_method,
             effective_time_registration_mode="full_3d" if is3d else "projection",
         )
+        if bool(registration_settings.get("calc_SNR")) or bool(registration_settings.get("calc_CNR")):
+            quality_metrics = _compute_registration_frame_quality_metrics(
+                stack,
+                registration_channel=int(registration_channel),
+                projection_range=projection_range,
+                projection_method=projection_method,
+                effective_time_registration_mode="full_3d" if is3d else "projection",
+                calc_SNR=bool(registration_settings.get("calc_SNR")),
+                calc_CNR=bool(registration_settings.get("calc_CNR")),
+                SNR_sampling_step=int(registration_settings.get("SNR_sampling_step", 1)),
+                CNR_sampling_step=int(registration_settings.get("CNR_sampling_step", 1)),
+                quality_background_percentile=float(
+                    registration_settings.get("quality_background_percentile", 20.0)
+                ),
+                quality_signal_percentile=float(
+                    registration_settings.get("quality_signal_percentile", 95.0)
+                ),
+                n_jobs=int(nc_n_jobs),
+                progress=verbose,
+            )
+            details["snr_before"] = quality_metrics["snr_before"]
+            details["cnr_before"] = quality_metrics["cnr_before"]
 
     if return_details:
         return registered, details
@@ -2883,6 +3096,28 @@ def _register_stack_rigid_3d_from_main_wrapper(
             projection_method=projection_method,
             effective_time_registration_mode="full_3d",
         )
+        if bool(registration_settings.get("calc_SNR")) or bool(registration_settings.get("calc_CNR")):
+            quality_metrics = _compute_registration_frame_quality_metrics(
+                stack,
+                registration_channel=int(registration_channel),
+                projection_range=projection_range,
+                projection_method=projection_method,
+                effective_time_registration_mode="full_3d",
+                calc_SNR=bool(registration_settings.get("calc_SNR")),
+                calc_CNR=bool(registration_settings.get("calc_CNR")),
+                SNR_sampling_step=int(registration_settings.get("SNR_sampling_step", 1)),
+                CNR_sampling_step=int(registration_settings.get("CNR_sampling_step", 1)),
+                quality_background_percentile=float(
+                    registration_settings.get("quality_background_percentile", 20.0)
+                ),
+                quality_signal_percentile=float(
+                    registration_settings.get("quality_signal_percentile", 95.0)
+                ),
+                n_jobs=int(rot_n_jobs),
+                progress=verbose,
+            )
+            details["snr_before"] = quality_metrics["snr_before"]
+            details["cnr_before"] = quality_metrics["cnr_before"]
     if return_details:
         return registered, details
     if return_shifts:
@@ -2971,6 +3206,12 @@ def register_stack(
     output_memmap_name: str | None = "zenreg_registered",
     output_dtype=np.float32,
     n_jobs: int = 1,
+    calc_SNR: bool = False,
+    calc_CNR: bool = False,
+    SNR_sampling_step: int = 1,
+    CNR_sampling_step: int = 1,
+    quality_background_percentile: float = 20.0,
+    quality_signal_percentile: float = 95.0,
     memory_tracker=None,
     verbose: bool = True,
     print_shifts: bool = False,
@@ -3197,6 +3438,30 @@ def register_stack(
         This affects only shift estimation.
     median_kernel_size : int, optional
         Median filter kernel size used by the optional filters.
+    calc_SNR : bool, optional
+        If True, compute a robust foreground/background SNR for each raw input
+        frame on the registration channel and store it in the returned details
+        and CSV report as ``snr_before``. The metric uses percentile-defined
+        foreground/background pixels and robust background noise estimated by
+        the median absolute deviation. Default: ``False``.
+    calc_CNR : bool, optional
+        If True, compute a robust contrast-to-noise ratio for each raw input
+        frame and store it as ``cnr_before``. The foreground/background
+        definition is shared with ``calc_SNR``; CNR uses the median foreground
+        minus median background divided by a robust pooled foreground/background
+        noise estimate. Default: ``False``.
+    SNR_sampling_step : int, optional
+        Spatial subsampling step used for ``calc_SNR``. ``1`` uses every pixel
+        in the projected frame or full volume; larger values use every Nth
+        pixel along each spatial axis to reduce runtime for large stacks.
+    CNR_sampling_step : int, optional
+        Spatial subsampling step used for ``calc_CNR``.
+    quality_background_percentile : float, optional
+        Lower percentile used to define background pixels for SNR/CNR.
+        Default: ``20``.
+    quality_signal_percentile : float, optional
+        Upper percentile used to define foreground/signal pixels for SNR/CNR.
+        Default: ``95``.
     phase_cross_correlation_upsample_factor : int, optional
         Subpixel upsampling factor for ``method="phase_cross_correlation"``.
     phase_cross_correlation_normalization : {None, "phase"}, optional
@@ -3449,6 +3714,18 @@ def register_stack(
     ) = _resolve_registration_channel(registration_channel, stack.shape[2])
     if int(median_kernel_size) < 1:
         raise ValueError(f"median_kernel_size must be >= 1. Got {median_kernel_size!r}.")
+    SNR_sampling_step = _normalize_quality_sampling_step(
+        SNR_sampling_step,
+        name="SNR_sampling_step",
+    )
+    CNR_sampling_step = _normalize_quality_sampling_step(
+        CNR_sampling_step,
+        name="CNR_sampling_step",
+    )
+    quality_background_percentile, quality_signal_percentile = _normalize_quality_percentiles(
+        quality_background_percentile,
+        quality_signal_percentile,
+    )
     if int(phase_cross_correlation_upsample_factor) < 1:
         raise ValueError(
             "phase_cross_correlation_upsample_factor must be >= 1. "
@@ -3610,6 +3887,12 @@ def register_stack(
         "filter_slices": bool(filter_slices),
         "filter_projections": bool(filter_projections),
         "median_kernel_size": int(median_kernel_size),
+        "calc_SNR": bool(calc_SNR),
+        "calc_CNR": bool(calc_CNR),
+        "SNR_sampling_step": int(SNR_sampling_step),
+        "CNR_sampling_step": int(CNR_sampling_step),
+        "quality_background_percentile": float(quality_background_percentile),
+        "quality_signal_percentile": float(quality_signal_percentile),
         "max_xy_shifts": None
         if max_xy_shifts is None
         else tuple(float(v) for v in max_xy_shifts),
@@ -4024,6 +4307,8 @@ def register_stack(
         and not zero_clip
     )
     pearson_correlations_before = None
+    snr_before = None
+    cnr_before = None
     if return_shifts or return_details:
         _memory_mark(memory_tracker, "correlation_before:start")
         pearson_correlations_before = _compute_registration_frame_correlations(
@@ -4036,6 +4321,26 @@ def register_stack(
             effective_time_registration_mode=effective_time_registration_mode,
         )
         _memory_mark(memory_tracker, "correlation_before:end")
+        if bool(calc_SNR) or bool(calc_CNR):
+            _memory_mark(memory_tracker, "quality_metrics:start")
+            quality_metrics = _compute_registration_frame_quality_metrics(
+                stack,
+                registration_channel=int(registration_channel),
+                projection_range=zrange,
+                projection_method=projection_method,
+                effective_time_registration_mode=effective_time_registration_mode,
+                calc_SNR=bool(calc_SNR),
+                calc_CNR=bool(calc_CNR),
+                SNR_sampling_step=int(SNR_sampling_step),
+                CNR_sampling_step=int(CNR_sampling_step),
+                quality_background_percentile=float(quality_background_percentile),
+                quality_signal_percentile=float(quality_signal_percentile),
+                n_jobs=n_jobs,
+                progress=verbose,
+            )
+            snr_before = quality_metrics["snr_before"]
+            cnr_before = quality_metrics["cnr_before"]
+            _memory_mark(memory_tracker, "quality_metrics:end")
     result = _return_registration_result(
         registered,
         return_shifts=return_shifts,
@@ -4063,6 +4368,8 @@ def register_stack(
         transform_backend=transform_backend,
         transform_order=transform_order,
         pearson_correlations_before=pearson_correlations_before,
+        snr_before=snr_before,
+        cnr_before=cnr_before,
         registration_settings=registration_settings,
     )
     _memory_mark(memory_tracker, "register_stack:end")

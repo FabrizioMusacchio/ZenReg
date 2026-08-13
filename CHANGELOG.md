@@ -7,9 +7,28 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue)](https://doi.org/10.5281/zenodo.21727826)
 
 
-<!-- ### 🔜 v0.0.14 - UNRELEASED
+### 🔜 v0.0.14 - UNRELEASED
 
-tba -->
+#### ✨ New features
+##### Frame quality metrics
+- Added optional per-frame raw/input quality metrics to `register_stack`:
+  `calc_SNR=True` computes robust foreground/background SNR values and
+  `calc_CNR=True` computes robust contrast-to-noise ratios. The metrics are
+  stored as `snr_before` and `cnr_before`, written to the registration CSV, and
+  plotted on a secondary y-axis in the lower correlation panel of the summary
+  plot.
+- Added `SNR_sampling_step`, `CNR_sampling_step`,
+  `quality_background_percentile`, and `quality_signal_percentile` controls for
+  lightweight frame-quality estimation on large stacks.
+- Added a new synthetic 2D+t variable-SNR benchmark dataset generator and
+  tutorial example. The dataset contains global XY motion with temporal SNR
+  regimes from very good to very poor and writes a per-frame `*_quality_gt.csv`
+  table with the applied Gaussian noise levels.
+- Summary plots now draw SNR and CNR on separate right-side y-axes when both
+  metrics are present, with each quality axis starting at zero. Correlation
+  legend labels were shortened to `r before` and `r after`.
+- Summary plot settings annotations now live in a dedicated layout row below
+  the plotted panels, preventing overlap with correlation, SNR, or CNR curves.
 
 ---
 

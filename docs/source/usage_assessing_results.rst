@@ -107,6 +107,30 @@ stabilizes these values, but the plot should be interpreted together with the
 images: high correlation can still hide local errors, projection artefacts, or
 unwanted cropping.
 
+Optional frame quality metrics can be added to the same lower panel:
+
+.. code-block:: python
+
+   registered, details = register_stack(
+       image,
+       registration_channel = 0,
+       method               = "phase_cross_correlation",
+       calc_SNR             = True,
+       calc_CNR             = True,
+       SNR_sampling_step    = 2,
+       CNR_sampling_step    = 2,
+       return_details       = True)
+
+``calc_SNR`` computes a robust foreground/background SNR for each raw input
+frame on the registration channel. ZenReg defines foreground and background
+from image percentiles, estimates background noise with the median absolute
+deviation, and stores the result as ``snr_before``. ``calc_CNR`` computes a
+robust contrast-to-noise ratio from the same foreground/background split and
+stores it as ``cnr_before``. Both metrics are plotted on the right y-axis of
+the correlation panel and written to the CSV report. The ``*_sampling_step``
+options reduce cost for large stacks by evaluating every Nth pixel along each
+spatial axis. The default ``1`` uses all pixels.
+
 For large stacks, it is often useful to inspect the summary plot before spending
 time writing the full registered OME-TIFF. Use
 ``write_registration_summary_plot`` directly after ``register_stack``:
@@ -167,6 +191,12 @@ Important columns are:
    * - ``rotation_z_limit_exceeded``, ``rotation_y_limit_exceeded``, ``rotation_x_limit_exceeded``
      - ``True`` when the corresponding raw rotation exceeded the configured
        rotation limit.
+   * - ``snr_before``
+     - Optional robust foreground/background SNR of the raw input frame, written
+       when ``calc_SNR=True``.
+   * - ``cnr_before``
+     - Optional robust contrast-to-noise ratio of the raw input frame, written
+       when ``calc_CNR=True``.
    * - ``pearson_correlation_before``
      - Template-vs-frame Pearson correlation before applying the detected
        registration, when available.

@@ -40,6 +40,7 @@ from .profiling import MemoryTracker, profile_memory
 from .rigid3d import register_stack_rigid_3d
 from .registration import correct_intra_stack_z_drift, register_stack
 from .reporting import write_registration_outputs, write_registration_summary_plot
+from .synthetic import create_2d_variable_snr_motion_distorted_stack
 from .tutorial import (
     load_csv_table,
     load_expected_rigid_corrections,
@@ -74,6 +75,7 @@ __all__ = [
     "correct_intra_stack_z_drift",
     "create_empty_stack",
     "create_stack_metadata",
+    "create_2d_variable_snr_motion_distorted_stack",
     "batch_create_thorlabs_raw_yaml_templates",
     "DEFAULT_IMAGE_PATTERNS",
     "crop_stack",

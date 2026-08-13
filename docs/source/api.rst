@@ -65,6 +65,7 @@ Synthetic Data
 .. autofunction:: write_example_dataset
 .. autofunction:: write_batch_example_project
 .. autofunction:: create_2d_motion_distorted_stack
+.. autofunction:: create_2d_variable_snr_motion_distorted_stack
 .. autofunction:: create_3d_time_xy_motion_distorted_stack
 .. autofunction:: create_3d_time_zyx_motion_distorted_stack
 .. autofunction:: create_3d_time_rigid_motion_distorted_stack

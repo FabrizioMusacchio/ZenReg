@@ -774,6 +774,70 @@ def create_2d_motion_distorted_stack(
 
     return stack, shifts
 
+def create_2d_variable_snr_motion_distorted_stack(
+    *,
+    time_count: int = 24,
+    channel_count: int = 2,
+    shape_yx: tuple[int, int] = (128, 128),
+    shift_amplitude_y: float = 4.0,
+    shift_amplitude_x: float = 3.0,
+    noise_sigmas: tuple[float, ...] | None = None,
+    random_state: int = 97,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Create a 2D+t translation benchmark with strongly varying SNR across time.
+
+    The first quarter has very low noise, followed by good, poor, and very poor
+    SNR regimes. The same global XY motion is applied to all channels and each
+    time point receives its own additive Gaussian noise level.
+
+    Returns
+    -------
+    tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]
+        Motion-distorted stack, ground-truth ``T, 2`` applied shifts, and the
+        per-frame Gaussian noise sigma used to generate each time point.
+    """
+
+    if noise_sigmas is None:
+        regime_sigmas = np.asarray([0.006, 0.025, 0.085, 0.18], dtype=np.float32)
+        regime_edges = np.linspace(0, int(time_count), regime_sigmas.size + 1, dtype=int)
+        noise_sigmas_array = np.empty(int(time_count), dtype=np.float32)
+        for regime_index, sigma in enumerate(regime_sigmas):
+            noise_sigmas_array[regime_edges[regime_index] : regime_edges[regime_index + 1]] = sigma
+    else:
+        noise_sigmas_array = np.asarray(noise_sigmas, dtype=np.float32)
+        if noise_sigmas_array.shape != (int(time_count),):
+            raise ValueError(
+                "noise_sigmas must have one value per time point. "
+                f"Got shape {noise_sigmas_array.shape} for time_count={time_count}."
+            )
+
+    rng = np.random.default_rng(random_state)
+    base_channels = _base_2d_channels(shape_yx, channel_count=channel_count, rng=rng)
+    stack = create_empty_stack(
+        shape=(time_count, 1, channel_count, *shape_yx),
+        dtype=np.float32,
+        fill_value=0,
+        verbose=False,
+    )
+    shifts = _time_shifts_yx(
+        time_count,
+        amplitude_y=float(shift_amplitude_y),
+        amplitude_x=float(shift_amplitude_x),
+    )
+
+    for t in range(time_count):
+        shift_y, shift_x = shifts[t]
+        for c in range(channel_count):
+            image = _apply_yx_shift(base_channels[c], (shift_y, shift_x))
+            stack[t, 0, c, :, :] = _add_noise_and_clip(
+                image,
+                rng=rng,
+                noise_sigma=float(noise_sigmas_array[t]),
+            )
+
+    return stack, shifts, noise_sigmas_array
+
 def create_3d_slice_motion_distorted_stack(
     *,
     z_count: int = 14,
@@ -1413,6 +1477,21 @@ def _write_time_rotation_table(
             writer.writerow([t, float(applied_rotation), float(expected_rotation)])
     return path
 
+def _write_time_quality_table(path: Path, noise_sigmas: np.ndarray) -> Path:
+    """Write per-frame synthetic noise/SNR regime information."""
+
+    noise_sigmas = np.asarray(noise_sigmas, dtype=np.float32)
+    regime_labels = ("very_good", "good", "poor", "very_poor")
+    regime_edges = np.linspace(0, noise_sigmas.shape[0], len(regime_labels) + 1, dtype=int)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["t", "noise_sigma", "snr_regime"])
+        for t, sigma in enumerate(noise_sigmas):
+            regime_index = int(np.searchsorted(regime_edges[1:], t, side="right"))
+            regime_index = min(regime_index, len(regime_labels) - 1)
+            writer.writerow([t, float(sigma), regime_labels[regime_index]])
+    return path
+
 def _write_local_motion_table(path: Path, local_params: np.ndarray) -> Path:
     """Write compact GT parameters for smooth dense 2D local motion fields."""
 
@@ -1682,6 +1761,9 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     stack_2d_t_xy, shifts_2d_t_xy = create_2d_motion_distorted_stack()
+    stack_2d_t_variable_snr, shifts_2d_t_variable_snr, noise_sigmas_2d_t_variable_snr = (
+        create_2d_variable_snr_motion_distorted_stack()
+    )
     stack_3d_z_xy, shifts_3d_z_xy = create_3d_slice_motion_distorted_stack()
     stack_3d_t_xy, shifts_3d_t_xy = create_3d_time_xy_motion_distorted_stack()
     stack_3d_t_intra_xy, shifts_3d_t_intra_xy = create_3d_time_intra_motion_distorted_stack()
@@ -1757,6 +1839,18 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
                 "ZenReg_SyntheticDataset": "synthetic_2d_t_xy",
                 "ZenReg_RegistrationTarget": "2D+t global XY time registration",
                 "ZenReg_TimeShiftGT": "synthetic_2d_t_xy_time_shifts_gt.csv",
+            },
+        },
+        "synthetic_2d_t_variable_snr": {
+            "stack": stack_2d_t_variable_snr,
+            "image": "synthetic_2d_t_variable_snr.ome.tif",
+            "time_gt": "synthetic_2d_t_variable_snr_time_shifts_gt.csv",
+            "quality_gt": "synthetic_2d_t_variable_snr_quality_gt.csv",
+            "annotations": {
+                "ZenReg_SyntheticDataset": "synthetic_2d_t_variable_snr",
+                "ZenReg_RegistrationTarget": "2D+t global XY time registration with variable SNR",
+                "ZenReg_TimeShiftGT": "synthetic_2d_t_variable_snr_time_shifts_gt.csv",
+                "ZenReg_QualityGT": "synthetic_2d_t_variable_snr_quality_gt.csv",
             },
         },
         "synthetic_3d_z_xy": {
@@ -1933,6 +2027,18 @@ def write_example_dataset(output_dir: str | Path) -> dict[str, str]:
 
     paths["synthetic_2d_t_xy_time_gt_csv"] = str(
         _write_time_shift_table(output_dir / "synthetic_2d_t_xy_time_shifts_gt.csv", shifts_2d_t_xy)
+    )
+    paths["synthetic_2d_t_variable_snr_time_gt_csv"] = str(
+        _write_time_shift_table(
+            output_dir / "synthetic_2d_t_variable_snr_time_shifts_gt.csv",
+            shifts_2d_t_variable_snr,
+        )
+    )
+    paths["synthetic_2d_t_variable_snr_quality_gt_csv"] = str(
+        _write_time_quality_table(
+            output_dir / "synthetic_2d_t_variable_snr_quality_gt.csv",
+            noise_sigmas_2d_t_variable_snr,
+        )
     )
     paths["synthetic_3d_z_xy_slice_gt_csv"] = str(
         _write_3d_slice_shift_table(

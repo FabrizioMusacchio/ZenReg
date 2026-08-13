@@ -44,6 +44,10 @@ Use ``phase_cross_correlation`` for fast global translation correction:
        filter_slices          = False,
        filter_projections     = False,
        median_kernel_size     = 3,
+       calc_SNR               = True,
+       calc_CNR               = True,
+       SNR_sampling_step      = 2,
+       CNR_sampling_step      = 2,
        n_jobs                 = 4,
        return_shifts          = True,
        return_details         = True)
@@ -119,6 +123,16 @@ Options used here:
    * - ``median_kernel_size``
      - Median-filter kernel size in pixels for ``filter_slices`` and
        ``filter_projections``. Default: ``3``.
+   * - ``calc_SNR`` / ``calc_CNR``
+     - Optional per-frame raw/input quality metrics. ``calc_SNR=True`` stores
+       robust foreground/background SNR values as ``snr_before``;
+       ``calc_CNR=True`` stores contrast-to-noise ratios as ``cnr_before``.
+       Both are plotted on the right y-axis of the lower summary-plot panel and
+       written to the CSV report. Defaults: ``False``.
+   * - ``SNR_sampling_step`` / ``CNR_sampling_step``
+     - Spatial subsampling step for SNR/CNR computation. ``1`` uses every
+       pixel; larger values use every Nth pixel along each spatial axis and are
+       useful for large stacks. Default: ``1``.
    * - ``n_jobs``
      - Number of CPU workers for independent frames/slices. ``-1`` uses all
        available workers. Default:  ``1``.

@@ -59,6 +59,43 @@ def test_write_registration_summary_plot_only_writes_png(tmp_path):
     assert not (tmp_path / "preview" / "registration_settings.yaml").exists()
 
 
+def test_write_registration_outputs_includes_optional_quality_metrics(tmp_path):
+    registered = np.zeros((3, 1, 1, 8, 8), dtype=np.float32)
+    registered[:, 0, 0, 2:6, 2:6] = 1.0
+    details = {
+        "registration_channel": 0,
+        "registration_stack": 0,
+        "method": "phase_cross_correlation",
+        "time_registration_mode": "projection",
+        "effective_time_registration_mode": "projection",
+        "time_reference_mode": "template",
+        "projection_method": "max",
+        "calc_SNR": True,
+        "calc_CNR": True,
+        "SNR_sampling_step": 2,
+        "CNR_sampling_step": 2,
+        "snr_before": np.asarray([4.0, 3.5, 3.0], dtype=np.float32),
+        "cnr_before": np.asarray([2.0, 1.5, 1.0], dtype=np.float32),
+        "time_shifts_zyx": np.zeros((3, 3), dtype=np.float32),
+        "pearson_correlations_before": np.asarray([1.0, 0.9, 0.8], dtype=np.float32),
+    }
+
+    paths = write_registration_outputs(
+        tmp_path / "quality_registered.ome.tif",
+        registered,
+        details,
+    )
+
+    with paths["csv"].open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[0]["snr_before"] == "4"
+    assert rows[0]["cnr_before"] == "2"
+    yaml_text = paths["yaml"].read_text(encoding="utf-8")
+    assert "calc_SNR: true" in yaml_text
+    assert "snr_before_mean" in yaml_text
+    assert paths["plot"].stat().st_size > 0
+
+
 def test_write_registration_outputs_with_prefix_intra_stack_and_rotation(tmp_path):
     registered = np.zeros((3, 2, 1, 8, 8), dtype=np.float32)
     registered[:, :, 0, 2:6, 2:6] = 1.0

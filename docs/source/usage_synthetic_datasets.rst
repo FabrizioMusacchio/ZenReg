@@ -38,6 +38,9 @@ tables. Important datasets include:
      - Purpose
    * - ``synthetic_2d_t_xy.ome.tif``
      - 2D+t global XY translation relative to ``t=0``.
+   * - ``synthetic_2d_t_variable_snr.ome.tif``
+     - 2D+t global XY translation with four temporal SNR regimes from very
+       good to very poor, useful for testing ``calc_SNR`` and ``calc_CNR``.
    * - ``synthetic_2d_t_trans_rot_xy.ome.tif``
      - 2D+t global XY translation plus light in-plane rotation.
    * - ``synthetic_3d_t_xy.ome.tif``
@@ -56,9 +59,11 @@ tables. Important datasets include:
      - Sparse puncta 3D+t full 6-DOF rigid benchmark for the point backend.
 
 Every image is accompanied by one or more GT tables, for example
-``*_time_shifts_gt.csv`` or ``*_rigid_transform_gt.csv``. These tables contain
-the applied synthetic motion and the expected correction relative to the
-chosen reference time point.
+``*_time_shifts_gt.csv``, ``*_rigid_transform_gt.csv``, or
+``*_quality_gt.csv``. These tables contain the applied synthetic motion, the
+expected correction relative to the chosen reference time point, and, where
+available, per-frame synthetic quality settings such as the applied Gaussian
+noise level.
 
 Interactive scripts
 -------------------

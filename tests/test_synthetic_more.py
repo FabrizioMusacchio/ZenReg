@@ -12,6 +12,7 @@ from zenreg.synthetic import (
     _write_time_shift_table,
     _write_time_shift_zyx_table,
     create_2d_local_motion_distorted_stack,
+    create_2d_variable_snr_motion_distorted_stack,
     create_2d_time_piecewise_xy_motion_distorted_stack,
     create_2d_time_rotation_motion_distorted_stack,
     create_2d_time_translation_rotation_motion_distorted_stack,
@@ -111,6 +112,20 @@ def test_synthetic_rotation_and_local_generators_return_gt():
     )
     assert stack_piecewise.shape == (4, 1, 1, 40, 40)
     assert anchor_shifts.shape == (4, 2, 3, 2)
+
+
+def test_2d_variable_snr_generator_returns_per_frame_noise_gt():
+    stack, shifts, noise_sigmas = create_2d_variable_snr_motion_distorted_stack(
+        time_count=8,
+        channel_count=1,
+        shape_yx=(32, 32),
+        random_state=11,
+    )
+
+    assert stack.shape == (8, 1, 1, 32, 32)
+    assert shifts.shape == (8, 2)
+    assert noise_sigmas.shape == (8,)
+    assert noise_sigmas[0] < noise_sigmas[2] < noise_sigmas[4] < noise_sigmas[6]
 
 
 def test_synthetic_3d_rigid_generators_and_validation():

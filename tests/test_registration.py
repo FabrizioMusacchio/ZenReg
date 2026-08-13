@@ -461,6 +461,35 @@ def test_registration_range_limits_time_processing_and_keeps_shape():
     assert np.any(np.abs(details["time_shifts_zyx"][1:3, 1:]) > 0.05)
 
 
+def test_register_stack_can_compute_optional_frame_quality_metrics():
+    stack, _ = create_2d_motion_distorted_stack(time_count=5, noise_sigma=0.02)
+
+    _, details = register_stack(
+        stack,
+        registration_channel=0,
+        method="phase_cross_correlation",
+        time_registration_mode="projection",
+        calc_SNR=True,
+        calc_CNR=True,
+        SNR_sampling_step=2,
+        CNR_sampling_step=2,
+        verbose=False,
+        return_shifts=True,
+        return_details=True,
+    )
+
+    assert details["calc_SNR"] is True
+    assert details["calc_CNR"] is True
+    assert details["SNR_sampling_step"] == 2
+    assert details["CNR_sampling_step"] == 2
+    assert details["snr_before"].shape == (stack.shape[0],)
+    assert details["cnr_before"].shape == (stack.shape[0],)
+    assert np.all(np.isfinite(details["snr_before"]))
+    assert np.all(np.isfinite(details["cnr_before"]))
+    assert np.nanmean(details["snr_before"]) > 0
+    assert np.nanmean(details["cnr_before"]) > 0
+
+
 def test_registration_range_limits_intra_stack_z_processing_and_keeps_shape():
     stack, _ = create_3d_slice_motion_distorted_stack(z_count=8, noise_sigma=0.0)
 
