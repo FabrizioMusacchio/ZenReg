@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zenreg"
-version = "0.0.13"
+version = "0.0.14"
 description = "High-throughput, memory-efficient N-dimensional image registration."
 readme = "README.md"
 requires-python = ">=3.12"
