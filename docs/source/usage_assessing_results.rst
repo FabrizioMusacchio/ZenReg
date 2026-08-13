@@ -121,15 +121,36 @@ Optional frame quality metrics can be added to the same lower panel:
        CNR_sampling_step    = 2,
        return_details       = True)
 
-``calc_SNR`` computes a robust foreground/background SNR for each raw input
-frame on the registration channel. ZenReg defines foreground and background
-from image percentiles, estimates background noise with the median absolute
-deviation, and stores the result as ``snr_before``. ``calc_CNR`` computes a
-robust contrast-to-noise ratio from the same foreground/background split and
-stores it as ``cnr_before``. Both metrics are plotted on the right y-axis of
-the correlation panel and written to the CSV report. The ``*_sampling_step``
-options reduce cost for large stacks by evaluating every Nth pixel along each
-spatial axis. The default ``1`` uses all pixels.
+``calc_SNR`` computes a robust foreground/background SNR-like quality index for
+each raw input frame on the registration channel. This is not a calibrated
+physical detector SNR. Instead, ZenReg estimates a relative image-quality metric
+that is useful for comparing good and poor frames within a dataset or across
+similar acquisitions.
+
+For one sampled frame, ZenReg defines background and foreground pixels from the
+configured intensity percentiles. With the default settings, background pixels
+are values below the 20th percentile and foreground pixels are values above the
+95th percentile. The reported SNR is
+
+.. math::
+
+   \mathrm{SNR}_{\mathrm{robust}} =
+   \frac{\operatorname{median}(F) - \operatorname{median}(B)}
+        {1.4826\,\operatorname{median}\left(|B-\operatorname{median}(B)|\right)}
+
+where :math:`F` is the foreground sample and :math:`B` is the background sample.
+If the background is nearly constant, the denominator can become very small and
+large SNR values can result. Such values should be interpreted qualitatively,
+not as a physical noise calibration.
+
+``calc_CNR`` computes a robust contrast-to-noise ratio from the same
+foreground/background split and stores it as ``cnr_before``. Both raw metrics
+are written to the CSV report. In summary plots, SNR is displayed as
+``log10(SNR)`` by default to keep high-quality frames with very large robust
+SNR values readable. Pass ``plot_SNR_log=False`` to ``save_stack`` or
+``write_registration_summary_plot`` to show linear SNR instead. The
+``*_sampling_step`` options reduce cost for large stacks by evaluating every
+Nth pixel along each spatial axis. The default ``1`` uses all pixels.
 
 For large stacks, it is often useful to inspect the summary plot before spending
 time writing the full registered OME-TIFF. Use
@@ -143,7 +164,8 @@ time writing the full registered OME-TIFF. Use
        "example_data/synthetic_data/registered/"
        "synthetic_2d_t_xy_preview_registration_summary.png",
        registered,
-       details)
+       details,
+       plot_SNR_log=True)
 
 This writes only the PNG summary plot. It does not save the registered image
 and does not write the CSV or YAML sidecars.

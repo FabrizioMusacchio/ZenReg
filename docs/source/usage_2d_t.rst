@@ -57,7 +57,8 @@ Use ``phase_cross_correlation`` for fast global translation correction:
        registered,
        metadata             = metadata,
        registration_details = details,
-       compression_level    = 3)
+       compression_level    = 3,
+       plot_SNR_log         = True)
 
 ``projection_method="max"`` is a good default for sparse spots or puncta.
 ``mean`` can be better for dense signals, while ``median`` is robust to
@@ -124,15 +125,20 @@ Options used here:
      - Median-filter kernel size in pixels for ``filter_slices`` and
        ``filter_projections``. Default: ``3``.
    * - ``calc_SNR`` / ``calc_CNR``
-     - Optional per-frame raw/input quality metrics. ``calc_SNR=True`` stores
-       robust foreground/background SNR values as ``snr_before``;
+     - Optional per-frame raw/input quality metrics. ``calc_SNR=True`` stores a
+       robust foreground/background SNR-like quality index as ``snr_before``;
        ``calc_CNR=True`` stores contrast-to-noise ratios as ``cnr_before``.
-       Both are plotted on the right y-axis of the lower summary-plot panel and
-       written to the CSV report. Defaults: ``False``.
+       These are relative image-quality metrics, not calibrated physical SNR
+       measurements. Both are written to the CSV report. SNR is shown as
+       ``log10(SNR)`` in the summary plot by default. Defaults: ``False``.
    * - ``SNR_sampling_step`` / ``CNR_sampling_step``
      - Spatial subsampling step for SNR/CNR computation. ``1`` uses every
        pixel; larger values use every Nth pixel along each spatial axis and are
        useful for large stacks. Default: ``1``.
+   * - ``plot_SNR_log``
+     - Save/report option. If ``True``, summary plots display SNR as
+       ``log10(SNR)`` while CSV/YAML sidecars keep raw SNR values. This keeps
+       very high robust SNR values readable. Default: ``True``.
    * - ``n_jobs``
      - Number of CPU workers for independent frames/slices. ``-1`` uses all
        available workers. Default:  ``1``.

@@ -8,13 +8,16 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ---
 
-### 🔜 v0.0.15 - UNRELEASED
+### 🚀 v0.0.15
+
+August 13, 2026
+
+This release adds a new `plot_SNR_log` option to `save_stack`, `write_registration_outputs`, and `write_registration_summary_plot` for log-scaled SNR summary plots, and improves summary plot annotations to spell out XY shift-limit order as `max_y=..., max_x=...`.
 
 #### 🧩 Changes and improvements
 ##### Registration summary plots
-- Summary plot annotations now spell out XY shift-limit order as
-  `max_y=..., max_x=...`, matching the plotted `shift_y` and `shift_x` curves
-  and avoiding accidental `(x, y)` interpretation.
+- Summary plot annotations now spell out XY shift-limit order as `max_y=..., max_x=...`, matching the plotted `shift_y` and `shift_x` curves and avoiding accidental `(x, y)` interpretation.
+- Added `plot_SNR_log=True` to `save_stack`, `write_registration_outputs`, and `write_registration_summary_plot`. SNR values are still stored linearly in details/CSV/YAML reports, but summary plots show `log10(SNR)` by default so very high robust SNR estimates remain readable.
 
 ---
 

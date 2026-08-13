@@ -5,6 +5,7 @@ import numpy as np
 from zenreg.reporting import (
     _projection_range_label,
     _raw_estimate_label,
+    _snr_plot_series,
     _settings_annotation,
     write_registration_outputs,
     write_registration_summary_plot,
@@ -95,6 +96,21 @@ def test_write_registration_outputs_includes_optional_quality_metrics(tmp_path):
     assert "calc_SNR: true" in yaml_text
     assert "snr_before_mean" in yaml_text
     assert paths["plot"].stat().st_size > 0
+
+
+def test_snr_plot_series_can_use_log_scale_without_changing_raw_values():
+    raw = np.asarray([1.0, 10.0, 100.0, 0.0], dtype=np.float32)
+
+    plotted, ylabel, label = _snr_plot_series(raw, plot_SNR_log=True)
+    linear, linear_ylabel, linear_label = _snr_plot_series(raw, plot_SNR_log=False)
+
+    np.testing.assert_allclose(plotted[:3], [0.0, 1.0, 2.0])
+    assert np.isnan(plotted[3])
+    np.testing.assert_array_equal(linear, raw)
+    assert ylabel == "log10(SNR)"
+    assert label == "log10 SNR"
+    assert linear_ylabel == "SNR"
+    assert linear_label == "SNR"
 
 
 def test_write_registration_outputs_with_prefix_intra_stack_and_rotation(tmp_path):

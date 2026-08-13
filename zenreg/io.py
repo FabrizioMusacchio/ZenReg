@@ -416,6 +416,7 @@ def save_stack(
     report_prefix: str | Path | None = None,
     dtype: str | np.dtype | None = None,
     compression_level: int = 3,
+    plot_SNR_log: bool = True,
     overwrite: bool = True,
     verbose: bool = False,
 ) -> Path:
@@ -445,6 +446,10 @@ def save_stack(
         Optional output dtype conversion. If ``None``, the input dtype is kept.
     compression_level : int, optional
         zlib compression level forwarded to ``om.imwrite``.
+    plot_SNR_log : bool, optional
+        If registration reports include SNR values, plot them as
+        ``log10(SNR)`` in the summary PNG while preserving raw SNR values in
+        CSV/YAML sidecars. Default: ``True``.
     overwrite : bool, optional
         If True, allow replacing an existing OME-TIFF output.
     verbose : bool, optional
@@ -484,6 +489,7 @@ def save_stack(
             array,
             registration_details,
             report_prefix=report_prefix,
+            plot_SNR_log=bool(plot_SNR_log),
         )
     return output_path
 # %% END

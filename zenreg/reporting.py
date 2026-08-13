@@ -320,6 +320,17 @@ def _quality_series(details: dict[str, Any], key: str, time_count: int) -> np.nd
         return np.full(time_count, np.nan, dtype=np.float32)
     return values
 
+def _snr_plot_series(snr_values: np.ndarray, *, plot_SNR_log: bool) -> tuple[np.ndarray, str, str]:
+    """Return SNR values transformed for plotting and their labels."""
+
+    snr_values = np.asarray(snr_values, dtype=np.float32)
+    if not plot_SNR_log:
+        return snr_values, "SNR", "SNR"
+    plotted = np.full_like(snr_values, np.nan, dtype=np.float32)
+    positive = np.isfinite(snr_values) & (snr_values > 0)
+    plotted[positive] = np.log10(snr_values[positive])
+    return plotted, "log10(SNR)", "log10 SNR"
+
 def _csv_value(value) -> str:
     """Format one CSV cell."""
 
@@ -671,6 +682,8 @@ def _write_summary_plot(
     details: dict[str, Any],
     correlations_after: np.ndarray,
     correlations_before: np.ndarray,
+    *,
+    plot_SNR_log: bool = True,
 ) -> None:
     """Write the shift/correlation summary plot."""
 
@@ -752,17 +765,21 @@ def _write_summary_plot(
     has_cnr = np.any(np.isfinite(cnr_before))
     if has_snr or has_cnr:
         if has_snr:
+            snr_plot_values, snr_ylabel, snr_label = _snr_plot_series(
+                snr_before,
+                plot_SNR_log=bool(plot_SNR_log),
+            )
             ax_snr = ax_corr.twinx()
             ax_snr.plot(
                 frames,
-                snr_before,
+                snr_plot_values,
                 marker=line_marker,
                 color="tab:green",
                 alpha=0.75,
                 linewidth=1.2,
-                label="SNR",
+                label=snr_label,
             )
-            ax_snr.set_ylabel("SNR", color="tab:green")
+            ax_snr.set_ylabel(snr_ylabel, color="tab:green")
             ax_snr.tick_params(axis="y", labelcolor="tab:green")
             ax_snr.set_ylim(bottom=0)
             ax_snr.legend(loc="upper right", fontsize=8)
@@ -846,6 +863,8 @@ def write_registration_summary_plot(
     path: str | Path,
     registered_stack,
     registration_details: dict[str, Any] | np.ndarray,
+    *,
+    plot_SNR_log: bool = True,
 ) -> Path:
     """
     Write only the ZenReg registration summary plot.
@@ -866,6 +885,10 @@ def write_registration_summary_plot(
         Details returned by ``register_stack(..., return_shifts=True,
         return_details=True)``. A legacy ``T, 2`` shift array is accepted, but a
         full details dictionary gives richer annotations.
+    plot_SNR_log : bool, optional
+        If True, plot SNR as ``log10(SNR)`` in the summary figure while keeping
+        raw ``snr_before`` values unchanged in details/CSV/YAML outputs.
+        Default: ``True``.
 
     Returns
     -------
@@ -879,7 +902,14 @@ def write_registration_summary_plot(
     details = _as_details_dict(registration_details)
     correlations_after = _frame_correlations(registered_stack, details)
     correlations_before = _pre_frame_correlations(details, registered_stack.shape[0])
-    _write_summary_plot(path, registered_stack, details, correlations_after, correlations_before)
+    _write_summary_plot(
+        path,
+        registered_stack,
+        details,
+        correlations_after,
+        correlations_before,
+        plot_SNR_log=bool(plot_SNR_log),
+    )
     return path
 
 def write_registration_outputs(
@@ -888,6 +918,7 @@ def write_registration_outputs(
     registration_details: dict[str, Any] | np.ndarray,
     *,
     report_prefix: str | Path | None = None,
+    plot_SNR_log: bool = True,
 ) -> dict[str, Path]:
     """
     Write ZenReg CSV/YAML/PNG report files next to a registered image.
@@ -907,6 +938,9 @@ def write_registration_outputs(
         Optional path prefix. By default ``image.ome.tif`` produces
         ``image_registration_shifts.csv``, ``image_registration_settings.yaml``,
         and ``image_registration_summary.png``.
+    plot_SNR_log : bool, optional
+        If True, plot SNR as ``log10(SNR)`` in the PNG summary while preserving
+        raw SNR values in CSV and YAML sidecars. Default: ``True``.
 
     Returns
     -------
@@ -934,7 +968,14 @@ def write_registration_outputs(
         correlations_before,
         time_count=registered_stack.shape[0],
     )
-    _write_summary_plot(report_paths["plot"], registered_stack, details, correlations_after, correlations_before)
+    _write_summary_plot(
+        report_paths["plot"],
+        registered_stack,
+        details,
+        correlations_after,
+        correlations_before,
+        plot_SNR_log=bool(plot_SNR_log),
+    )
     _write_yaml(
         report_paths["yaml"],
         _settings_payload(
