@@ -65,6 +65,7 @@ OPEN_IN_NAPARI = False
 AVAILABLE_CPUS = print_available_compute()
 
 STACK_2D_T_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_xy.ome.tif"
+STACK_2D_T_VARIABLE_SNR_PATH = EXAMPLE_DIR / "synthetic_2d_t_variable_snr.ome.tif"
 STACK_3D_Z_XY_PATH = EXAMPLE_DIR / "synthetic_3d_z_xy.ome.tif"
 STACK_3D_T_XY_PATH = EXAMPLE_DIR / "synthetic_3d_t_xy.ome.tif"
 STACK_3D_T_INTRA_XY_PATH = EXAMPLE_DIR / "synthetic_3d_t_intra_xy.ome.tif"
@@ -73,6 +74,8 @@ STACK_2D_T_ROT_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_rot_xy.ome.tif"
 STACK_3D_T_TRANS_ROT_Z_PATH = EXAMPLE_DIR / "synthetic_3d_t_trans_rot_z.ome.tif"
 
 GT_2D_T_XY_PATH = EXAMPLE_DIR / "synthetic_2d_t_xy_time_shifts_gt.csv"
+GT_2D_T_VARIABLE_SNR_PATH = EXAMPLE_DIR / "synthetic_2d_t_variable_snr_time_shifts_gt.csv"
+GT_2D_T_VARIABLE_SNR_QUALITY_PATH = EXAMPLE_DIR / "synthetic_2d_t_variable_snr_quality_gt.csv"
 GT_3D_Z_XY_PATH = EXAMPLE_DIR / "synthetic_3d_z_xy_slice_shifts_gt.csv"
 GT_3D_T_XY_PATH = EXAMPLE_DIR / "synthetic_3d_t_xy_time_shifts_gt.csv"
 GT_3D_T_INTRA_XY_PATH = EXAMPLE_DIR / "synthetic_3d_t_intra_xy_slice_shifts_gt.csv"
@@ -144,6 +147,91 @@ save_stack(
     registered_2d_t_xy_time_template,
     metadata=metadata_2d_t_xy,
     registration_details=details_2d_t_xy_time_template)
+# %% 1a.1) 2D+t: VARIABLE SNR TIME REGISTRATION WITH SNR/CNR REPORTING
+stack_2d_t_variable_snr, metadata_2d_t_variable_snr = load_stack(
+    STACK_2D_T_VARIABLE_SNR_PATH,
+    return_metadata=True,
+    verbose=False)
+expected_2d_t_variable_snr = load_expected_time_registration_shifts(
+    GT_2D_T_VARIABLE_SNR_PATH,
+    registration_stack=0,
+    axes="yx")
+quality_gt_2d_t_variable_snr = np.genfromtxt(
+    GT_2D_T_VARIABLE_SNR_QUALITY_PATH,
+    delimiter=",",
+    names=True,
+    dtype=None,
+    encoding="utf-8")
+print(f"2D+t variable-SNR stack shape before registration: {stack_2d_t_variable_snr.shape} (TZCYX)")
+print("Synthetic SNR regimes:")
+print(quality_gt_2d_t_variable_snr[["t", "noise_sigma", "snr_regime"]])
+show_timepoints(
+    stack_2d_t_variable_snr,
+    title="2D+t variable SNR before registration",
+    channel=0,
+    projection_method="max",
+    reference_time=0,
+    moving_time=18,
+    save_dir=FIGURE_DIR)
+
+registered_2d_t_variable_snr, details_2d_t_variable_snr = register_stack(
+    stack_2d_t_variable_snr,
+    registration_channel=0,  # channel used to estimate shifts
+    registration_template_time_range="all",  # build a stable template from all frames
+    method="phase_cross_correlation",  # "phase_cross_correlation" or "pystackreg"
+    time_registration_mode="projection",  # one YX registration image per time point
+    time_reference_mode="template",  # align all frames to the template
+    projection_method="median",  # also aggregates the selected time points into the template
+    zreg=False,  # 2D+t example; no Z shift estimation
+    zero_clip=False,  # keep original shape for visual SNR comparison
+    max_xy_shifts=(8, 8),  # None or (max_y, max_x)
+    transform_backend="skimage",  # "skimage" or "scipy"
+    transform_order=1,  # 1 for intensity data, 0 for sparse puncta/labels
+    filter_slices=False,  # median-filter Z slices before projection
+    filter_projections=False,  # median-filter projections before shift estimation
+    median_kernel_size=3,  # median-filter kernel size in pixels
+    calc_SNR=True,  # add robust raw-frame SNR to details, CSV, and summary plot
+    calc_CNR=False,  # add robust raw-frame CNR to details, CSV, and summary plot
+    SNR_sampling_step=2,  # use every second pixel for faster quality metrics
+    CNR_sampling_step=2,  # use every second pixel for faster quality metrics
+    n_jobs=2,  # CPU worker threads for independent time points/slices
+    verbose=True,
+    return_shifts=True,
+    return_details=True)
+print_shift_comparison(
+    "2D+t variable-SNR time registration",
+    details_2d_t_variable_snr["time_shifts_yx"],
+    expected_2d_t_variable_snr)
+print(
+    "Mean raw-frame SNR/CNR:",
+    float(np.nanmean(details_2d_t_variable_snr["snr_before"])),
+    float(np.nanmean(details_2d_t_variable_snr["cnr_before"])))
+show_timepoints(
+    registered_2d_t_variable_snr,
+    title="2D+t variable SNR after registration",
+    channel=0,
+    projection_method="max",
+    reference_time=0,
+    moving_time=18,
+    save_dir=FIGURE_DIR)
+show_before_after(
+    stack_2d_t_variable_snr,
+    registered_2d_t_variable_snr,
+    title=STACK_2D_T_VARIABLE_SNR_PATH.name.split(".")[0] + "_before/after registration",
+    channel=0,
+    reference_time=0,
+    moving_time=18,
+    save_dir=OUTPUT_DIR)
+open_in_napari(
+    registered_2d_t_variable_snr,
+    metadata_2d_t_variable_snr,
+    fname="2D+t variable SNR after registration",
+    enabled=OPEN_IN_NAPARI)
+save_stack(
+    OUTPUT_DIR / "synthetic_2d_t_variable_snr_registered.ome.tif",
+    registered_2d_t_variable_snr,
+    metadata=metadata_2d_t_variable_snr,
+    registration_details=details_2d_t_variable_snr)
 # %% 1b) 2D+t: GLOBAL XY TIME REGISTRATION RELATIVE TO t=0 ONLY
 stack_2d_t_xy, metadata_2d_t_xy = load_stack(STACK_2D_T_XY_PATH, return_metadata=True, verbose=False)
 expected_2d_t_xy = load_expected_time_registration_shifts(GT_2D_T_XY_PATH, registration_stack=0, axes="yx")

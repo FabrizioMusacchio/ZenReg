@@ -115,7 +115,7 @@ if RUN_ZENREG_BATCH_PROCESSOR:
         tag_folder_levels           = (("TP000", "TP001"),),
         # image_patterns              = ("*.ome.tif",), # uncomment if you want to restrict to specific image files
         output_folder_name          = "zenreg_output",
-        skip_registered             = True,
+        skip_registered             = False,
         use_memmap                  = True,
         memmap_folder_name          = "omio_memmap_cache",
         memmap_reuse                = True,
