@@ -201,14 +201,17 @@ For full license terms, see the ``LICENSE`` file in the
 Citation
 --------
 
-If you use ZenReg in scientific work, please cite the ZenReg release archive
-and the software repository.
+If you use ZenReg in scientific work, please cite the ZenReg preprint:
 
-Suggested citation:
+
+  Musacchio, F., & Fuhrmann, M. (2026). ZenReg: A modular Python platform for fast and memory-efficient N-dimensional microscopy image registration. bioRxiv 2026.08.07.743572. https://doi.org/10.64898/2026.08.07.743572
+
+If you need to cite the exact ZenReg software version used in your analysis,
+please also cite the corresponding Zenodo archive:
 
 
   Musacchio, F. (2026). ZenReg: Fast and memory-efficient N-dimensional 
-  microscopy image registration for Python. https://doi.org/10.5281/zenodo.21727826
+  microscopy image registration for Python. Zenodo. https://doi.org/10.5281/zenodo.21727826
 
 .. raw:: html
 

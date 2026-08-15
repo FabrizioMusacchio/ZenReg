@@ -65,6 +65,10 @@ ZenReg documentation
    :target: https://doi.org/10.5281/zenodo.21727826
    :alt: Zenodo Archive
 
+.. image:: https://img.shields.io/badge/bioRxiv-10.64898%2F2026.08.07.743572-red
+   :target: https://doi.org/10.64898/2026.08.07.743572
+   :alt: bioRxiv preprint
+
 
 ZenReg is a Python package for fast, memory-efficient, and modular microscopy
 image registration. 

@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use ZenReg, please cite it using the metadata below."
+message: "If you use ZenReg, please cite the ZenReg preprint below. If you need to cite the exact software version used in your analysis, also cite the Zenodo software archive."
 title: "ZenReg: Fast and memory-efficient N-dimensional microscopy image registration for Python"
 date-released: "2026-06-01"
 authors:
@@ -7,15 +7,30 @@ authors:
     given-names: "Fabrizio"
 license: "GPL-3.0-or-later"
 repository-code: "https://github.com/FabrizioMusacchio/ZenReg"
-abstract: "Translation-based registration helpers for TZCYX microscopy stacks."
+abstract: "Fast, memory-efficient, and modular microscopy image registration for canonical TZCYX image stacks."
 preferred-citation:
-  type: software
-  title: "ZenReg: Fast and memory-efficient N-dimensional microscopy image registration for Python"
+  type: article
+  title: "ZenReg: A modular Python platform for fast and memory-efficient N-dimensional microscopy image registration"
   authors:
     - family-names: "Musacchio"
       given-names: "Fabrizio"
+    - family-names: "Fuhrmann"
+      given-names: "Martini"
   year: 2026
-  publisher:
-    name: "Zenodo"
-  doi: "10.5281/zenodo.21727826"
-  url: "https://doi.org/10.5281/zenodo.21727826"
+  journal: "bioRxiv"
+  doi: "10.64898/2026.08.07.743572"
+  url: "https://doi.org/10.64898/2026.08.07.743572"
+  identifiers:
+    - type: doi
+      value: "10.64898/2026.08.07.743572"
+references:
+  - type: software
+    title: "ZenReg: Fast and memory-efficient N-dimensional microscopy image registration for Python"
+    authors:
+      - family-names: "Musacchio"
+        given-names: "Fabrizio"
+    year: 2026
+    publisher:
+      name: "Zenodo"
+    doi: "10.5281/zenodo.21727826"
+    url: "https://doi.org/10.5281/zenodo.21727826"

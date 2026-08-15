@@ -6,11 +6,13 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue)](https://doi.org/10.5281/zenodo.21727826)
 
-<!-- ---
+---
 
 ### 🔜 v0.0.16 - UNRELEASED
 
-tba -->
+#### 🧩 Changes and improvements
+##### Citation metadata
+- Updated README, RTD citation text, and `CITATION.cff` to cite the ZenReg [bioRxiv preprint](https://doi.org/10.64898/2026.08.07.743572) as the preferred scientific reference while keeping Zenodo as the recommended version-specific software archive citation.
 
 ---
 
