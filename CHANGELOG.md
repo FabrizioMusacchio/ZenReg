@@ -10,9 +10,24 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ### 🔜 v0.0.16 - UNRELEASED
 
+#### ✨ New features
+##### Preprint real-data examples
+- Added two standalone preprint scripts for real biological microscopy examples:
+  `additional_scripts/run_preprint_real_calcium_2d_example.py` registers the
+  CaImAn 2D+t calcium-imaging demo movie and writes Figure 7 panels, while
+  `additional_scripts/run_preprint_real_3p_pseudot_example.py` builds controlled
+  pseudo-time 3D motion from a real three-photon z-stack and writes Figure 8
+  panels.
+
 #### 🧩 Changes and improvements
 ##### Citation metadata
 - Updated README, RTD citation text, and `CITATION.cff` to cite the ZenReg [bioRxiv preprint](https://doi.org/10.64898/2026.08.07.743572) as the preferred scientific reference while keeping Zenodo as the recommended version-specific software archive citation.
+
+##### Example data documentation
+- Refined README files for the CaImAn calcium-imaging demo movie and the
+  three-photon paper example stack with source, download, license, and citation
+  information. The large image files remain external downloads rather than
+  versioned repository content.
 
 ---
 
