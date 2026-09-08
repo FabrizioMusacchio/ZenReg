@@ -16,7 +16,7 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 ---
 
-### 🔜 v0.0.16
+### 🚀 v0.0.16
 
 This release adds stacked-folder batch processing to the BIDS-like batch processor, enabling discovery of repeated child folders, merging of matching image stacks along a requested axis, and registration of the merged stack. It also adds two standalone preprint scripts for real biological microscopy examples.
 
