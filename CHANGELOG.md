@@ -6,28 +6,37 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue)](https://doi.org/10.5281/zenodo.21727826)
 
+
+<!-- 
 ---
 
-### 🔜 v0.0.16 - UNRELEASED
+### 🔜 v0.0.17 - UNRELEASED
+
+ -->
+
+---
+
+### 🔜 v0.0.16
+
+This release adds stacked-folder batch processing to the BIDS-like batch processor, enabling discovery of repeated child folders, merging of matching image stacks along a requested axis, and registration of the merged stack. It also adds two standalone preprint scripts for real biological microscopy examples.
 
 #### ✨ New features
+##### Stacked-folder batch processing
+- Extended `register_bids_like_batch` and `discover_bids_like_batch_images` with stacked-folder input support. Batch workflows can now discover repeated child folders such as `ID25068/FOV1_pre/OV_1`, `OV_2`, and `OV_3`, read one matching image stack from each folder with OMIO, merge the tagged folder-stack family along a requested axis such as `T`, and then register/save the merged `TZCYX` stack through the normal ZenReg batch pipeline.
+- Added `stack_folder_tag`, `stack_folder_match`, `stack_folder_merge_axis`, `save_merged_stack`, `merged_stack_name`, and `merged_stack_suffix` options to the BIDS-like batch processor. Registered outputs are written relative to the containing FOV/output-scope folder rather than inside the first stack folder.
+- Stacked-folder inputs now use distinct disk-cache locations for each source folder when memory mapping is active, avoiding cache collisions when repeated folders contain files with identical names.
+- Batch run reports now record stacked-folder provenance, including the input kind, stack-folder tag, merge axis, and participating folder paths.
+- Added `additional_scripts/create_synthetic_stacked_folder_batch_project.py` and `user_scripts/register_stacked_folder_batch_synthetic.py` as a compact reproducible 3D+t example for testing and demonstrating stacked-folder batch processing, cache-safe merging of same-named files, and full-volume Z/Y/X registration.
+
 ##### Preprint real-data examples
-- Added two standalone preprint scripts for real biological microscopy examples:
-  `additional_scripts/run_preprint_real_calcium_2d_example.py` registers the
-  CaImAn 2D+t calcium-imaging demo movie and writes Figure 7 panels, while
-  `additional_scripts/run_preprint_real_3p_pseudot_example.py` builds controlled
-  pseudo-time 3D motion from a real three-photon z-stack and writes Figure 8
-  panels.
+- Added two standalone preprint scripts for real biological microscopy examples: `additional_scripts/run_preprint_real_calcium_2d_example.py` registers the CaImAn 2D+t calcium-imaging demo movie and writes Figure 7 panels, while `additional_scripts/run_preprint_real_3p_pseudot_example.py` builds controlled pseudo-time 3D motion from a real three-photon z-stack and writes Figure 8 panels.
 
 #### 🧩 Changes and improvements
 ##### Citation metadata
 - Updated README, RTD citation text, and `CITATION.cff` to cite the ZenReg [bioRxiv preprint](https://doi.org/10.64898/2026.08.07.743572) as the preferred scientific reference while keeping Zenodo as the recommended version-specific software archive citation.
 
 ##### Example data documentation
-- Refined README files for the CaImAn calcium-imaging demo movie and the
-  three-photon paper example stack with source, download, license, and citation
-  information. The large image files remain external downloads rather than
-  versioned repository content.
+- Refined README files for the CaImAn calcium-imaging demo movie and the three-photon paper example stack with source, download, license, and citation information. The large image files remain external downloads rather than versioned repository content.
 
 ---
 
