@@ -312,6 +312,129 @@ All other keyword arguments are the same as for the individual functions, and ar
 forwarded to them. Please refer to the corresponding function documentation and
 tutorials for details.
 
+Stacked folders
+---------------
+
+Some microscopes or acquisition/export workflows store one logical time series
+as repeated stack folders below the same field-of-view folder:
+
+.. code-block:: text
+
+   synthetic_stacked_folder_batch_project/
+   └─ ID000001/
+      └─ FOV1_pre/
+         ├─ OV_1/
+         │  └─ image_001.ome.tif
+         ├─ OV_2/
+         │  └─ image_001.ome.tif
+         └─ OV_3/
+            └─ image_001.ome.tif
+
+In this case, use ``tag_folder_levels`` only up to the folder that contains the
+stack folders, and pass the repeated stack-folder tag separately. ZenReg then
+identifies the matching ``OV_*`` folder-stack family, reads each folder stack
+with OMIO, and merges the result into one canonical ``TZCYX`` stack before
+registration:
+
+.. code-block:: python
+
+   from pathlib import Path
+   from zenreg import register_bids_like_batch
+
+   project_root = Path("example_data/synthetic_stacked_folder_batch_project")
+
+   result = register_bids_like_batch(
+       project_root,
+       subject_ids             = None,
+       subject_prefix          = "ID",
+       tag_folder_levels       = (("FOV",),),
+       stack_folder_tag        = "OV",
+       stack_folder_match      = "startswith",
+       stack_folder_merge_axis = "T",
+       image_patterns          = ("*.ome.tif",),
+       output_folder_name      = "zenreg_output",
+       use_memmap              = True,
+       load_kwargs             = {"on_error": "return_none"},
+       register_kwargs={
+           "registration_channel":              0,
+           "method":                            "phase_cross_correlation",
+           "time_registration_mode":            "full_3d",
+           "time_reference_mode":               "template",
+           "registration_template_time_range":  "all",
+           "projection_method":                 "median",
+           "zreg":                              True,
+           "zero_clip":                         True,
+           "max_xy_shifts":                     (12, 12),
+           "max_z_shifts":                      4,
+           "n_jobs":                            -1,
+           "return_details":                    True},
+       save_kwargs={
+           "compression_level": 3,
+           "overwrite":         True,
+           "verbose":           False},
+       verbose                 = True)
+
+By default, the registered output is written relative to the FOV folder, not
+inside one of the ``OV_*`` folders:
+
+.. code-block:: text
+
+   ID000001/FOV1_pre/zenreg_output/FOV1_pre_OV_merged_T_zenreg_registered.ome.tif
+
+Set ``save_merged_stack=True`` if you also want ZenReg to save the merged
+pre-registration stack as an intermediate OME-TIFF in the FOV folder:
+
+.. code-block:: python
+
+   result = register_bids_like_batch(
+       project_root,
+       tag_folder_levels       = (("FOV",),),
+       stack_folder_tag        = "OV",
+       stack_folder_merge_axis = "T",
+       save_merged_stack       = True,
+       merged_stack_name       = None,
+       register_kwargs         = {"method": "phase_cross_correlation"},
+       save_kwargs             = {"overwrite": True})
+
+Options introduced here:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 32 68
+
+   * - Argument
+     - Meaning
+   * - ``stack_folder_tag``
+     - Repeated child-folder tag below the final ``tag_folder_levels`` folder.
+       ``"OV"`` matches folders such as ``OV_1``, ``OV_2``, and ``OV_3``.
+       Folder names must contain an underscore because OMIO derives the shared
+       folder-stack family from the part before ``"_"``.
+   * - ``stack_folder_match``
+     - Matching mode for ``stack_folder_tag``. Default: ``"startswith"``.
+       Use ``"contains"`` only for less regular folder names.
+   * - ``stack_folder_merge_axis``
+     - Axis used to merge the repeated folder stacks. Use ``"T"`` when
+       repeated folders are time points. ``"Z"`` and ``"C"`` are also allowed.
+   * - ``save_merged_stack``
+     - Save the OMIO-merged stack before registration. Default: ``False``.
+   * - ``merged_stack_name``
+     - Optional explicit filename stem for the intermediate merged stack. If
+       ``None``, ZenReg derives a name from the FOV folder and stack-folder tag.
+   * - ``merged_stack_suffix``
+     - Fallback suffix for intermediate merged-stack names. Default:
+       ``"_merged"``.
+
+``image_patterns`` remains active in stacked-folder mode. ZenReg uses it to
+select the image file read from each ``OV_*`` folder. With ``use_memmap=True``,
+each source folder stack receives a distinct OMIO cache location, and the merged
+input is stored in a separate disk-backed Zarr cache before registration.
+
+A complete runnable example is provided in
+``user_scripts/register_stacked_folder_batch_synthetic.py``. The script creates
+a small synthetic ``ID/FOV/OV_*`` project via
+``additional_scripts/create_synthetic_stacked_folder_batch_project.py`` and then
+runs the stacked-folder batch processor cell by cell.
+
 Batch run reports
 -----------------
 
