@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import numpy as np
+
 from zenreg import (
     batch_create_thorlabs_raw_yaml_templates,
     discover_bids_like_batch_images,
@@ -29,6 +31,39 @@ def test_discover_bids_like_batch_images_supports_nested_token_levels(tmp_path):
     assert records[0].experiment_tag == "DC000_FOV1"
     assert records[0].image_path == image_path
     assert records[0].output_scope_dir == tmp_path / "ID000001" / "DC000_FOV1"
+
+
+def test_discover_bids_like_batch_images_supports_folder_stack_groups(tmp_path):
+    fov_dir = tmp_path / "ID25068" / "FOV1_pre"
+    for ov_name in ("OV_10", "OV_2", "OV_1"):
+        ov_dir = fov_dir / ov_name
+        ov_dir.mkdir(parents=True)
+        (ov_dir / "slice_0001.tif").write_text("dummy")
+    ignored_dir = fov_dir / "Other_1"
+    ignored_dir.mkdir()
+    (ignored_dir / "slice_0001.tif").write_text("dummy")
+
+    records = discover_bids_like_batch_images(
+        tmp_path,
+        subject_prefix="ID",
+        tag_folder_levels=(("FOV",),),
+        image_patterns=("*.tif",),
+        stack_folder_tag="OV",
+        stack_folder_merge_axis="T")
+
+    assert len(records) == 1
+    assert records[0].subject_id == "ID25068"
+    assert records[0].tag_folders == ("FOV1_pre",)
+    assert records[0].input_kind == "folder_stack"
+    assert records[0].stack_folder_tag == "OV"
+    assert records[0].stack_folder_merge_axis == "T"
+    assert records[0].image_path == fov_dir / "OV_1"
+    assert records[0].stack_folder_paths == (
+        fov_dir / "OV_1",
+        fov_dir / "OV_2",
+        fov_dir / "OV_10")
+    assert records[0].output_scope_dir == fov_dir
+    assert records[0].output_name_stem == "FOV1_pre_OV_merged_T"
 
 
 def test_register_bids_like_batch_processes_synthetic_project(tmp_path):
@@ -67,6 +102,70 @@ def test_register_bids_like_batch_processes_synthetic_project(tmp_path):
     assert result.root_run_report_txt_path.exists()
     assert "image_01.ome.tif" in result.root_run_report_txt_path.read_text()
     assert "REGISTERED" in result.root_run_report_txt_path.read_text()
+
+
+def test_register_bids_like_batch_loads_folder_stack_record(monkeypatch, tmp_path):
+    fov_dir = tmp_path / "ID25068" / "FOV1_pre"
+    for ov_name in ("OV_1", "OV_2"):
+        ov_dir = fov_dir / ov_name
+        ov_dir.mkdir(parents=True)
+        (ov_dir / "slice_0001.tif").write_text("dummy")
+
+    seen = {}
+
+    import zenreg.batch as batch_module
+
+    def fake_load_stack(path, **kwargs):
+        seen.setdefault("paths", []).append(Path(path))
+        seen.setdefault("kwargs", []).append(dict(kwargs))
+        stack = np.full((1, 1, 1, 8, 8), len(seen["paths"]), dtype=np.float32)
+        metadata = {"axes": "TZCYX", "shape": stack.shape}
+        return stack, metadata
+
+    def fake_register_stack(stack, **kwargs):
+        seen["register_kwargs"] = dict(kwargs)
+        seen["registered_shape"] = tuple(stack.shape)
+        return stack, {"stack_shape_tzcyx": tuple(stack.shape)}
+
+    def fake_save_stack(path, stack, **kwargs):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("registered")
+        return path
+
+    monkeypatch.setattr(batch_module, "load_stack", fake_load_stack)
+    monkeypatch.setattr(batch_module, "register_stack", fake_register_stack)
+    monkeypatch.setattr(batch_module, "save_stack", fake_save_stack)
+
+    result = register_bids_like_batch(
+        tmp_path,
+        subject_prefix="ID",
+        tag_folder_levels=(("FOV",),),
+        image_patterns=("*.tif",),
+        stack_folder_tag="OV",
+        stack_folder_merge_axis="T",
+        register_kwargs={"registration_channel": 0, "verbose": False},
+        save_kwargs={"verbose": False},
+        use_memmap=True,
+        memmap_folder_name="omio_memmap_cache",
+        verbose=False)
+
+    assert len(result.processed) == 1
+    assert seen["paths"] == [
+        fov_dir / "OV_1" / "slice_0001.tif",
+        fov_dir / "OV_2" / "slice_0001.tif"]
+    assert all("folder_stacks" not in kwargs for kwargs in seen["kwargs"])
+    assert all("merge_folder_stacks" not in kwargs for kwargs in seen["kwargs"])
+    assert all("merge_along_axis" not in kwargs for kwargs in seen["kwargs"])
+    memmap_folders = [Path(kwargs["memmap_folder"]) for kwargs in seen["kwargs"]]
+    assert len(set(memmap_folders)) == 2
+    assert all("stack_folder_sources" in folder.parts for folder in memmap_folders)
+    assert seen["registered_shape"] == (2, 1, 1, 8, 8)
+    assert result.processed[0].output_path == (
+        fov_dir / "zenreg_output" / "FOV1_pre_OV_merged_T_zenreg_registered.ome.tif")
+    report_text = result.root_run_report_txt_path.read_text()
+    assert "OV_* folder stack" in report_text
+    assert "merge_axis: T" in report_text
 
 
 def test_register_bids_like_batch_appends_run_report_history(tmp_path):
