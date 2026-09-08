@@ -44,6 +44,9 @@ DEFAULT_RAW_TEMPLATE_METADATA = {
     "time_increment": 1.0,
     "time_increment_unit": "seconds",
 }
+
+CANONICAL_AXIS_ORDER = "TZCYX"
+BATCH_AXIS_TO_INDEX = {"T": 0, "Z": 1, "C": 2, "Y": 3, "X": 4}
 # %% DATA CLASSES
 @dataclass(frozen=True)
 class BatchImageRecord:
@@ -53,6 +56,11 @@ class BatchImageRecord:
     tag_folders: tuple[str, ...]
     image_path: Path
     output_scope_dir: Path
+    input_kind: str = "file"
+    stack_folder_tag: str | None = None
+    stack_folder_paths: tuple[Path, ...] = ()
+    stack_folder_merge_axis: str | None = None
+    output_name_stem: str | None = None
 
     @property
     def experiment_tag(self) -> str:
@@ -179,13 +187,18 @@ def _iter_tag_folder_chains(
 
 def _collect_image_paths(
     scan_dir: Path,
-    image_patterns: str | Sequence[str],
+    image_patterns: str | Sequence[str] | None,
     *,
     exclude_name_contains: Sequence[str] = (),
 ) -> list[Path]:
     """Collect images from one folder using one glob or multiple globs."""
 
-    patterns = (image_patterns,) if isinstance(image_patterns, str) else tuple(image_patterns)
+    if image_patterns is None:
+        patterns = DEFAULT_IMAGE_PATTERNS
+    elif isinstance(image_patterns, str):
+        patterns = (image_patterns,)
+    else:
+        patterns = tuple(image_patterns)
     matched_paths: dict[Path, None] = {}
     for pattern in patterns:
         for path in scan_dir.glob(str(pattern)):
@@ -197,6 +210,77 @@ def _collect_image_paths(
         for path in sorted(matched_paths)
         if not any(token in path.name for token in excluded_tokens)
     ]
+
+def _natural_sort_key(path: Path) -> tuple:
+    """Return a sort key that orders numeric suffixes naturally."""
+
+    parts = re.split(r"(\d+)", path.name)
+    return tuple(int(part) if part.isdigit() else part.lower() for part in parts)
+
+def _normalize_stack_folder_tags(stack_folder_tag: str | Path | Sequence[str | Path] | None) -> tuple[str, ...]:
+    """Normalize optional stack-folder tag(s)."""
+
+    if stack_folder_tag is None:
+        return ()
+    if isinstance(stack_folder_tag, bool):
+        raise ValueError("stack_folder_tag expects a tag string or sequence of strings, not a boolean.")
+    if isinstance(stack_folder_tag, (str, Path)):
+        tag = str(Path(stack_folder_tag).name if isinstance(stack_folder_tag, Path) else stack_folder_tag)
+        return (tag,) if tag else ()
+    return tuple(
+        str(Path(tag).name if isinstance(tag, Path) else tag)
+        for tag in stack_folder_tag
+        if str(tag))
+
+def _stack_folder_matches(name: str, tag: str, match_mode: str) -> bool:
+    """Return True when one folder name matches a stack-folder tag."""
+
+    if match_mode == "startswith":
+        return name.startswith(tag)
+    if match_mode == "contains":
+        return tag in name
+    raise ValueError("stack_folder_match must be 'startswith' or 'contains'.")
+
+def _collect_stack_folder_groups(
+    scan_dir: Path,
+    stack_folder_tags: Sequence[str],
+    *,
+    stack_folder_match: str,
+    image_patterns: str | Sequence[str] | None,
+    exclude_name_contains: Sequence[str],
+) -> list[tuple[str, tuple[Path, ...]]]:
+    """Collect tagged child-folder groups that OMIO should merge as folder stacks."""
+
+    if not stack_folder_tags or not scan_dir.is_dir():
+        return []
+    child_dirs = sorted(
+        (
+            path
+            for path in scan_dir.iterdir()
+            if path.is_dir()
+            and not any(token in path.name for token in exclude_name_contains)
+        ),
+        key=_natural_sort_key)
+    groups: list[tuple[str, tuple[Path, ...]]] = []
+    seen_first_paths: set[Path] = set()
+    for tag in stack_folder_tags:
+        matching_dirs = tuple(
+            path
+            for path in child_dirs
+            if _stack_folder_matches(path.name, tag, stack_folder_match)
+            and "_" in path.name
+            and _collect_image_paths(
+                path,
+                image_patterns,
+                exclude_name_contains=exclude_name_contains))
+        if not matching_dirs:
+            continue
+        first_path = matching_dirs[0]
+        if first_path in seen_first_paths:
+            continue
+        seen_first_paths.add(first_path)
+        groups.append((tag, matching_dirs))
+    return groups
 
 def _sanitize_name(value: str) -> str:
     """Return a filesystem-friendly name fragment."""
@@ -220,6 +304,218 @@ def _output_path_for_image(output_dir: Path, image_path: Path) -> Path:
     else:
         stem = image_path.stem
     return output_dir / f"{stem}_zenreg_registered.ome.tif"
+
+def _output_path_for_record(output_dir: Path, record: BatchImageRecord) -> Path:
+    """Return the default registered OME-TIFF output path for one batch record."""
+
+    if record.output_name_stem:
+        return output_dir / f"{record.output_name_stem}_zenreg_registered.ome.tif"
+    return _output_path_for_image(output_dir, record.image_path)
+
+def _merged_stack_path_for_record(
+    output_scope_dir: Path,
+    record: BatchImageRecord,
+    *,
+    merged_stack_name: str | None,
+    merged_stack_suffix: str,
+) -> Path:
+    """Return the optional intermediate merged-stack output path."""
+
+    stem = merged_stack_name or record.output_name_stem
+    if not stem:
+        stem = f"{record.image_path.stem}{merged_stack_suffix}"
+    return output_scope_dir / f"{stem}.ome.tif"
+
+def _merged_stack_cache_path(record: BatchImageRecord, load_options: dict) -> Path | None:
+    """Return the disk-backed Zarr path for a merged folder-stack input."""
+
+    if not load_options.get("use_memmap", False):
+        return None
+    memmap_folder = load_options.get("memmap_folder")
+    if memmap_folder is None:
+        return None
+    stem = record.output_name_stem or f"{record.image_path.stem}_merged"
+    return Path(memmap_folder) / ".omio_cache" / f"{_sanitize_name(stem)}_input.zarr"
+
+def _stack_folder_source_memmap_folder(
+    base_memmap_folder: Path | None,
+    source_path: Path,
+    record: BatchImageRecord,
+) -> Path | None:
+    """Return a cache parent that is unique for one folder-stack source."""
+
+    if base_memmap_folder is None:
+        return None
+    source_stem = _sanitize_name(source_path.parent.name)
+    record_stem = _sanitize_name(record.output_name_stem or record.image_path.parent.name)
+    return (
+        base_memmap_folder
+        / ".omio_cache"
+        / "stack_folder_sources"
+        / record_stem
+        / source_stem
+    )
+
+def _stack_chunks_tzcyx(shape: Sequence[int]) -> tuple[int, int, int, int, int]:
+    """Return conservative chunks for disk-backed merged folder-stack arrays."""
+
+    t, z, c, y, x = (int(value) for value in shape)
+    return (1, min(z, 4), min(c, 1), min(y, 512), min(x, 512))
+
+def _first_stack_folder_image_path(
+    folder: Path,
+    *,
+    image_patterns: str | Sequence[str] | None,
+    exclude_name_contains: Sequence[str],
+) -> Path | None:
+    """Return the first naturally sorted image file that matches a stack folder."""
+
+    image_paths = _collect_image_paths(
+        folder,
+        image_patterns,
+        exclude_name_contains=exclude_name_contains)
+    return sorted(image_paths, key=_natural_sort_key)[0] if image_paths else None
+
+def _empty_merged_stack(
+    shape: Sequence[int],
+    dtype,
+    *,
+    cache_path: Path | None,
+):
+    """Allocate a merged folder-stack array in Zarr when requested."""
+
+    shape_tuple = tuple(int(value) for value in shape)
+    if cache_path is None:
+        return np.zeros(shape_tuple, dtype=dtype)
+
+    import zarr
+
+    if cache_path.exists():
+        shutil.rmtree(cache_path)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    return zarr.open(
+        str(cache_path),
+        mode="w",
+        shape=shape_tuple,
+        dtype=np.dtype(dtype),
+        chunks=_stack_chunks_tzcyx(shape_tuple))
+
+def _merge_stack_folder_arrays(
+    stacks: Sequence,
+    metadata_items: Sequence[dict],
+    *,
+    merge_axis: str,
+    cache_path: Path | None,
+    source_paths: Sequence[Path],
+):
+    """Merge canonical TZCYX stacks along one axis with zero padding if needed."""
+
+    if not stacks:
+        raise ValueError("No readable stack-folder images found.")
+
+    shapes = [tuple(int(value) for value in stack.shape) for stack in stacks]
+    for index, shape in enumerate(shapes):
+        if len(shape) != 5:
+            raise ValueError(f"Stack-folder image {source_paths[index]} is not 5D TZCYX: {shape}.")
+    for index, metadata in enumerate(metadata_items):
+        if metadata.get("axes") != CANONICAL_AXIS_ORDER:
+            raise ValueError(
+                f"Stack-folder image {source_paths[index]} has axes={metadata.get('axes')!r}; "
+                f"expected {CANONICAL_AXIS_ORDER!r}.")
+
+    axis_index = BATCH_AXIS_TO_INDEX[merge_axis]
+    output_shape = list(shapes[0])
+    output_shape[axis_index] = sum(shape[axis_index] for shape in shapes)
+    for axis in range(5):
+        if axis != axis_index:
+            output_shape[axis] = max(shape[axis] for shape in shapes)
+
+    dtype = np.result_type(*[getattr(stack, "dtype", np.float32) for stack in stacks])
+    merged = _empty_merged_stack(output_shape, dtype, cache_path=cache_path)
+    destination_start = 0
+    for stack, shape in zip(stacks, shapes):
+        destination_stop = destination_start + shape[axis_index]
+        destination_slices = [slice(0, size) for size in shape]
+        destination_slices[axis_index] = slice(destination_start, destination_stop)
+        merged[tuple(destination_slices)] = np.asarray(stack, dtype=dtype)
+        destination_start = destination_stop
+
+    metadata = deepcopy(metadata_items[0])
+    metadata["axes"] = CANONICAL_AXIS_ORDER
+    metadata["shape"] = tuple(output_shape)
+    metadata["SizeT"] = int(output_shape[0])
+    metadata["SizeZ"] = int(output_shape[1])
+    metadata["SizeC"] = int(output_shape[2])
+    metadata["SizeY"] = int(output_shape[3])
+    metadata["SizeX"] = int(output_shape[4])
+    annotations = metadata.setdefault("Annotations", {})
+    annotations["zenreg_folder_stack_merge_axis"] = merge_axis
+    annotations["zenreg_folder_stack_source_paths"] = [str(path) for path in source_paths]
+    if cache_path is not None:
+        annotations["zenreg_folder_stack_zarr_cache"] = str(cache_path)
+    return merged, metadata
+
+def _load_stack_folder_record(
+    record: BatchImageRecord,
+    *,
+    load_options: dict,
+    image_patterns: str | Sequence[str] | None,
+    exclude_name_contains: Sequence[str],
+    verbose: bool,
+):
+    """Load and naturally merge one stacked-folder batch record."""
+
+    matched_source_paths = []
+    stacks = []
+    metadata_items = []
+    base_memmap_folder = (
+        Path(load_options["memmap_folder"])
+        if load_options.get("use_memmap", False) and load_options.get("memmap_folder") is not None
+        else None
+    )
+    for stack_folder in record.stack_folder_paths:
+        source_path = _first_stack_folder_image_path(
+            stack_folder,
+            image_patterns=image_patterns,
+            exclude_name_contains=exclude_name_contains)
+        if source_path is None:
+            raise FileNotFoundError(f"No matching image file found in stack folder: {stack_folder}")
+        matched_source_paths.append(source_path)
+        source_load_options = dict(load_options)
+        source_load_options["return_metadata"] = True
+        source_load_options.pop("folder_stacks", None)
+        source_load_options.pop("merge_folder_stacks", None)
+        source_load_options.pop("merge_along_axis", None)
+        source_memmap_folder = _stack_folder_source_memmap_folder(
+            base_memmap_folder,
+            source_path,
+            record)
+        if source_memmap_folder is not None:
+            source_load_options["memmap_folder"] = source_memmap_folder
+        stack_i, metadata_i = load_stack(source_path, **source_load_options)
+        if stack_i is None or metadata_i is None:
+            raise ValueError(f"OMIO returned None while reading stack-folder source: {source_path}")
+        stacks.append(stack_i)
+        metadata_items.append(metadata_i)
+
+    merge_axis = record.stack_folder_merge_axis or "T"
+    stack, metadata = _merge_stack_folder_arrays(
+        stacks,
+        metadata_items,
+        merge_axis=merge_axis,
+        cache_path=_merged_stack_cache_path(record, load_options),
+        source_paths=matched_source_paths)
+
+    if metadata is not None:
+        annotations = metadata.setdefault("Annotations", {})
+        annotations["zenreg_stack_folder_tag"] = record.stack_folder_tag
+        annotations["zenreg_stack_folder_merge_axis"] = merge_axis
+        annotations["zenreg_stack_folder_paths"] = [str(path) for path in record.stack_folder_paths]
+        annotations["zenreg_stack_folder_matched_files"] = [str(path) for path in matched_source_paths]
+    if verbose:
+        folder_names = ", ".join(path.name for path in record.stack_folder_paths)
+        print(f"    merged stack folders along {merge_axis}: {folder_names}", flush=True)
+    return stack, metadata
 
 def _metadata_for_batch_output(metadata: dict | None, output_path: Path) -> dict | None:
     """Return metadata whose OMIO output annotations point at ``output_path``."""
@@ -540,10 +836,21 @@ def _render_tree_node(
         latest_run = runs[-1] if runs else {}
         status = str(latest_run.get("status", file_entry.get("latest_status", "unknown")))
         symbol = _status_symbol(status, status_symbol_style)
-        lines.append(f"{indent}{branch}{Path(name).name} [{symbol}]")
+        display_name = file_entry.get("display_name") or Path(name).name
+        lines.append(f"{indent}{branch}{display_name} [{symbol}]")
         output_path = latest_run.get("output_path") or file_entry.get("latest_output_path")
         if output_path:
             lines.append(f"{child_indent}output: {output_path}")
+        if file_entry.get("input_kind") == "folder_stack":
+            stack_tag = file_entry.get("stack_folder_tag")
+            stack_paths = file_entry.get("stack_folder_paths", [])
+            merge_axis = file_entry.get("merge_axis")
+            if stack_tag:
+                lines.append(f"{child_indent}input: tagged folder stack {stack_tag}_*")
+            if merge_axis:
+                lines.append(f"{child_indent}merge_axis: {merge_axis}")
+            if stack_paths:
+                lines.append(f"{child_indent}folders: {', '.join(stack_paths)}")
         if runs:
             lines.append(f"{child_indent}runs:")
             for run in runs:
@@ -609,12 +916,21 @@ def _append_run_report_entry(
             "subject_id": record.subject_id,
             "tag_folders": list(record.tag_folders),
             "input_path": file_key,
+            "input_kind": record.input_kind,
             "runs": [],
         },
     )
     file_entry["subject_id"] = record.subject_id
     file_entry["tag_folders"] = list(record.tag_folders)
     file_entry["input_path"] = file_key
+    file_entry["input_kind"] = record.input_kind
+    if record.input_kind == "folder_stack":
+        file_entry["stack_folder_tag"] = record.stack_folder_tag
+        file_entry["display_name"] = f"{record.stack_folder_tag}_* folder stack"
+        file_entry["merge_axis"] = record.stack_folder_merge_axis
+        file_entry["stack_folder_paths"] = [
+            _relative_report_path(path, root) for path in record.stack_folder_paths
+        ]
     run_entry = {
         "timestamp": timestamp,
         "status": status,
@@ -643,8 +959,11 @@ def discover_bids_like_batch_images(
     subject_ids: Iterable[str | Path] | None = None,
     subject_prefix: str = "ID",
     tag_folder_levels: Sequence[Iterable[str | Path] | None] | None = None,
-    image_patterns: str | Sequence[str] = DEFAULT_IMAGE_PATTERNS,
+    image_patterns: str | Sequence[str] | None = DEFAULT_IMAGE_PATTERNS,
     exclude_name_contains: Sequence[str] = ("ROIMask.raw",),
+    stack_folder_tag: str | Path | Sequence[str | Path] | None = None,
+    stack_folder_match: str = "startswith",
+    stack_folder_merge_axis: str = "T",
 ) -> list[BatchImageRecord]:
     """
     Discover microscopy image files in a flexible BIDS-like project tree.
@@ -669,6 +988,16 @@ def discover_bids_like_batch_images(
         Glob pattern(s) used to find images in the final tag-folder level.
     exclude_name_contains : sequence[str], optional
         Filename tokens to exclude, for example ``("ROIMask.raw",)``.
+    stack_folder_tag : str, sequence[str], or None, optional
+        Optional tagged child-folder group(s) below the final tag-folder level.
+        For example, ``stack_folder_tag="OV"`` detects ``OV_1``, ``OV_2``,
+        etc. below a FOV folder and returns one folder-stack record per FOV.
+    stack_folder_match : {"startswith", "contains"}, optional
+        How ``stack_folder_tag`` is matched against child-folder names.
+        Default: ``"startswith"``.
+    stack_folder_merge_axis : {"T", "Z", "C"}, optional
+        Logical axis along which OMIO should merge tagged folder stacks. Stored
+        in returned records for reporting. Default: ``"T"``.
 
     Returns
     -------
@@ -693,6 +1022,11 @@ def discover_bids_like_batch_images(
         subject_dirs = [root / subject_id for subject_id in requested_subjects]
 
     levels = _normalize_tag_folder_levels(tag_folder_levels)
+    stack_folder_tags = _normalize_stack_folder_tags(stack_folder_tag)
+    merge_axis = str(stack_folder_merge_axis).upper()
+    if merge_axis not in {"T", "Z", "C"}:
+        raise ValueError("stack_folder_merge_axis must be one of 'T', 'Z', or 'C'.")
+
     records: list[BatchImageRecord] = []
     for subject_dir in subject_dirs:
         if not subject_dir.is_dir():
@@ -700,13 +1034,40 @@ def discover_bids_like_batch_images(
         folder_chains = _iter_tag_folder_chains(subject_dir, levels)
         for folder_chain in folder_chains:
             scan_dir = folder_chain[-1] if folder_chain else subject_dir
+            output_scope_dir = _output_scope_for_chain(subject_dir, folder_chain)
+            tag_folders = tuple(path.name for path in folder_chain)
+            if stack_folder_tags:
+                for tag, stack_folder_paths in _collect_stack_folder_groups(
+                    scan_dir,
+                    stack_folder_tags,
+                    stack_folder_match=stack_folder_match,
+                    image_patterns=image_patterns,
+                    exclude_name_contains=exclude_name_contains,
+                ):
+                    output_name_stem = (
+                        f"{_sanitize_name(output_scope_dir.name)}_"
+                        f"{_sanitize_name(tag)}_merged_{merge_axis}"
+                    )
+                    records.append(
+                        BatchImageRecord(
+                            subject_id=subject_dir.name,
+                            tag_folders=tag_folders,
+                            image_path=stack_folder_paths[0],
+                            output_scope_dir=output_scope_dir,
+                            input_kind="folder_stack",
+                            stack_folder_tag=tag,
+                            stack_folder_paths=stack_folder_paths,
+                            stack_folder_merge_axis=merge_axis,
+                            output_name_stem=output_name_stem,
+                        )
+                    )
+                continue
+
             image_paths = _collect_image_paths(
                 scan_dir,
                 image_patterns,
                 exclude_name_contains=exclude_name_contains,
             )
-            output_scope_dir = _output_scope_for_chain(subject_dir, folder_chain)
-            tag_folders = tuple(path.name for path in folder_chain)
             for image_path in image_paths:
                 records.append(
                     BatchImageRecord(
@@ -724,8 +1085,14 @@ def register_bids_like_batch(
     subject_ids: Iterable[str | Path] | None = None,
     subject_prefix: str = "ID",
     tag_folder_levels: Sequence[Iterable[str | Path] | None] | None = None,
-    image_patterns: str | Sequence[str] = DEFAULT_IMAGE_PATTERNS,
+    image_patterns: str | Sequence[str] | None = DEFAULT_IMAGE_PATTERNS,
     exclude_name_contains: Sequence[str] = ("ROIMask.raw",),
+    stack_folder_tag: str | Path | Sequence[str | Path] | None = None,
+    stack_folder_match: str = "startswith",
+    stack_folder_merge_axis: str = "T",
+    save_merged_stack: bool = False,
+    merged_stack_name: str | None = None,
+    merged_stack_suffix: str = "_merged",
     output_folder_name: str = "zenreg_output",
     skip_registered: bool = True,
     load_kwargs: dict | None = None,
@@ -776,6 +1143,27 @@ def register_bids_like_batch(
         Glob pattern(s) used to find image files in the final tag-folder level.
     exclude_name_contains : sequence[str], optional
         Filename tokens to exclude from processing.
+    stack_folder_tag : str, sequence[str], or None, optional
+        Optional tagged child-folder group below the final tag-folder level.
+        When set, ZenReg creates one batch record per matching group instead of
+        processing individual image files. For example, use
+        ``tag_folder_levels=(("FOV",),)`` and ``stack_folder_tag="OV"`` for a
+        tree such as ``ID25068/FOV1_pre/OV_1``, ``OV_2``, ...
+    stack_folder_match : {"startswith", "contains"}, optional
+        How ``stack_folder_tag`` is matched against child-folder names.
+        Default: ``"startswith"``.
+    stack_folder_merge_axis : {"T", "Z", "C"}, optional
+        Axis passed to OMIO as ``merge_along_axis`` for folder-stack merging.
+        Default: ``"T"``.
+    save_merged_stack : bool, optional
+        If True, save the OMIO-merged stack as an intermediate OME-TIFF in the
+        output-scope folder before registration. Default: False.
+    merged_stack_name : str or None, optional
+        Optional explicit stem for intermediate merged stacks. If None, ZenReg
+        builds one from the output-scope folder and stack-folder tag.
+    merged_stack_suffix : str, optional
+        Suffix used for the intermediate merged stack when no record-specific
+        stem is available. Default: ``"_merged"``.
     output_folder_name : str, optional
         Name of the output folder created inside the first tag-folder level
         (or inside the subject folder when no tag folders are configured).
@@ -838,6 +1226,9 @@ def register_bids_like_batch(
         tag_folder_levels=tag_folder_levels,
         image_patterns=image_patterns,
         exclude_name_contains=exclude_name_contains,
+        stack_folder_tag=stack_folder_tag,
+        stack_folder_match=stack_folder_match,
+        stack_folder_merge_axis=stack_folder_merge_axis,
     )
 
     base_load_kwargs = dict(load_kwargs or {})
@@ -878,7 +1269,7 @@ def register_bids_like_batch(
                 "record": record,
                 "status": status,
                 "reason": reason,
-                "output_path": _output_path_for_image(output_dir, record.image_path)
+                "output_path": _output_path_for_record(output_dir, record)
                 if stage == "already_registered"
                 else None,
             }
@@ -889,7 +1280,7 @@ def register_bids_like_batch(
         output_dir_was_created_for_file = not output_dir.exists()
         output_dir.mkdir(parents=True, exist_ok=True)
         memmap_cache_dir = output_dir / memmap_folder_name if memmap_folder_name else output_dir
-        output_path = _output_path_for_image(output_dir, record.image_path)
+        output_path = _output_path_for_record(output_dir, record)
 
         if skip_registered and output_path.exists():
             record_skip(
@@ -901,13 +1292,20 @@ def register_bids_like_batch(
             continue
 
         tag_text = "_".join(_sanitize_name(tag) for tag in record.tag_folders) or "subject_root"
-        memmap_name = f"{_sanitize_name(record.subject_id)}_{tag_text}_{_sanitize_name(record.image_path.stem)}"
+        input_stem = record.output_name_stem or record.image_path.stem
+        memmap_name = f"{_sanitize_name(record.subject_id)}_{tag_text}_{_sanitize_name(input_stem)}"
         if verbose:
             chain = "/".join(record.tag_folders) if record.tag_folders else "subject_root"
-            print(
-                f"Registering {record.subject_id}/{chain}/{record.image_path.name}",
-                flush=True,
-            )
+            if record.input_kind == "folder_stack":
+                folder_names = ", ".join(path.name for path in record.stack_folder_paths)
+                print(
+                    f"Registering {record.subject_id}/{chain}/"
+                    f"{record.stack_folder_tag}_* folder stack ({folder_names})",
+                    flush=True)
+            else:
+                print(
+                    f"Registering {record.subject_id}/{chain}/{record.image_path.name}",
+                    flush=True)
 
         load_options = dict(base_load_kwargs)
         load_options["return_metadata"] = True
@@ -921,7 +1319,15 @@ def register_bids_like_batch(
             cleanup_omio_cache(memmap_cache_dir, full_cleanup=True, verbose=False)
 
         try:
-            stack, metadata = load_stack(record.image_path, **load_options)
+            if record.input_kind == "folder_stack":
+                stack, metadata = _load_stack_folder_record(
+                    record,
+                    load_options=load_options,
+                    image_patterns=image_patterns,
+                    exclude_name_contains=exclude_name_contains,
+                    verbose=verbose)
+            else:
+                stack, metadata = load_stack(record.image_path, **load_options)
         except Exception as exc:
             if not continue_on_error:
                 raise
@@ -942,6 +1348,30 @@ def register_bids_like_batch(
 
         if verbose:
             print(f"  load done; input shape: {stack.shape} (TZCYX)", flush=True)
+
+        if save_merged_stack and record.input_kind == "folder_stack":
+            merged_output_path = _merged_stack_path_for_record(
+                record.output_scope_dir,
+                record,
+                merged_stack_name=merged_stack_name,
+                merged_stack_suffix=merged_stack_suffix)
+            merged_save_options = dict(base_save_kwargs)
+            merged_save_options.setdefault(
+                "metadata",
+                _metadata_for_batch_output(metadata, merged_output_path))
+            merged_save_options.setdefault("overwrite", False)
+            try:
+                if verbose:
+                    print(f"  writing merged folder-stack OME-TIFF: {merged_output_path}", flush=True)
+                save_stack(merged_output_path, stack, **merged_save_options)
+            except Exception as exc:
+                if not continue_on_error:
+                    raise
+                reason = f"{type(exc).__name__} during merged-stack save_stack: {exc}"
+                record_skip(record, reason=reason, stage="save", output_dir=output_dir)
+                if cleanup_cache_after_save and use_memmap:
+                    cleanup_omio_cache(memmap_cache_dir, full_cleanup=True, verbose=False)
+                continue
 
         registration_options = dict(base_register_kwargs)
         if use_memmap:

@@ -218,7 +218,7 @@ def save_line_panel(
     ylabel: str,
     plotter,
     *,
-    figsize_cm: tuple[float, float] = (6.0, 4.0),
+    figsize_cm: tuple[float, float] = (4., 4.0),
     ylim: tuple[float | None, float | None] | None = None
 ) -> Path:
     fig, ax = plt.subplots(figsize=(figsize_cm[0] * CM_TO_INCH, figsize_cm[1] * CM_TO_INCH))
