@@ -16,6 +16,8 @@ def test_discover_bids_like_batch_images_supports_nested_token_levels(tmp_path):
     image_path.write_text("dummy")
     ignored = tmp_path / "ID000001" / "DC000_FOV1" / "TL_000" / "ROIMask.raw"
     ignored.write_text("not an image")
+    apple_double = tmp_path / "ID000001" / "DC000_FOV1" / "TL_000" / "._image_01.ome.tif"
+    apple_double.write_bytes(b"\x00\x05\x16\x07")
 
     records = discover_bids_like_batch_images(
         tmp_path,
@@ -110,6 +112,7 @@ def test_register_bids_like_batch_loads_folder_stack_record(monkeypatch, tmp_pat
         ov_dir = fov_dir / ov_name
         ov_dir.mkdir(parents=True)
         (ov_dir / "slice_0001.tif").write_text("dummy")
+        (ov_dir / "._slice_0001.tif").write_bytes(b"\x00\x05\x16\x07")
 
     seen = {}
 

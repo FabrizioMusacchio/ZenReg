@@ -208,7 +208,9 @@ def _collect_image_paths(
     return [
         path
         for path in sorted(matched_paths)
-        if not any(token in path.name for token in excluded_tokens)
+        if not path.name.startswith(".")
+        and not any(part.startswith("._") for part in path.parts)
+        and not any(token in path.name for token in excluded_tokens)
     ]
 
 def _natural_sort_key(path: Path) -> tuple:

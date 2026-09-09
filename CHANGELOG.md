@@ -7,12 +7,20 @@ Each release is also archived on Zenodo for long-term preservation and citation 
 [![Zenodo Archive](https://img.shields.io/badge/Zenodo%20Archive-10.5281%2Fzenodo.21727826-blue)](https://doi.org/10.5281/zenodo.21727826)
 
 
-<!-- 
+<!-- ---
+
+### 🔜 v0.0.18 - UNRELEASED
+ -->
+
 ---
 
-### 🔜 v0.0.17 - UNRELEASED
+### 🚀 v0.0.17
 
- -->
+This is just a minor release that adds a filter to the newly introduced stacked-folder batch discovery, so that hidden files and macOS AppleDouble sidecar files are ignored.
+
+#### 🧩 Changes and improvements
+##### Batch processing
+- BIDS-like batch discovery now ignores hidden files and macOS AppleDouble sidecar files such as `._ChanA_001_001_001_001.tif`. This prevents stacked-folder workflows on external or network volumes from trying to read metadata/resource-fork sidecars as TIFF images.
 
 ---
 
