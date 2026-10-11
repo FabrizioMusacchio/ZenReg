@@ -551,14 +551,14 @@ def plot_volume_correlation(ax):
 
 def plot_summary(ax):
     channels = [int(channel) for channel in DISPLAY_CHANNELS]
-    before = [float(np.nanmean(before_correlations[channel])) for channel in channels]
-    after = [float(np.nanmean(after_correlations[channel])) for channel in channels]
+    before   = [float(np.nanmean(before_correlations[channel])) for channel in channels]
+    after    = [float(np.nanmean(after_correlations[channel])) for channel in channels]
     x = np.arange(len(channels))
     width = 0.34
     ax.bar(x - width / 2, before, width=width, color="#bdbdbd", label="before")
     ax.bar(x + width / 2, after, width=width, color="#4daf4a", label="after")
     ax.set_xticks(x)
-    ax.set_xticklabels([f"ch{channel}" for channel in channels])
+    ax.set_xticklabels([f"channel {channel}" for channel in channels])
     ax.set_ylim(0, 1.05)
 # %% PREPRINT PANEL PLOTS
 channel0, channel1 = [int(channel) for channel in DISPLAY_CHANNELS[:2]]
@@ -573,20 +573,32 @@ save_image_panel("panel_a.png",
 save_image_panel("panel_b.png", image_panels[channel0]["moving"], f"ch{channel0} raw t={t_after}")
 save_image_panel("panel_c.png", image_panels[channel0]["registered"], f"ch{channel0} registered t={t_after}")
 save_image_panel("panel_d.png", image_panels[channel0]["raw_difference"], f"ch{channel0} ref - raw", cmap="bwr", diverging=True, vmax_abs=image_panels[channel0]["difference_vmax_abs"])
-save_image_panel("panel_e.png", image_panels[channel0]["registered_difference"], f"ch{channel0} registered ref - t", cmap="bwr", diverging=True, vmax_abs=image_panels[channel0]["difference_vmax_abs"])
+save_image_panel("panel_e.png", image_panels[channel0]["registered_difference"], f"ch{channel0} registered ref - t", cmap="bwr", diverging=True, vmax_abs=image_panels[channel0]["difference_vmax_abs"], colorbar=True)
 save_image_panel("panel_f.png", image_panels[channel1]["reference"], f"ch{channel1} reference t={reference_time}")
 save_image_panel("panel_g.png", image_panels[channel1]["moving"], f"ch{channel1} raw t={t_after}")
 save_image_panel("panel_h.png", image_panels[channel1]["registered"], f"ch{channel1} registered t={t_after}")
 save_image_panel("panel_i.png", image_panels[channel1]["raw_difference"], f"ch{channel1} ref - raw", cmap="bwr", diverging=True, vmax_abs=image_panels[channel1]["difference_vmax_abs"])
-save_image_panel("panel_j.png", image_panels[channel1]["registered_difference"], f"ch{channel1} registered ref - t", cmap="bwr", diverging=True, vmax_abs=image_panels[channel1]["difference_vmax_abs"])
-save_line_panel("panel_k.pdf", "estimated 3D shifts", "time frame", "correction shift (px)", plot_shifts)
+save_image_panel("panel_j.png", image_panels[channel1]["registered_difference"], f"ch{channel1} registered ref - t", cmap="bwr", diverging=True, vmax_abs=image_panels[channel1]["difference_vmax_abs"], colorbar=True)
+save_line_panel("panel_k.pdf", 
+                "estimated 3D shifts", 
+                "time frame", 
+                "correction shift (px)", 
+                plot_shifts,
+                show_legend=False)
 save_line_panel("panel_l.pdf", "reference correlation", 
                 "time frame", 
                 "Pearson r", 
                 plot_volume_correlation, 
                 ylim=(0, 1.05),
                 show_legend=False)
-save_line_panel("panel_m.pdf", "mean correlation", "", "Pearson r", plot_summary, ylim=(0, 1.05))
+save_line_panel("panel_m.pdf", 
+                "mean correlation", 
+                "", 
+                "Pearson r", 
+                plot_summary,
+                figsize_cm=(5.2, 4.2),
+                ylim=(0, 1.05),
+                show_legend=False)
 stack_3dtch_intensity_qc = center_crop_to_shape(stack_3dtch, registered_3dtch.shape)
 histogram_paths = []
 for channel in DISPLAY_CHANNELS:
