@@ -275,7 +275,8 @@ def save_line_panel(
     plotter,
     *,
     figsize_cm: tuple[float, float] = (6.2, 4.2),
-    ylim: tuple[float | None, float | None] | None = None
+    ylim: tuple[float | None, float | None] | None = None,
+    show_legend: bool = True
 ) -> Path:
     fig, ax = plt.subplots(figsize=(figsize_cm[0] * CM_TO_INCH, figsize_cm[1] * CM_TO_INCH))
     ax.set_title(title, pad=5)
@@ -287,7 +288,7 @@ def save_line_panel(
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     plotter(ax)
-    if ax.get_legend_handles_labels()[0]:
+    if show_legend and ax.get_legend_handles_labels()[0]:
         ax.legend(frameon=False, fontsize=LEGEND_SIZE)
     output = FIGURE_DIR / name
     fig.savefig(output, dpi=PANEL_DPI if output.suffix == ".png" else None, bbox_inches="tight", transparent=True)
@@ -340,7 +341,7 @@ def save_histogram_panel(raw_stack: np.ndarray, registered_stack: np.ndarray, *,
 def mean_intensity_over_time(stack: np.ndarray, *, channel: int) -> np.ndarray:
     return np.asarray([float(np.nanmean(stack[t, :, int(channel)])) for t in range(stack.shape[0])], dtype=np.float32)
 
-def save_mean_intensity_panel(raw_stack: np.ndarray, registered_stack: np.ndarray) -> Path:
+def save_mean_intensity_panel(raw_stack: np.ndarray, registered_stack: np.ndarray, *, show_legend: bool = True) -> Path:
     frames_for_intensity = np.arange(min(raw_stack.shape[0], registered_stack.shape[0]))
     colors = {0: "#b03a8f", 1: "#2ca25f"}
     fig, ax = plt.subplots(figsize=(8.2 * CM_TO_INCH, 4.6 * CM_TO_INCH))
@@ -359,7 +360,8 @@ def save_mean_intensity_panel(raw_stack: np.ndarray, registered_stack: np.ndarra
     ax.grid(True, axis="y", alpha=0.25, linewidth=0.6)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(frameon=False, ncol=2)
+    if show_legend:
+        ax.legend(frameon=False, ncol=2)
     output = FIGURE_DIR / "panel_mean_intensity_over_time.pdf"
     fig.savefig(output, bbox_inches="tight")
     fig.savefig(output.with_suffix(".png"), dpi=PANEL_DPI, bbox_inches="tight")

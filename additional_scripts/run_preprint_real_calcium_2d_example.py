@@ -216,7 +216,8 @@ def save_line_panel(
     plotter,
     *,
     figsize_cm: tuple[float, float] = (9.5, 4.0),
-    ylim: tuple[float | None, float | None] | None = None
+    ylim: tuple[float | None, float | None] | None = None,
+    show_legend: bool = True
 ) -> Path:
     fig, ax = plt.subplots(figsize=(figsize_cm[0] * CM_TO_INCH, figsize_cm[1] * CM_TO_INCH))
     ax.set_title(title, pad=5)
@@ -228,7 +229,7 @@ def save_line_panel(
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     plotter(ax)
-    if ax.get_legend_handles_labels()[0]:
+    if show_legend and ax.get_legend_handles_labels()[0]:
         ax.legend(frameon=False, fontsize=LEGEND_SIZE)
     output = FIGURE_DIR / name
     fig.savefig(output, dpi=PANEL_DPI if output.suffix == ".png" else None, bbox_inches="tight", transparent=True)
