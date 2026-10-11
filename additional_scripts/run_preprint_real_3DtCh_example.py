@@ -567,7 +567,7 @@ save_image_panel("panel_a.png",
                  image_panels[channel0]["reference"],
                  f"ch{channel0} reference t={reference_time}",
                  show_scalebar=True,
-                 show_scaling=True)
+                 show_scaling=False)
 save_image_panel("panel_b.png", image_panels[channel0]["moving"], f"ch{channel0} raw t={t_after}")
 save_image_panel("panel_c.png", image_panels[channel0]["registered"], f"ch{channel0} registered t={t_after}")
 save_image_panel("panel_d.png", image_panels[channel0]["raw_difference"], f"ch{channel0} ref - raw", cmap="bwr", diverging=True, vmax_abs=image_panels[channel0]["difference_vmax_abs"])
@@ -578,7 +578,12 @@ save_image_panel("panel_h.png", image_panels[channel1]["registered"], f"ch{chann
 save_image_panel("panel_i.png", image_panels[channel1]["raw_difference"], f"ch{channel1} ref - raw", cmap="bwr", diverging=True, vmax_abs=image_panels[channel1]["difference_vmax_abs"])
 save_image_panel("panel_j.png", image_panels[channel1]["registered_difference"], f"ch{channel1} registered ref - t", cmap="bwr", diverging=True, vmax_abs=image_panels[channel1]["difference_vmax_abs"])
 save_line_panel("panel_k.pdf", "estimated 3D shifts", "time frame", "correction shift (px)", plot_shifts)
-save_line_panel("panel_l.pdf", "reference correlation", "time frame", "Pearson r", plot_volume_correlation, ylim=(0, 1.05))
+save_line_panel("panel_l.pdf", "reference correlation", 
+                "time frame", 
+                "Pearson r", 
+                plot_volume_correlation, 
+                ylim=(0, 1.05),
+                show_legend=False)
 save_line_panel("panel_m.pdf", "mean correlation", "", "Pearson r", plot_summary, ylim=(0, 1.05))
 stack_3dtch_intensity_qc = center_crop_to_shape(stack_3dtch, registered_3dtch.shape)
 histogram_paths = []
