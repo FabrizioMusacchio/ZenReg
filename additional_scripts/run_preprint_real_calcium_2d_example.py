@@ -425,7 +425,7 @@ save_image_panel("panel_a.png",
                  template_image,
                  "all-frame max template",
                  show_scalebar=True,
-                 show_scaling=False)
+                 show_scaling=True)
 save_image_panel("panel_b.png", raw_t0_image, "raw t=0")
 save_image_panel("panel_c.png", raw_t1_image, f"raw t={moving_time}")
 save_image_panel("panel_d.png", raw_difference_image, f"raw t$_{{{moving_time}}}$-t$_0$", cmap="coolwarm", diverging=True, vmax_abs=difference_vmax_abs, colorbar=True)

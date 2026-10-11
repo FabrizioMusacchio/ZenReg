@@ -569,7 +569,7 @@ save_image_panel("panel_a.png",
                  image_panels[channel0]["reference"],
                  f"ch{channel0} reference t={reference_time}",
                  show_scalebar=True,
-                 show_scaling=False)
+                 show_scaling=True)
 save_image_panel("panel_b.png", image_panels[channel0]["moving"], f"ch{channel0} raw t={t_after}")
 save_image_panel("panel_c.png", image_panels[channel0]["registered"], f"ch{channel0} registered t={t_after}")
 save_image_panel("panel_d.png", image_panels[channel0]["raw_difference"], f"ch{channel0} ref - raw", cmap="bwr", diverging=True, vmax_abs=image_panels[channel0]["difference_vmax_abs"])
