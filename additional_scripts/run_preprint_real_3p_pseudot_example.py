@@ -556,26 +556,31 @@ def plot_summary(ax):
 save_image_panel("panel_a.png", translation_reference_projection, "translation reference")
 save_image_panel("panel_b.png", translation_moving_projection, f"translation moving t={moving_time}")
 save_image_panel("panel_c.png", translation_registered_projection, "translation registered")
-save_image_panel("panel_d.png", translation_raw_difference, "translation ref - moving", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs, colorbar=True)
+save_image_panel("panel_d.png", translation_raw_difference, "translation ref - moving", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs)
 save_image_panel("panel_e.png", translation_registered_difference, "translation ref - registered", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs, colorbar=True)
 save_image_panel("panel_f.png", rigid_reference_projection, "rigid reference")
 save_image_panel("panel_g.png", rigid_moving_projection, f"rigid moving t={moving_time}")
 save_image_panel("panel_h.png", rigid_registered_projection, "rigid registered")
-save_image_panel("panel_i.png", rigid_raw_difference, "rigid ref - moving", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs, colorbar=True)
+save_image_panel("panel_i.png", rigid_raw_difference, "rigid ref - moving", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs)
 save_image_panel("panel_j.png", rigid_registered_difference, "rigid ref - registered", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs, colorbar=True)
-save_line_panel("panel_k.pdf", "translation error", "pseudo-time frame", "mean abs. error (px)", plot_shift_error, ylim=(0, None))
+save_line_panel("panel_k.pdf", 
+                "translation error", 
+                "pseudo-time frame", "mean abs. error (px)", 
+                plot_shift_error, 
+                ylim=(0, None),
+                show_legend=False)
 save_line_panel("panel_l.pdf", "rotation error", "pseudo-time frame", "abs. error (deg)", plot_rotation_error, ylim=(0, None))
 save_line_panel("panel_m.pdf", "volume correlation", "pseudo-time frame", "Pearson r", plot_volume_correlation, ylim=(0, 1.05))
 save_line_panel("panel_n.pdf", "registration summary", "", "mean error", plot_summary, ylim=(0, None))
 save_image_panel("panel_o.png", translation_reference_projection_ch1, "translation ch1 reference")
 save_image_panel("panel_p.png", translation_moving_projection_ch1, f"translation ch1 moving t={moving_time}")
 save_image_panel("panel_q.png", translation_registered_projection_ch1, "translation ch1 registered")
-save_image_panel("panel_r.png", translation_raw_difference_ch1, "translation ch1 ref - moving", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs_ch1, colorbar=True)
+save_image_panel("panel_r.png", translation_raw_difference_ch1, "translation ch1 ref - moving", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs_ch1)
 save_image_panel("panel_s.png", translation_registered_difference_ch1, "translation ch1 ref - registered", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs_ch1, colorbar=True)
 save_image_panel("panel_t.png", rigid_reference_projection_ch1, "rigid ch1 reference")
 save_image_panel("panel_u.png", rigid_moving_projection_ch1, f"rigid ch1 moving t={moving_time}")
 save_image_panel("panel_v.png", rigid_registered_projection_ch1, "rigid ch1 registered")
-save_image_panel("panel_w.png", rigid_raw_difference_ch1, "rigid ch1 ref - moving", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs_ch1, colorbar=True)
+save_image_panel("panel_w.png", rigid_raw_difference_ch1, "rigid ch1 ref - moving", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs_ch1)
 save_image_panel("panel_x.png", rigid_registered_difference_ch1, "rigid ch1 ref - registered", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs_ch1, colorbar=True)
 # %% PREPRINT DRAFT FIGURE
 assemble_figure8()
