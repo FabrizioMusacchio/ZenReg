@@ -47,6 +47,9 @@ CM_TO_INCH = 1.0 / 2.54
 PANEL_DPI = 300
 FONT_SIZE = 10
 LEGEND_SIZE = 8
+SCALE_BAR_UM = 20.0
+SCALE_BAR_FALLBACK_UM_PER_PX: float | None = None
+SCALE_BAR_FALLBACK_PX: float | None = None
 
 plt.rcParams.update(
     {   "font.family": "sans-serif",
@@ -71,6 +74,7 @@ YX_SIZE: int | None = 500
 REGISTRATION_CHANNEL = 1
 DISPLAY_CHANNELS = (0, 1)
 DISPLAY_TIME = None  # None -> choose the frame with the largest estimated 3D shift
+HISTOGRAM_SAMPLE_STEP = 8
 N_JOBS = 7
 
 REGISTERED_OUTPUT_PATH = OUTPUT_DIR / "real_3DtCh_registered.ome.tif"
@@ -178,6 +182,62 @@ def frame_volume_correlations(stack: np.ndarray, *, channel: int, reference_time
 def max_projection(stack: np.ndarray, *, t: int, channel: int) -> np.ndarray:
     return np.max(np.asarray(stack[int(t), :, int(channel)], dtype=np.float32), axis=0)
 
+def metadata_get(metadata: dict, *keys: str):
+    for key in keys:
+        if key in metadata and metadata[key] is not None:
+            return metadata[key]
+    lower = {str(key).lower(): value for key, value in metadata.items()}
+    for key in keys:
+        value = lower.get(key.lower())
+        if value is not None:
+            return value
+    return None
+
+def pixel_size_x_um(metadata: dict) -> float | None:
+    physical_xyz = metadata_get(metadata, "physicalsize_xyz", "PhysicalSizeXYZ", "physical_size_xyz")
+    if physical_xyz is not None and len(physical_xyz) >= 1:
+        try:
+            return float(physical_xyz[0])
+        except (TypeError, ValueError):
+            pass
+    for key in ("physicalsize_x", "PhysicalSizeX", "physical_size_x", "pixelsize_x", "PixelSizeX"):
+        value = metadata_get(metadata, key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+    return SCALE_BAR_FALLBACK_UM_PER_PX
+
+def add_scale_bar(ax, metadata: dict, *, show_scaling: bool) -> None:
+    px_um = pixel_size_x_um(metadata)
+    if px_um is not None and px_um > 0:
+        bar_px = SCALE_BAR_UM / px_um
+        label = f"{SCALE_BAR_UM:g} um" if show_scaling else ""
+    elif SCALE_BAR_FALLBACK_PX is not None and SCALE_BAR_FALLBACK_PX > 0:
+        bar_px = float(SCALE_BAR_FALLBACK_PX)
+        label = f"{bar_px:g} px" if show_scaling else ""
+    else:
+        return
+    x_min, x_max = ax.get_xlim()
+    y_bottom, y_top = ax.get_ylim()
+    width = abs(x_max - x_min)
+    height = abs(y_bottom - y_top)
+    x_right = max(x_min, x_max) - 0.06 * width
+    x_left = x_right - bar_px
+    y_bar = max(y_bottom, y_top) - 0.06 * height
+    ax.plot([x_left, x_right], [y_bar, y_bar], color="black", linewidth=3.0, solid_capstyle="butt")
+    ax.plot([x_left, x_right], [y_bar, y_bar], color="white", linewidth=2.0, solid_capstyle="butt")
+    if label:
+        ax.text(
+            (x_left + x_right) / 2.0,
+            y_bar - 0.035 * height,
+            label,
+            color="white",
+            fontsize=LEGEND_SIZE,
+            ha="center",
+            va="bottom")
+
 def save_image_panel(
     name: str,
     image: np.ndarray,
@@ -186,7 +246,9 @@ def save_image_panel(
     cmap: str = "gray",
     diverging: bool = False,
     vmax_abs: float | None = None,
-    figsize_cm: tuple[float, float] = (5.2, 5.0)
+    figsize_cm: tuple[float, float] = (5.2, 5.0),
+    show_scalebar: bool = False,
+    show_scaling: bool = False
 ) -> Path:
     fig, ax = plt.subplots(figsize=(figsize_cm[0] * CM_TO_INCH, figsize_cm[1] * CM_TO_INCH))
     ax.set_title(title, pad=5)
@@ -198,6 +260,8 @@ def save_image_panel(
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
     else:
         ax.imshow(normalize_image(image), cmap=cmap, vmin=0, vmax=1)
+    if show_scalebar:
+        add_scale_bar(ax, globals().get("metadata_3dtch", {}), show_scaling=show_scaling)
     output = FIGURE_DIR / name
     fig.savefig(output, dpi=PANEL_DPI, bbox_inches="tight", transparent=True)
     plt.close(fig)
@@ -229,6 +293,76 @@ def save_line_panel(
     fig.savefig(output, dpi=PANEL_DPI if output.suffix == ".png" else None, bbox_inches="tight", transparent=True)
     if output.suffix == ".pdf":
         fig.savefig(output.with_suffix(".png"), dpi=PANEL_DPI, bbox_inches="tight")
+    plt.close(fig)
+    return output
+
+def sample_channel_values(stack: np.ndarray, *, channel: int, step: int) -> np.ndarray:
+    values = np.asarray(stack[:, :, int(channel), ::step, ::step], dtype=np.float32).ravel()
+    values = values[np.isfinite(values)]
+    return values
+
+def center_crop_to_shape(stack: np.ndarray, target_shape: tuple[int, ...]) -> np.ndarray:
+    """Crop a TZCYX stack centrally so intensity QC uses comparable sizes."""
+
+    if tuple(stack.shape) == tuple(target_shape):
+        return stack
+    slices = []
+    for size, target in zip(stack.shape, target_shape, strict=True):
+        target = min(int(target), int(size))
+        start = max((int(size) - target) // 2, 0)
+        slices.append(slice(start, start + target))
+    return np.asarray(stack[tuple(slices)])
+
+def save_histogram_panel(raw_stack: np.ndarray, registered_stack: np.ndarray, *, channel: int) -> Path:
+    raw_values = sample_channel_values(raw_stack, channel=int(channel), step=max(int(HISTOGRAM_SAMPLE_STEP), 1))
+    registered_values = sample_channel_values(registered_stack, channel=int(channel), step=max(int(HISTOGRAM_SAMPLE_STEP), 1))
+    combined = np.concatenate([raw_values, registered_values])
+    lo, hi = np.nanpercentile(combined, [0.2, 99.8])
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        lo, hi = float(np.nanmin(combined)), float(np.nanmax(combined))
+    bins = np.linspace(lo, hi, 120)
+    fig, ax = plt.subplots(figsize=(7.2 * CM_TO_INCH, 4.6 * CM_TO_INCH))
+    ax.hist(raw_values, bins=bins, density=True, histtype="step", linewidth=1.4, color="#7f7f7f", label="raw")
+    ax.hist(registered_values, bins=bins, density=True, histtype="step", linewidth=1.4, color="#31a354", label="registered")
+    ax.set_title(f"intensity distribution ch{channel}")
+    ax.set_xlabel("intensity")
+    ax.set_ylabel("density")
+    ax.set_yscale("log")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.legend(frameon=False)
+    output = FIGURE_DIR / f"panel_intensity_histogram_ch{channel}.pdf"
+    fig.savefig(output, bbox_inches="tight")
+    fig.savefig(output.with_suffix(".png"), dpi=PANEL_DPI, bbox_inches="tight")
+    plt.close(fig)
+    return output
+
+def mean_intensity_over_time(stack: np.ndarray, *, channel: int) -> np.ndarray:
+    return np.asarray([float(np.nanmean(stack[t, :, int(channel)])) for t in range(stack.shape[0])], dtype=np.float32)
+
+def save_mean_intensity_panel(raw_stack: np.ndarray, registered_stack: np.ndarray) -> Path:
+    frames_for_intensity = np.arange(min(raw_stack.shape[0], registered_stack.shape[0]))
+    colors = {0: "#b03a8f", 1: "#2ca25f"}
+    fig, ax = plt.subplots(figsize=(8.2 * CM_TO_INCH, 4.6 * CM_TO_INCH))
+    for channel in DISPLAY_CHANNELS:
+        channel = int(channel)
+        if channel >= raw_stack.shape[2] or channel >= registered_stack.shape[2]:
+            continue
+        color = colors.get(channel, "#404040")
+        raw_mean = mean_intensity_over_time(raw_stack, channel=channel)[: frames_for_intensity.size]
+        registered_mean = mean_intensity_over_time(registered_stack, channel=channel)[: frames_for_intensity.size]
+        ax.plot(frames_for_intensity, raw_mean, linestyle=":", marker="o", color=color, alpha=0.75, linewidth=1.1, label=f"ch{channel} raw")
+        ax.plot(frames_for_intensity, registered_mean, linestyle="-", marker="s", color=color, linewidth=1.3, label=f"ch{channel} registered")
+    ax.set_title("mean 3D-stack intensity")
+    ax.set_xlabel("time frame")
+    ax.set_ylabel("mean intensity")
+    ax.grid(True, axis="y", alpha=0.25, linewidth=0.6)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.legend(frameon=False, ncol=2)
+    output = FIGURE_DIR / "panel_mean_intensity_over_time.pdf"
+    fig.savefig(output, bbox_inches="tight")
+    fig.savefig(output.with_suffix(".png"), dpi=PANEL_DPI, bbox_inches="tight")
     plt.close(fig)
     return output
 
@@ -429,7 +563,11 @@ channel0, channel1 = [int(channel) for channel in DISPLAY_CHANNELS[:2]]
 
 t_after = moving_time
 
-save_image_panel("panel_a.png", image_panels[channel0]["reference"], f"ch{channel0} reference t={reference_time}")
+save_image_panel("panel_a.png",
+                 image_panels[channel0]["reference"],
+                 f"ch{channel0} reference t={reference_time}",
+                 show_scalebar=True,
+                 show_scaling=True)
 save_image_panel("panel_b.png", image_panels[channel0]["moving"], f"ch{channel0} raw t={t_after}")
 save_image_panel("panel_c.png", image_panels[channel0]["registered"], f"ch{channel0} registered t={t_after}")
 save_image_panel("panel_d.png", image_panels[channel0]["raw_difference"], f"ch{channel0} ref - raw", cmap="bwr", diverging=True, vmax_abs=image_panels[channel0]["difference_vmax_abs"])
@@ -442,10 +580,20 @@ save_image_panel("panel_j.png", image_panels[channel1]["registered_difference"],
 save_line_panel("panel_k.pdf", "estimated 3D shifts", "time frame", "correction shift (px)", plot_shifts)
 save_line_panel("panel_l.pdf", "reference correlation", "time frame", "Pearson r", plot_volume_correlation, ylim=(0, 1.05))
 save_line_panel("panel_m.pdf", "mean correlation", "", "Pearson r", plot_summary, ylim=(0, 1.05))
+stack_3dtch_intensity_qc = center_crop_to_shape(stack_3dtch, registered_3dtch.shape)
+histogram_paths = []
+for channel in DISPLAY_CHANNELS:
+    channel = int(channel)
+    if channel < stack_3dtch_intensity_qc.shape[2] and channel < registered_3dtch.shape[2]:
+        histogram_paths.append(save_histogram_panel(stack_3dtch_intensity_qc, registered_3dtch, channel=channel))
+mean_intensity_path = save_mean_intensity_panel(stack_3dtch_intensity_qc, registered_3dtch)
 copy_summary_plot(details_3dtch)
 # %% PREPRINT DRAFT FIGURE
 assemble_figure9()
 print(f"Wrote Figure 9 panels to {FIGURE_DIR}")
+for path in histogram_paths:
+    print(f"Wrote intensity histogram: {path}")
+print(f"Wrote mean-intensity plot: {mean_intensity_path}")
 print(f"Wrote Figure 9 draft to {FIGURE_DRAFT.with_suffix('.pdf')}")
 # % %END
 # %% END
