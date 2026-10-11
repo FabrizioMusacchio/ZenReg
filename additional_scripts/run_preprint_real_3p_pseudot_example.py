@@ -195,7 +195,8 @@ def save_image_panel(
     cmap: str = "gray",
     diverging: bool = False,
     vmax_abs: float | None = None,
-    figsize_cm: tuple[float, float] = (5.2, 5.0)
+    figsize_cm: tuple[float, float] = (5.2, 5.0),
+    colorbar: bool = False
 ) -> Path:
     fig, ax = plt.subplots(figsize=(figsize_cm[0] * CM_TO_INCH, figsize_cm[1] * CM_TO_INCH))
     ax.set_title(title, pad=5)
@@ -203,9 +204,12 @@ def save_image_panel(
     if diverging:
         vmax = float(vmax_abs) if vmax_abs is not None else float(np.nanmax(np.abs(image)))
         vmax = max(vmax, 1e-6)
-        ax.imshow(image, cmap=cmap, vmin=-vmax, vmax=vmax)
+        im = ax.imshow(image, cmap=cmap, vmin=-vmax, vmax=vmax)
     else:
-        ax.imshow(normalize_image(image), cmap=cmap, vmin=0, vmax=1)
+        im = ax.imshow(normalize_image(image), cmap=cmap, vmin=0, vmax=1)
+    if colorbar:
+        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
+        cbar.ax.tick_params(labelsize=LEGEND_SIZE, length=2)
     output = FIGURE_DIR / name
     fig.savefig(output, dpi=PANEL_DPI, bbox_inches="tight", transparent=True)
     plt.close(fig)
@@ -248,7 +252,7 @@ def write_csv(path: Path, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 def assemble_figure8() -> None:
-    panel_names = [f"panel_{letter}.png" for letter in "abcdefghijklmn"]
+    panel_names = [f"panel_{letter}.png" for letter in "abcdefghijklmnopqrstuvwx"]
     columns = 5
     rows = int(np.ceil(len(panel_names) / columns))
     fig, axes = plt.subplots(rows, columns, figsize=(columns * 3.1, rows * 2.65))
@@ -441,10 +445,21 @@ rigid_reference_projection = max_projection(stack_3p_rigid, t=0)
 rigid_moving_projection = max_projection(stack_3p_rigid, t=moving_time)
 rigid_registered_projection = max_projection(registered_3p_rigid, t=moving_time)
 
+translation_reference_projection_ch1 = max_projection(stack_3p_translation, t=0, channel=1)
+translation_moving_projection_ch1 = max_projection(stack_3p_translation, t=moving_time, channel=1)
+translation_registered_projection_ch1 = max_projection(registered_3p_translation, t=moving_time, channel=1)
+rigid_reference_projection_ch1 = max_projection(stack_3p_rigid, t=0, channel=1)
+rigid_moving_projection_ch1 = max_projection(stack_3p_rigid, t=moving_time, channel=1)
+rigid_registered_projection_ch1 = max_projection(registered_3p_rigid, t=moving_time, channel=1)
+
 translation_raw_difference = translation_reference_projection - translation_moving_projection
 translation_registered_difference = translation_reference_projection - translation_registered_projection
 rigid_raw_difference = rigid_reference_projection - rigid_moving_projection
 rigid_registered_difference = rigid_reference_projection - rigid_registered_projection
+translation_raw_difference_ch1 = translation_reference_projection_ch1 - translation_moving_projection_ch1
+translation_registered_difference_ch1 = translation_reference_projection_ch1 - translation_registered_projection_ch1
+rigid_raw_difference_ch1 = rigid_reference_projection_ch1 - rigid_moving_projection_ch1
+rigid_registered_difference_ch1 = rigid_reference_projection_ch1 - rigid_registered_projection_ch1
 
 translation_difference_vmax_abs = max(
     float(np.nanmax(np.abs(translation_raw_difference))),
@@ -453,6 +468,14 @@ translation_difference_vmax_abs = max(
 rigid_difference_vmax_abs = max(
     float(np.nanmax(np.abs(rigid_raw_difference))),
     float(np.nanmax(np.abs(rigid_registered_difference))),
+    1e-6)
+translation_difference_vmax_abs_ch1 = max(
+    float(np.nanmax(np.abs(translation_raw_difference_ch1))),
+    float(np.nanmax(np.abs(translation_registered_difference_ch1))),
+    1e-6)
+rigid_difference_vmax_abs_ch1 = max(
+    float(np.nanmax(np.abs(rigid_raw_difference_ch1))),
+    float(np.nanmax(np.abs(rigid_registered_difference_ch1))),
     1e-6)
 
 metric_rows = []
@@ -501,18 +524,18 @@ print(f"Wrote analysis metrics to {METRICS_CSV_PATH}")
 # %% PREPRINT PLOT SETTINGS
 def plot_shift_error(ax):
     ax.plot(frames, np.mean(translation_shift_error_zyx, axis=1), marker="o", color="#3b7cec", linewidth=1.3, label="translation only")
-    ax.plot(frames, np.mean(rigid_shift_error_zyx, axis=1), marker="o", color="#7030a0", linewidth=1.3, label="translation + rotation")
+    ax.plot(frames, np.mean(rigid_shift_error_zyx, axis=1), marker="s", color="#7030a0", linewidth=1.3, label="translation + rotation")
 
 def plot_rotation_error(ax):
     ax.plot(frames, rigid_rotation_error_zyx[:, 0], marker="o", color="#7030a0", linewidth=1.3, label="rot z")
-    ax.plot(frames, rigid_rotation_error_zyx[:, 1], marker="o", color="#8f6bb5", linewidth=1.0, label="rot y")
-    ax.plot(frames, rigid_rotation_error_zyx[:, 2], marker="o", color="#b095d6", linewidth=1.0, label="rot x")
+    ax.plot(frames, rigid_rotation_error_zyx[:, 1], marker="s", color="#8f6bb5", linewidth=1.0, label="rot y")
+    ax.plot(frames, rigid_rotation_error_zyx[:, 2], marker="^", color="#b095d6", linewidth=1.0, label="rot x")
 
 def plot_volume_correlation(ax):
-    ax.plot(frames, translation_before_correlation, color="#bfbfbf", linestyle=":", linewidth=1.0, label="translation before")
-    ax.plot(frames, translation_after_correlation, color="#3b7cec", linewidth=1.3, label="translation after")
-    ax.plot(frames, rigid_before_correlation, color="#8c8c8c", linestyle=":", linewidth=1.0, label="rigid before")
-    ax.plot(frames, rigid_after_correlation, color="#7030a0", linewidth=1.3, label="rigid after")
+    ax.plot(frames, translation_before_correlation, marker="o", color="#bfbfbf", linestyle=":", linewidth=1.0, label="translation before")
+    ax.plot(frames, translation_after_correlation, marker="s", color="#3b7cec", linewidth=1.3, label="translation after")
+    ax.plot(frames, rigid_before_correlation, marker="^", color="#8c8c8c", linestyle=":", linewidth=1.0, label="rigid before")
+    ax.plot(frames, rigid_after_correlation, marker="D", color="#7030a0", linewidth=1.3, label="rigid after")
 
 def plot_summary(ax):
     labels = ["translation", "translation + rotation"]
@@ -532,17 +555,27 @@ def plot_summary(ax):
 save_image_panel("panel_a.png", translation_reference_projection, "translation reference")
 save_image_panel("panel_b.png", translation_moving_projection, f"translation moving t={moving_time}")
 save_image_panel("panel_c.png", translation_registered_projection, "translation registered")
-save_image_panel("panel_d.png", translation_raw_difference, "translation ref - moving", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs)
-save_image_panel("panel_e.png", translation_registered_difference, "translation ref - registered", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs)
+save_image_panel("panel_d.png", translation_raw_difference, "translation ref - moving", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs, colorbar=True)
+save_image_panel("panel_e.png", translation_registered_difference, "translation ref - registered", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs, colorbar=True)
 save_image_panel("panel_f.png", rigid_reference_projection, "rigid reference")
 save_image_panel("panel_g.png", rigid_moving_projection, f"rigid moving t={moving_time}")
 save_image_panel("panel_h.png", rigid_registered_projection, "rigid registered")
-save_image_panel("panel_i.png", rigid_raw_difference, "rigid ref - moving", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs)
-save_image_panel("panel_j.png", rigid_registered_difference, "rigid ref - registered", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs)
+save_image_panel("panel_i.png", rigid_raw_difference, "rigid ref - moving", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs, colorbar=True)
+save_image_panel("panel_j.png", rigid_registered_difference, "rigid ref - registered", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs, colorbar=True)
 save_line_panel("panel_k.pdf", "translation error", "pseudo-time frame", "mean abs. error (px)", plot_shift_error, ylim=(0, None))
 save_line_panel("panel_l.pdf", "rotation error", "pseudo-time frame", "abs. error (deg)", plot_rotation_error, ylim=(0, None))
 save_line_panel("panel_m.pdf", "volume correlation", "pseudo-time frame", "Pearson r", plot_volume_correlation, ylim=(0, 1.05))
 save_line_panel("panel_n.pdf", "registration summary", "", "mean error", plot_summary, ylim=(0, None))
+save_image_panel("panel_o.png", translation_reference_projection_ch1, "translation ch1 reference")
+save_image_panel("panel_p.png", translation_moving_projection_ch1, f"translation ch1 moving t={moving_time}")
+save_image_panel("panel_q.png", translation_registered_projection_ch1, "translation ch1 registered")
+save_image_panel("panel_r.png", translation_raw_difference_ch1, "translation ch1 ref - moving", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs_ch1, colorbar=True)
+save_image_panel("panel_s.png", translation_registered_difference_ch1, "translation ch1 ref - registered", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs_ch1, colorbar=True)
+save_image_panel("panel_t.png", rigid_reference_projection_ch1, "rigid ch1 reference")
+save_image_panel("panel_u.png", rigid_moving_projection_ch1, f"rigid ch1 moving t={moving_time}")
+save_image_panel("panel_v.png", rigid_registered_projection_ch1, "rigid ch1 registered")
+save_image_panel("panel_w.png", rigid_raw_difference_ch1, "rigid ch1 ref - moving", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs_ch1, colorbar=True)
+save_image_panel("panel_x.png", rigid_registered_difference_ch1, "rigid ch1 ref - registered", cmap="bwr", diverging=True, vmax_abs=rigid_difference_vmax_abs_ch1, colorbar=True)
 # %% PREPRINT DRAFT FIGURE
 assemble_figure8()
 print(f"Wrote Figure 8 panels to {FIGURE_DIR}")
