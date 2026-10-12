@@ -201,6 +201,17 @@ FIG2_PANELS = {
                            xlabel="frame", 
                            figsize_cm=(5.85, 4.0))}
 
+FIGS3_PANELS = {
+    key: replace(value, output_subdir="figureS3")
+    for key, value in FIG2_PANELS.items()
+}
+FIGS3_PANELS = {
+    **FIGS3_PANELS,
+    "template": replace(FIGS3_PANELS["template"], title="random-walk template"),
+    "raw_t1": replace(FIGS3_PANELS["raw_t1"], title="raw t=25"),
+    "shifts": replace(FIGS3_PANELS["shifts"], title="random-walk estimate"),
+}
+
 FIG3_PANELS = {
     "snr_2d": plot_panel("figure3", "panel_a.pdf", "2D+t noise", 
                          xlabel="noise sigma", ylabel="mean abs. error (px)", 
@@ -432,17 +443,23 @@ def _line_plot_from_grouped(
         )
     _maybe_legend(ax, config)
     _save(fig, config)
-# %% FIGURE 2
-def plot_figure2() -> None:
-    path = BENCHMARK_DIR / "representative_2d_phase.npz"
+# %% FIGURE 2 AND SUPPLEMENTARY RANDOM-WALK FIGURE
+def _plot_representative_2d_from_npz(
+    *,
+    path: Path,
+    panels: dict[str, PanelConfig],
+    figure_dir_name: str,
+    title: str,
+    missing_message: str,
+) -> None:
     if not path.exists():
-        for panel in FIG2_PANELS.values():
-            _placeholder(panel, "Representative benchmark missing.\nRun --case representative.")
+        for panel in panels.values():
+            _placeholder(panel, missing_message)
         assemble_figure(
-            "figure2",
+            figure_dir_name,
             ["panel_a.png", "panel_b.png", "panel_c.png", "panel_d.png", None, "panel_e.png", "panel_f.png", "panel_g.png", None, "panel_h.png", "panel_i.png", "panel_j.png"],
             columns=4,
-            title="Representative 2D+t registration",
+            title=title,
         )
         return
     data = np.load(path)
@@ -455,6 +472,13 @@ def plot_figure2() -> None:
     after = data["pearson_after"]
 
     moving_t = min(25, raw.shape[0] - 1)
+    panels = {
+        **panels,
+        "raw_t1": replace(panels["raw_t1"], title=f"raw t={moving_t}"),
+        "raw_diff": replace(panels["raw_diff"], title=f"raw difference t={moving_t}-t=0"),
+        "reg_t1": replace(panels["reg_t1"], title=f"registered t={moving_t}"),
+        "reg_diff": replace(panels["reg_diff"], title=f"registered difference t={moving_t}-t=0"),
+    }
     template = np.nanmax(raw[:, 0, 0], axis=0)
     raw_t0 = z_project(raw[0:1, :, 0:1], projection_method="max")[0, 0, 0]
     raw_t1 = z_project(raw[moving_t : moving_t + 1, :, 0:1], projection_method="max")[0, 0, 0]
@@ -463,40 +487,58 @@ def plot_figure2() -> None:
     raw_diff = raw_t1 - raw_t0
     reg_diff = reg_t1 - reg_t0
     max_abs = max(float(np.nanmax(np.abs(raw_diff))), float(np.nanmax(np.abs(reg_diff))), 1e-6)
-    _plot_image(FIG2_PANELS["template"], template)
-    _plot_image(FIG2_PANELS["raw_t0"], raw_t0)
-    _plot_image(FIG2_PANELS["raw_t1"], raw_t1)
-    _plot_image(FIG2_PANELS["raw_diff"], raw_diff, diverging=True, vmax_abs=max_abs)
-    _plot_image(FIG2_PANELS["reg_t0"], reg_t0)
-    _plot_image(FIG2_PANELS["reg_t1"], reg_t1)
-    _plot_image(FIG2_PANELS["reg_diff"], reg_diff, diverging=True, vmax_abs=max_abs)
+    _plot_image(panels["template"], template)
+    _plot_image(panels["raw_t0"], raw_t0)
+    _plot_image(panels["raw_t1"], raw_t1)
+    _plot_image(panels["raw_diff"], raw_diff, diverging=True, vmax_abs=max_abs)
+    _plot_image(panels["reg_t0"], reg_t0)
+    _plot_image(panels["reg_t1"], reg_t1)
+    _plot_image(panels["reg_diff"], reg_diff, diverging=True, vmax_abs=max_abs)
 
     frames = np.arange(estimated.shape[0])
-    fig, ax = _new_fig(FIG2_PANELS["shifts"])
-    ax.plot(frames, expected[:, 0], color=COLORS["phase"], linestyle="--", linewidth=1.0, label="GT y")
-    ax.plot(frames, estimated[:, 0], color=COLORS["phase"], linewidth=1.5, label="estimated y")
-    ax.plot(frames, expected[:, 1], color="#d95f02", linestyle="--", linewidth=1.0, label="GT x")
-    ax.plot(frames, estimated[:, 1], color="#d95f02", linewidth=1.5, label="estimated x")
-    _maybe_legend(ax, FIG2_PANELS["shifts"], ncol=2)
-    _save(fig, FIG2_PANELS["shifts"])
+    fig, ax = _new_fig(panels["shifts"])
+    ax.plot(frames, expected[:, 0], color=COLORS["phase"], linewidth=1.5, label="GT y")
+    ax.plot(frames, expected[:, 1], color="#d95f02", linewidth=1.5, label="GT x")
+    ax.plot(frames, estimated[:, 0], color="#8fb7ff", linestyle="--", linewidth=1.2, label="estimated y")
+    ax.plot(frames, estimated[:, 1], color="#f0a35e", linestyle="--", linewidth=1.2, label="estimated x")
+    _maybe_legend(ax, panels["shifts"], ncol=2)
+    _save(fig, panels["shifts"])
 
-    fig, ax = _new_fig(FIG2_PANELS["correlation"])
+    fig, ax = _new_fig(panels["correlation"])
     ax.plot(frames, before, color="#a5a5a5", linewidth=1.2, label="before")
     ax.plot(frames, after, color=COLORS["phase"], linewidth=1.5, label="after")
-    _maybe_legend(ax, FIG2_PANELS["correlation"])
-    _save(fig, FIG2_PANELS["correlation"])
+    _maybe_legend(ax, panels["correlation"])
+    _save(fig, panels["correlation"])
 
-    fig, ax = _new_fig(FIG2_PANELS["accuracy"])
+    fig, ax = _new_fig(panels["accuracy"])
     ax.plot(frames, np.abs(errors[:, 0]), color=COLORS["phase"], linewidth=1.4, label="y")
     ax.plot(frames, np.abs(errors[:, 1]), color="#d95f02", linewidth=1.4, label="x")
-    _maybe_legend(ax, FIG2_PANELS["accuracy"])
-    _save(fig, FIG2_PANELS["accuracy"])
+    _maybe_legend(ax, panels["accuracy"])
+    _save(fig, panels["accuracy"])
 
     assemble_figure(
-        "figure2",
+        figure_dir_name,
         ["panel_a.png", "panel_b.png", "panel_c.png", "panel_d.png", None, "panel_e.png", "panel_f.png", "panel_g.png", None, "panel_h.png", "panel_i.png", "panel_j.png"],
         columns=4,
+        title=title,
+    )
+
+def plot_figure2() -> None:
+    _plot_representative_2d_from_npz(
+        path=BENCHMARK_DIR / "representative_2d_phase.npz",
+        panels=FIG2_PANELS,
+        figure_dir_name="figure2",
         title="Representative 2D+t registration",
+        missing_message="Representative benchmark missing.\nRun --case representative.",
+    )
+
+def plot_figureS3() -> None:
+    _plot_representative_2d_from_npz(
+        path=BENCHMARK_DIR / "representative_2d_random_walk_phase.npz",
+        panels=FIGS3_PANELS,
+        figure_dir_name="figureS3",
+        title="Representative random-walk 2D+t registration",
+        missing_message="Random-walk benchmark missing.\nRun --case representative_random_walk.",
     )
 
 # %% FIGURE 3
@@ -1049,6 +1091,7 @@ def assemble_figure(figure_dir_name: str, panel_names: list[str | None], *, colu
 # %% MAIN FUNCTION
 def main() -> None:
     plot_figure2()
+    plot_figureS3()
     plot_figure3()
     plot_figure4()
     plot_figure5()
