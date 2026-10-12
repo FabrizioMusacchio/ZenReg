@@ -16,6 +16,8 @@ For a full benchmark, run:
 Run only a specific benchmark:
 
     conda run -n zenreg2 python additional_scripts/run_preprint_benchmarks.py --case representative
+
+    conda run -n zenreg2 python additional_scripts/run_preprint_benchmarks.py --case representative_random_walk
     
     conda run -n zenreg2 python additional_scripts/run_preprint_benchmarks.py --case snr
     
@@ -255,6 +257,33 @@ def _parallel_scaling_shifts_yx(time_count: int) -> np.ndarray:
         )
     return shifts
 
+def _random_walk_shifts_yx(
+    time_count: int,
+    *,
+    step_sigma_y: float,
+    step_sigma_x: float,
+    max_abs_y: float,
+    max_abs_x: float,
+    random_state: int,
+) -> np.ndarray:
+    """Generate bounded Brownian-like YX shifts anchored at frame 0."""
+
+    rng = np.random.default_rng(int(random_state))
+    steps = rng.normal(
+        loc=0.0,
+        scale=(float(step_sigma_y), float(step_sigma_x)),
+        size=(int(time_count), 2),
+    ).astype(np.float32)
+    steps[0] = 0.0
+    shifts = np.cumsum(steps, axis=0).astype(np.float32)
+    shifts -= shifts[0:1]
+    for axis, max_abs in enumerate((float(max_abs_y), float(max_abs_x))):
+        current = float(np.max(np.abs(shifts[:, axis])))
+        if current > 1e-6:
+            shifts[:, axis] *= max_abs / current
+    shifts[0] = 0.0
+    return shifts.astype(np.float32, copy=False)
+
 def _parallel_scaling_base_channels(
     shape_yx: tuple[int, int],
     *,
@@ -316,6 +345,51 @@ def _create_parallel_scaling_stack(
     else:
         stack = np.empty((int(time_count), 1, int(channel_count), *shape_yx), dtype=np.float32)
 
+    rng = np.random.default_rng(int(random_state) + 100_000)
+    for t in range(int(time_count)):
+        shift_yx = tuple(float(v) for v in shifts[t])
+        for c, base_image in enumerate(base_channels):
+            moved = ndi_shift(
+                base_image,
+                shift=shift_yx,
+                order=1,
+                mode="constant",
+                cval=0.0,
+                prefilter=True,
+            ).astype(np.float32, copy=False)
+            if noise_sigma > 0:
+                moved = moved + rng.normal(0, float(noise_sigma), size=shape_yx).astype(np.float32)
+            stack[t, 0, c, :, :] = np.clip(moved, 0, None).astype(np.float32, copy=False)
+    return stack, shifts
+
+def _create_2d_random_walk_motion_stack(
+    *,
+    time_count: int,
+    channel_count: int,
+    shape_yx: tuple[int, int],
+    noise_sigma: float,
+    random_state: int,
+    step_sigma_y: float,
+    step_sigma_x: float,
+    max_abs_y: float,
+    max_abs_x: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Create a 2D+t stack with cumulative random-walk translation."""
+
+    shifts = _random_walk_shifts_yx(
+        int(time_count),
+        step_sigma_y=float(step_sigma_y),
+        step_sigma_x=float(step_sigma_x),
+        max_abs_y=float(max_abs_y),
+        max_abs_x=float(max_abs_x),
+        random_state=int(random_state),
+    )
+    base_channels = _parallel_scaling_base_channels(
+        shape_yx,
+        channel_count=int(channel_count),
+        random_state=int(random_state) + 17,
+    )
+    stack = np.empty((int(time_count), 1, int(channel_count), *shape_yx), dtype=np.float32)
     rng = np.random.default_rng(int(random_state) + 100_000)
     for t in range(int(time_count)):
         shift_yx = tuple(float(v) for v in shifts[t])
@@ -672,6 +746,70 @@ def run_representative_2d(args) -> None:
         OUTPUT_DIR / "representative_2d_phase_metrics.csv",
         _per_frame_rows(
             scenario="representative_2d_translation",
+            variable="none",
+            level=0.0,
+            method_label="phase",
+            estimated=estimated,
+            expected=expected,
+            errors=errors,
+            before=before,
+            after=after,
+            runtime_s=summary["runtime_s"],
+        ),
+    )
+
+def run_representative_random_walk_2d(args) -> None:
+    print("Running representative 2D+t random-walk translation benchmark")
+
+    registration_template_time_range = "all"
+    stack, applied = _create_2d_random_walk_motion_stack(
+        time_count=24 if args.quick else 64,
+        channel_count=2,
+        shape_yx=(128, 128) if args.quick else (256, 256),
+        noise_sigma=0.03,
+        random_state=37,
+        step_sigma_y=1.2,
+        step_sigma_x=0.9,
+        max_abs_y=8.0,
+        max_abs_x=6.0,
+    )
+    registered, details, estimated, expected, errors, before, after, summary = _run_translation_registration(
+        stack,
+        applied_shift=applied,
+        method_label="phase",
+        dimension="2d_t_random_walk",
+        time_registration_mode="projection",
+        zreg=False,
+        n_jobs=args.n_jobs,
+        registration_template_time_range=registration_template_time_range,
+    )
+    # Match the Figure 2 display convention: compare the correction trace after
+    # re-referencing to t=0 against the known per-frame correction.
+    estimated = estimated - estimated[0:1, :]
+    expected = _expected_correction(applied)
+    errors = estimated - expected
+    save_stack(
+        OUTPUT_DIR / "representative_2d_random_walk_phase_registered.ome.tif",
+        registered,
+        metadata=create_stack_metadata(stack, verbose=False),
+        registration_details=details,
+        overwrite=True,
+        verbose=False,
+    )
+    np.savez_compressed(
+        OUTPUT_DIR / "representative_2d_random_walk_phase.npz",
+        raw=np.asarray(stack, dtype=np.float32),
+        registered=np.asarray(registered, dtype=np.float32),
+        estimated=estimated,
+        expected=expected,
+        errors=errors,
+        pearson_before=before,
+        pearson_after=after,
+    )
+    _write_rows(
+        OUTPUT_DIR / "representative_2d_random_walk_phase_metrics.csv",
+        _per_frame_rows(
+            scenario="representative_2d_random_walk_translation",
             variable="none",
             level=0.0,
             method_label="phase",
@@ -1438,7 +1576,17 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--case",
-        choices=("representative", "snr", "drift", "piecewise", "rigid3d", "projection_parallel", "memory", "all"),
+        choices=(
+            "representative",
+            "representative_random_walk",
+            "snr",
+            "drift",
+            "piecewise",
+            "rigid3d",
+            "projection_parallel",
+            "memory",
+            "all",
+        ),
         default="all",
     )
     parser.add_argument("--quick", action=argparse.BooleanOptionalAction, default=False)
@@ -1458,6 +1606,9 @@ def main() -> None:
     if selected in {"representative", "all"}:
         print("Running representative 2D+t registration benchmark")
         run_representative_2d(args)
+    if selected in {"representative_random_walk", "all"}:
+        print("Running representative 2D+t random-walk registration benchmark")
+        run_representative_random_walk_2d(args)
     if selected in {"snr", "all"}:
         print("Running SNR robustness benchmarks")
         run_snr_benchmarks(args)
