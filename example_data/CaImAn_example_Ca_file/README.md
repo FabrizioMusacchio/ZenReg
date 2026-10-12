@@ -16,4 +16,6 @@ example_data/CaImAn_example_Ca_file/Sue_2x_3000_40_-46.tif
 ## Source and acknowledgment
 The movie is a CaImAn tutorial dataset provided courtesy of Sue Koay and David Tank. It contains two-photon calcium imaging data from supragranular parietal cortex of a GCaMP6f-expressing mouse during a virtual-reality task. The demo movie contains 3000 frames acquired at 30 Hz and was spatially cropped and downsampled by a factor of 2 relative to the original recording.
 
+The downloaded TIFF does not encode physical pixel-size metadata. The CaImAn tutorial for this demo movie reports a spatial sampling of 2 um/pixel for the downsampled file, which is used by the ZenReg manuscript plotting script to draw scale bars.
+
 ZenReg uses this file only as a small real-world 2D+t microscopy registration example. If you use the dataset, please also follow the citation and acknowledgment guidance from the CaImAn project.
