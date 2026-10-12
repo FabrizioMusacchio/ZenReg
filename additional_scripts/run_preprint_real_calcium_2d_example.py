@@ -43,9 +43,11 @@ CM_TO_INCH = 1.0 / 2.54
 PANEL_DPI = 300
 FONT_SIZE = 10
 LEGEND_SIZE = 8
-SCALE_BAR_UM = 20.0
-SCALE_BAR_FALLBACK_UM_PER_PX: float | None = None
-SCALE_BAR_FALLBACK_PX: float | None = 20.0
+# The CaImAn tutorial notes that this downsampled demo movie has a spatial
+# sampling of 2 um/pixel. The TIFF itself does not store that physical size.
+SCALE_BAR_UM = 40.0
+SCALE_BAR_FALLBACK_UM_PER_PX: float | None = 2.0
+SCALE_BAR_FALLBACK_PX: float | None = None
 
 plt.rcParams.update(
     {   "font.family": "sans-serif",
