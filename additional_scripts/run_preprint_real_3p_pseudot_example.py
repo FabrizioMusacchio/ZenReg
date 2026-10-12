@@ -44,7 +44,7 @@ CM_TO_INCH = 1.0 / 2.54
 PANEL_DPI = 300
 FONT_SIZE = 10
 LEGEND_SIZE = 8
-SCALE_BAR_UM = 50.0
+SCALE_BAR_UM = 25.0
 # Supplementary_Video_4.tif stores XY resolution as TIFF X/YResolution tags
 # equivalent to ~0.4695 um/pixel. Keep this fallback explicit for plotting.
 SCALE_BAR_FALLBACK_UM_PER_PX: float | None = 0.46947468717101876
@@ -60,7 +60,7 @@ plt.rcParams.update(
         "legend.fontsize": LEGEND_SIZE,
         "pdf.fonttype": 42,
         "ps.fonttype": 42})
-# %% EXAMPLE SETTINGS
+# %% SETTINGS
 # Defaults use a central subvolume. Set FULL_VOLUME=True only if you deliberately
 # want to create and register ten pseudo-time copies of the full 1-GB stack.
 USE_MEMMAP_FOR_SOURCE = True
@@ -617,7 +617,7 @@ save_image_panel("panel_a.png",
                  translation_reference_projection,
                  "translation reference",
                  show_scalebar=True,
-                 show_scaling=True)
+                 show_scaling=False)
 save_image_panel("panel_b.png", translation_moving_projection, f"translation moving t={moving_time}")
 save_image_panel("panel_c.png", translation_registered_projection, "translation registered")
 save_image_panel("panel_d.png", translation_raw_difference, "translation ref - moving", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs)
