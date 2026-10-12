@@ -44,6 +44,10 @@ CM_TO_INCH = 1.0 / 2.54
 PANEL_DPI = 300
 FONT_SIZE = 10
 LEGEND_SIZE = 8
+SCALE_BAR_UM = 50.0
+# Supplementary_Video_4.tif stores XY resolution as TIFF X/YResolution tags
+# equivalent to ~0.4695 um/pixel. Keep this fallback explicit for plotting.
+SCALE_BAR_FALLBACK_UM_PER_PX: float | None = 0.46947468717101876
 
 plt.rcParams.update(
     {   "font.family": "sans-serif",
@@ -187,6 +191,58 @@ def frame_volume_correlations(stack: np.ndarray) -> np.ndarray:
 def max_projection(stack: np.ndarray, *, t: int, channel: int = 0) -> np.ndarray:
     return np.max(np.asarray(stack[int(t), :, int(channel)], dtype=np.float32), axis=0)
 
+def metadata_get(metadata: dict, *keys: str):
+    for key in keys:
+        if key in metadata and metadata[key] is not None:
+            return metadata[key]
+    lower = {str(key).lower(): value for key, value in metadata.items()}
+    for key in keys:
+        value = lower.get(key.lower())
+        if value is not None:
+            return value
+    return None
+
+def pixel_size_x_um(metadata: dict) -> float | None:
+    physical_xyz = metadata_get(metadata, "physicalsize_xyz", "PhysicalSizeXYZ", "physical_size_xyz")
+    if physical_xyz is not None and len(physical_xyz) >= 1:
+        try:
+            return float(physical_xyz[0])
+        except (TypeError, ValueError):
+            pass
+    for key in ("physicalsize_x", "PhysicalSizeX", "physical_size_x", "pixelsize_x", "PixelSizeX"):
+        value = metadata_get(metadata, key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+    return SCALE_BAR_FALLBACK_UM_PER_PX
+
+def add_scale_bar(ax, metadata: dict, *, show_scaling: bool) -> None:
+    px_um = pixel_size_x_um(metadata)
+    if px_um is None or px_um <= 0:
+        return
+    bar_px = SCALE_BAR_UM / px_um
+    label = f"{SCALE_BAR_UM:g} um" if show_scaling else ""
+    x_min, x_max = ax.get_xlim()
+    y_bottom, y_top = ax.get_ylim()
+    width = abs(x_max - x_min)
+    height = abs(y_bottom - y_top)
+    x_right = max(x_min, x_max) - 0.06 * width
+    x_left = x_right - bar_px
+    y_bar = max(y_bottom, y_top) - 0.06 * height
+    ax.plot([x_left, x_right], [y_bar, y_bar], color="black", linewidth=3.0, solid_capstyle="butt")
+    ax.plot([x_left, x_right], [y_bar, y_bar], color="white", linewidth=2.0, solid_capstyle="butt")
+    if label:
+        ax.text(
+            (x_left + x_right) / 2.0,
+            y_bar - 0.035 * height,
+            label,
+            color="white",
+            fontsize=LEGEND_SIZE,
+            ha="center",
+            va="bottom")
+
 def save_image_panel(
     name: str,
     image: np.ndarray,
@@ -196,7 +252,9 @@ def save_image_panel(
     diverging: bool = False,
     vmax_abs: float | None = None,
     figsize_cm: tuple[float, float] = (5.2, 5.0),
-    colorbar: bool = False
+    colorbar: bool = False,
+    show_scalebar: bool = False,
+    show_scaling: bool = False
 ) -> Path:
     fig, ax = plt.subplots(figsize=(figsize_cm[0] * CM_TO_INCH, figsize_cm[1] * CM_TO_INCH))
     ax.set_title(title, pad=5)
@@ -210,6 +268,8 @@ def save_image_panel(
     if colorbar:
         cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.02)
         cbar.ax.tick_params(labelsize=LEGEND_SIZE, length=2)
+    if show_scalebar:
+        add_scale_bar(ax, globals().get("metadata_base_3p", globals().get("metadata_3p", {})), show_scaling=show_scaling)
     output = FIGURE_DIR / name
     fig.savefig(output, dpi=PANEL_DPI, bbox_inches="tight", transparent=True)
     plt.close(fig)
@@ -553,7 +613,11 @@ def plot_summary(ax):
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=20, ha="right")
 # %% PREPRINT PANEL PLOTS
-save_image_panel("panel_a.png", translation_reference_projection, "translation reference")
+save_image_panel("panel_a.png",
+                 translation_reference_projection,
+                 "translation reference",
+                 show_scalebar=True,
+                 show_scaling=True)
 save_image_panel("panel_b.png", translation_moving_projection, f"translation moving t={moving_time}")
 save_image_panel("panel_c.png", translation_registered_projection, "translation registered")
 save_image_panel("panel_d.png", translation_raw_difference, "translation ref - moving", cmap="bwr", diverging=True, vmax_abs=translation_difference_vmax_abs)
