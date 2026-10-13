@@ -11,6 +11,14 @@ Full 3D rigid registration estimates a 6-DOF transform for each time point:
 The transform is estimated on one ``registration_channel`` and then applied to
 all channels.
 
+.. important::
+
+   ``rotreg=True`` is required to activate the full 3D rigid backends
+   ``rigid_3d_backend="simpleitk"`` and ``rigid_3d_backend="points"``.
+   Without ``rotreg=True``, ``time_registration_mode="full_3d"`` runs the
+   translational 3D phase-cross-correlation path, and ``rigid_3d_backend`` does
+   not switch ZenReg into 6-DOF rigid registration.
+
 Dense SimpleITK backend
 -----------------------
 
@@ -32,7 +40,7 @@ Use ``rigid_3d_backend="simpleitk"`` for dense structural volumes:
        method                   = "phase_cross_correlation",
        time_registration_mode   = "full_3d",
        zreg                     = True,
-       rotreg                   = True,
+       rotreg                   = True,  # required for simpleitk/points rigid 3D backends
        rigid_3d_backend         = "simpleitk",
        rot_init_iterations      = 2,
        rot_metric               = "correlation",
@@ -65,9 +73,13 @@ Options introduced here:
      - OMIO metadata from ``load_stack``. Used to infer physical
        ``PhysicalSizeZ/Y/X`` spacing for full 3D rigid registration. Default: ``None``.
    * - ``rotreg=True``
-     - Enable rotation correction. Default:  ``False``.
+     - Enable rotation correction and activate the full 3D rigid backend when
+       ``rigid_3d_backend`` is ``"simpleitk"`` or ``"points"``. This must be
+       ``True`` for 6-DOF rigid registration. Default:  ``False``.
    * - ``rigid_3d_backend="simpleitk"``
-     - Use intensity-based SimpleITK full 3D rigid registration. Default:  ``"phase_cross_correlation"`` for the simpler projection path.
+     - Use intensity-based SimpleITK full 3D rigid registration. Requires
+       ``rotreg=True``. Default:  ``"phase_cross_correlation"`` for the simpler
+       translational path.
    * - ``rot_spacing_zyx``
      - Optional physical voxel spacing override in Z, Y, X order. Default:  ``None`` (default) uses OMIO metadata spacing when ``metadata`` is passed, or unit
        spacing otherwise.
@@ -102,7 +114,7 @@ Use ``rigid_3d_backend="points"`` for sparse puncta or spot-like data:
        method                        = "phase_cross_correlation",
        time_registration_mode        = "full_3d",
        zreg                          = True,
-       rotreg                        = True,
+       rotreg                        = True,  # required for simpleitk/points rigid 3D backends
        rigid_3d_backend              = "points",
        rot_points_max_points         = 120,
        rot_points_min_distance       = 2,
@@ -129,7 +141,8 @@ New options in this block:
    * - Argument
      - Meaning
    * - ``rigid_3d_backend="points"``
-     - Use peak detection plus point matching/RANSAC-style rigid estimation. Default:  ``"phase_cross_correlation"``.
+     - Use peak detection plus point matching/RANSAC-style rigid estimation.
+       Requires ``rotreg=True``. Default:  ``"phase_cross_correlation"``.
    * - ``rot_points_max_points``
      - Maximum number of detected points used per volume. Uses backend default.
    * - ``rot_points_min_distance``
@@ -160,7 +173,7 @@ point-based rigid registration is better for a specific acquisition:
        method                 = "phase_cross_correlation",
        time_registration_mode = "full_3d",
        zreg                   = True,
-       rotreg                 = True,
+       rotreg                 = True,  # required for simpleitk/points rigid 3D backends
        rigid_3d_backend       = "simpleitk",
        rot_metric             = "correlation",
        transform_order        = 0,
