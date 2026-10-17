@@ -99,6 +99,7 @@ class MovieSpec:
     title: str = ""
     time_label: str = "t"
     scale_bar: bool = True
+    time_stride: int = TIME_STRIDE
 
 # %% GENERIC HELPERS
 def load_json(path: Path) -> dict:
@@ -230,7 +231,7 @@ def save_movie(spec: MovieSpec) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     raw = np.asarray(spec.raw)
     registered = np.asarray(spec.registered)
-    frame_indices = list(range(0, min(raw.shape[0], registered.shape[0]), max(int(TIME_STRIDE), 1)))
+    frame_indices = list(range(0, min(raw.shape[0], registered.shape[0]), max(int(spec.time_stride), 1)))
     if not frame_indices:
         raise ValueError(f"No movie frames available for {spec.name}.")
 
@@ -311,7 +312,8 @@ def spec_real_calcium() -> MovieSpec | None:
         metadata=metadata,
         channels=(0,),
         projection_mode="max",
-        title="Real calcium-imaging 2D+t registration")
+        title="Real calcium-imaging 2D+t registration",
+        time_stride=50)
 
 def specs_rigid3d() -> list[MovieSpec]:
     specs = []
